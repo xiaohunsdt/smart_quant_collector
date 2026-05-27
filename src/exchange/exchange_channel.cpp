@@ -106,7 +106,9 @@ void ExchangeChannel::Subscribe() {
     for (const auto& sym : spec_.symbols) {
       if (!sym.enabled) continue;
       if (!first) *depth_sub += ",";
-      *depth_sub += "\"" + sym.name + "\"";
+      // Gate.io order_book payload: ["contract", "limit", "interval"]
+      *depth_sub += "\"" + sym.name + "\",\"" +
+                    std::to_string(sym.depth_level) + "\",\"0\"";
       first = false;
     }
     *depth_sub += "]}";
@@ -160,12 +162,17 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
       if (spec_.exchange_name == "binance") {
         symbol = std::string_view(peek_doc["s"]);
       } else {
-        // Gate.io data messages: "contract" is nested inside "result"
-        // futures.tickers: result[0].contract; futures.order_book: result.contract
+        // Gate.io: "contract" is inside "result", format varies by channel
+        // futures.tickers → result is an array of objects
+        // futures.order_book → result is an object with contract directly
+        // Read channel BEFORE result to avoid simdjson type-probe consuming the value
+        std::string_view channel = peek_doc["channel"];
         auto result = peek_doc["result"];
-        simdjson::ondemand::array arr;
-        if (!result.get_array().get(arr)) {
-          for (auto item : arr) { symbol = std::string_view(item["contract"]); break; }
+        if (channel == "futures.tickers") {
+          for (auto item : result.get_array()) {
+            symbol = std::string_view(item["contract"]);
+            break;
+          }
         } else {
           symbol = std::string_view(result["contract"]);
         }

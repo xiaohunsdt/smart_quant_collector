@@ -61,39 +61,46 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    // Forward-only: access "time" then "event" then "result" (JSON order)
+    // Forward-only: access "time", "event", then "result" (JSON field order)
     out.exchange_timestamp = doc["time"].get_uint64() * 1'000'000ULL;
 
     std::string_view ev = doc["event"].get_string();
-    if (ev != "update") return false;
+    if (ev != "update" && ev != "all") return false;
 
     auto result = doc["result"];
-    out.U = result["id"].get_uint64(); out.u = out.U;
+    out.U = result["id"].get_uint64();
+    out.u = out.U;
     out.channel_id = channel_id;
+
+    // contract is inside "result", not at top level
     std::string_view sym = result["contract"].get_string();
-    std::strncpy(out.symbol, sym.data(), sizeof(out.symbol) - 1);
+    size_t sym_len = std::min(sym.size(), sizeof(out.symbol) - 1);
+    std::memcpy(out.symbol, sym.data(), sym_len);
+    out.symbol[sym_len] = '\0';
+
+    // Gate.io order_book levels: {"p": "string_price", "s": int_size}
+    // p is a STRING — must convert via strtod, not get_double
+    char num_buf[32];
+    auto sv_to_double = [&](std::string_view sv) -> double {
+      size_t n = std::min(sv.size(), sizeof(num_buf) - 1);
+      std::memcpy(num_buf, sv.data(), n);
+      num_buf[n] = '\0';
+      return std::strtod(num_buf, nullptr);
+    };
 
     out.bid_count = 0;
     for (auto lv : result["bids"]) {
       if (out.bid_count >= kMaxOrderbookLevels) break;
-      auto it = lv.begin();
-      if (it == lv.end()) continue;
-      double p = (*it).get_double();
-      ++it;
-      double q = 0.0;
-      if (it != lv.end()) q = double((*it).get_double());
+      double p = sv_to_double(lv["p"].get_string());
+      double q = double(lv["s"].get_int64());
       out.bids[out.bid_count++] = {p, q};
     }
 
     out.ask_count = 0;
     for (auto lv : result["asks"]) {
       if (out.ask_count >= kMaxOrderbookLevels) break;
-      auto it = lv.begin();
-      if (it == lv.end()) continue;
-      double p = (*it).get_double();
-      ++it;
-      double q = 0.0;
-      if (it != lv.end()) q = double((*it).get_double());
+      double p = sv_to_double(lv["p"].get_string());
+      double q = double(lv["s"].get_int64());
       out.asks[out.ask_count++] = {p, q};
     }
     return true;
