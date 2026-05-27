@@ -58,7 +58,8 @@ int main(int argc, char* argv[]) {
         info.symbol = sym.name;
         auto id = channel_registry.Register(info);
         orderbook_manager.RegisterChannel(id, sym.depth_level);
-        symbol_to_channel_id[sym.name] = id;
+        // Compound key: exchange:type:symbol, e.g. "gateio:perpetual:BTC_USDT"
+        symbol_to_channel_id[ex.name + ":" + ch.type + ":" + sym.name] = id;
       }
     }
   }

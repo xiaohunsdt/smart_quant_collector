@@ -122,11 +122,11 @@ void ExchangeChannel::Subscribe() {
 void ExchangeChannel::OnMessage(const char* data, size_t size) {
   static std::atomic<int> msg_count{0};
   int n = ++msg_count;
-  if (n <= 3) {
-    LOG_INFO(GetLogger(), "OnMessage #{} received {} bytes", n, size);
-    std::string preview(data, data + std::min(size, size_t(200)));
-    LOG_INFO(GetLogger(), "OnMessage data: {}", preview);
-  }
+  // if (n <= 3) {
+  //   LOG_INFO(GetLogger(), "OnMessage #{} received {} bytes", n, size);
+  //   std::string preview(data, data + std::min(size, size_t(200)));
+  //   LOG_INFO(GetLogger(), "OnMessage data: {}", preview);
+  // }
   if (size == 0 || shard_queues_.empty()) return;
 
   // Allocate with trailing simdjson padding (parser reads past JSON end)
@@ -170,7 +170,8 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
           symbol = std::string_view(result["contract"]);
         }
       }
-      auto it = symbol_to_channel_id_.find(std::string(symbol));
+      auto key = spec_.exchange_name + ":" + spec_.channel_type + ":" + std::string(symbol);
+      auto it = symbol_to_channel_id_.find(key);
       if (it != symbol_to_channel_id_.end()) channel_id = it->second;
     } catch (...) { channel_id = 0; }
   }
