@@ -106,7 +106,7 @@ void CsvWriter::AppendTick(const TickData& tick) {
               << tick.price << ","
               << tick.quantity << ","
               << (tick.is_buyer_maker ? -1 : 1) << ","
-              << tick.symbol << "\n";
+              << "\n";
 }
 
 void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
