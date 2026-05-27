@@ -9,7 +9,7 @@
 namespace sqc {
 
 struct RawMessage {
-  std::string data;  // full JSON text, no padding needed (added in parser)
+  std::shared_ptr<char[]> data;  // full JSON text with trailing SIMDJSON_PADDING zero bytes
   size_t size = 0;
   uint32_t channel_id = 0;
   std::string exchange;

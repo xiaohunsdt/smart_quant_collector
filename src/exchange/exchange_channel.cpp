@@ -129,30 +129,39 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
   }
   if (size == 0 || shard_queues_.empty()) return;
 
-  // Store as std::string (safe copy, no pointer lifetime issues)
-  std::string json_data(data, size);
+  // Allocate with trailing simdjson padding (parser reads past JSON end)
+  std::shared_ptr<char[]> json_data = std::make_shared<char[]>(size + kSimdjsonPadding);
+  std::memcpy(json_data.get(), data, size);
+  std::memset(json_data.get() + size, 0, kSimdjsonPadding);
 
-  // Peek parse for symbol -> channel_id
+  // Peek parse for symbol -> channel_id (uses same buffer, no extra copy)
   uint32_t channel_id = 0;
-  std::string padded = json_data;
-  padded.resize(padded.size() + kSimdjsonPadding, '\0');
   simdjson::ondemand::parser peek_parser;
   simdjson::ondemand::document peek_doc;
-  auto err = peek_parser.iterate(padded.data(), json_data.size(), padded.size()).get(peek_doc);
+  auto err = peek_parser.iterate(json_data.get(), size, size + kSimdjsonPadding).get(peek_doc);
   if (!err) {
     try {
       std::string_view symbol;
-      if (spec_.exchange_name == "binance")
+      if (spec_.exchange_name == "binance") {
         symbol = std::string_view(peek_doc["s"]);
-      else
-        symbol = std::string_view(peek_doc["contract"]);
+      } else {
+        // Gate.io: "contract" is nested inside "result"
+        // futures.tickers: result is an array; futures.order_book: result is an object
+        auto result = peek_doc["result"];
+        simdjson::ondemand::array arr;
+        if (!result.get_array().get(arr)) {
+          for (auto item : arr) { symbol = std::string_view(item["contract"]); break; }
+        } else {
+          symbol = std::string_view(result["contract"]);
+        }
+      }
       auto it = symbol_to_channel_id_.find(std::string(symbol));
       if (it != symbol_to_channel_id_.end()) channel_id = it->second;
     } catch (...) { channel_id = 0; }
   }
 
   RawMessage msg;
-  msg.data = std::move(json_data);
+  msg.data = json_data;
   msg.size = size;
   msg.channel_id = channel_id;
   msg.exchange = spec_.exchange_name;
