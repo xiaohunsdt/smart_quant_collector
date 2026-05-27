@@ -27,11 +27,11 @@ class MmapEngineTest : public ::testing::Test {
 };
 
 TEST_F(MmapEngineTest, OpenAndClose) {
-  EXPECT_TRUE(engine_.OpenOrCreate(test_path_));
+  EXPECT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));
 }
 
 TEST_F(MmapEngineTest, AppendAndReadBack) {
-  ASSERT_TRUE(engine_.OpenOrCreate(test_path_));
+  ASSERT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));
 
   TickData tick{};
   tick.price = 50000.0;
@@ -51,7 +51,7 @@ TEST_F(MmapEngineTest, AppendAndReadBack) {
 TEST_F(MmapEngineTest, RollNewFileAtBoundary) {
   // Use tiny max file size to trigger boundary quickly
   MmapStorageEngine small_engine{16384};  // page-aligned
-  ASSERT_TRUE(small_engine.OpenOrCreate(test_path_));
+  ASSERT_TRUE(small_engine.OpenOrCreate(test_path_, "tick"));
 
   TickData tick{};
   // sizeof(StorageTickEnvelope) = 72, so we can fit 1 record (64 + 72 = 136 < 200)
@@ -65,7 +65,7 @@ TEST_F(MmapEngineTest, RollNewFileAtBoundary) {
 }
 
 TEST_F(MmapEngineTest, WriteBarrierOrdering) {
-  ASSERT_TRUE(engine_.OpenOrCreate(test_path_));
+  ASSERT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));
 
   TickData tick{};
   tick.price = 123.45;

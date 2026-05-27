@@ -34,14 +34,22 @@ class StorageRouter {
 
  private:
   void FlushActiveBuffer();
+  static std::string MakeKey(std::string_view exchange, std::string_view type,
+                             std::string_view symbol);
 
   std::string use_engine_;
   DolphinDBClient dolphindb_;
-  MmapStorageEngine mmap_;
   uint32_t buffer_size_;
   bool degraded_ = false;
 
+  std::string csv_output_path_;
+  std::string mmap_output_path_;
+
+  // Pre-allocated at startup — read-only at runtime, no lock needed.
+  // Key: "exchange/type/symbol"
   std::unordered_map<std::string, CsvWriter> csv_writers_;
+  std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
+  std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
 
   std::vector<TickData> buffer_a_;
   std::vector<TickData> buffer_b_;

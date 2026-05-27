@@ -17,8 +17,10 @@ MmapStorageEngine::MmapStorageEngine(uint64_t max_file_size)
 
 MmapStorageEngine::~MmapStorageEngine() { Close(); }
 
-bool MmapStorageEngine::OpenOrCreate(const std::string& output_path) {
+bool MmapStorageEngine::OpenOrCreate(const std::string& output_path,
+                                      const std::string& file_prefix) {
   output_path_ = output_path;
+  file_prefix_ = file_prefix;
 
   // Ensure trailing slash
   if (!output_path_.empty() && output_path_.back() != '/') {
@@ -133,8 +135,9 @@ void MmapStorageEngine::Close() {
 }
 
 std::string MmapStorageEngine::MakeFileName(int sequence) const {
-  char buf[64];
-  snprintf(buf, sizeof(buf), "%swal_%04d.bin", output_path_.c_str(), sequence);
+  char buf[128];
+  snprintf(buf, sizeof(buf), "%s%s_%04d.bin", output_path_.c_str(),
+           file_prefix_.c_str(), sequence);
   return buf;
 }
 

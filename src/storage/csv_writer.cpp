@@ -2,6 +2,7 @@
 
 #include <sys/stat.h>
 #include <errno.h>
+#include <cstdio>
 
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
@@ -9,41 +10,97 @@
 
 namespace sqc {
 
-bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange) {
-  std::string dir = trade_root;
-  if (!dir.empty() && dir.back() != '/') dir += '/';
-  dir += exchange;
+bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange,
+                     std::string_view type, std::string_view symbol) {
+  dir_ = trade_root;
+  if (!dir_.empty() && dir_.back() != '/') dir_ += '/';
+  dir_ += exchange;
+  dir_ += '/';
+  dir_ += type;
+  dir_ += '/';
+  dir_ += symbol;
+  dir_ += '/';
 
-  // Recursive mkdir for parent directories
+  if (!EnsureDirExists(dir_)) {
+    LOG_ERROR(GetLogger(), "CsvWriter: failed to create directory {}", dir_);
+    return false;
+  }
+
+  current_date_day_ = UINT64_MAX;  // force rotation on first write
+  LOG_INFO(GetLogger(), "CsvWriter ready: {}", dir_);
+  return true;
+}
+
+bool CsvWriter::EnsureDirExists(const std::string& path) {
   std::string cur;
-  for (char ch : dir) {
+  for (char ch : path) {
     cur += ch;
     if (ch == '/') mkdir(cur.c_str(), 0755);
   }
-  mkdir(dir.c_str(), 0755);
+  return true;
+}
 
-  std::string trade_path = dir + "/trades.csv";
-  trade_file_.open(trade_path, std::ios::out | std::ios::trunc);
+std::string CsvWriter::TimestampToDate(uint64_t usec_since_epoch) {
+  // Howard Hinnant civil_from_days, zero-allocation
+  uint64_t days = usec_since_epoch / kUsecsPerDay;
+
+  uint64_t z = days + 719468;
+  uint64_t era = z / 146097;
+  uint64_t doe = z - era * 146097;
+  uint64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  uint64_t y = yoe + era * 400;
+  uint64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  uint64_t mp = (5 * doy + 2) / 153;
+  uint64_t d = doy - (153 * mp + 2) / 5 + 1;
+  uint64_t m = mp + (mp < 10 ? 3 : -9);
+  y += (m <= 2);
+
+  char buf[11];
+  std::snprintf(buf, sizeof(buf), "%04llu-%02llu-%02llu",
+                static_cast<unsigned long long>(y),
+                static_cast<unsigned long long>(m),
+                static_cast<unsigned long long>(d));
+  return buf;
+}
+
+bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
+  if (exchange_ts == 0) exchange_ts = 1;
+
+  uint64_t day = exchange_ts / kUsecsPerDay;
+  if (day == current_date_day_ && trade_file_.is_open())
+    return true;  // fast path: same day, no rotation
+
+  Close();
+
+  current_date_ = TimestampToDate(exchange_ts);
+  current_date_day_ = day;
+
+  // Open trade file (append mode, write header if new)
+  std::string trade_path = dir_ + "trades_" + current_date_ + ".csv";
+  bool trade_is_new = (access(trade_path.c_str(), F_OK) != 0);
+  trade_file_.open(trade_path, std::ios::out | std::ios::app);
   if (!trade_file_.is_open()) {
     LOG_ERROR(GetLogger(), "CsvWriter: failed to open {}", trade_path);
     return false;
   }
-  trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction,symbol\n";
+  if (trade_is_new)
+    trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction,symbol\n";
 
-  std::string ob_path = dir + "/orderbook.csv";
-  orderbook_file_.open(ob_path, std::ios::out | std::ios::trunc);
+  // Open orderbook file
+  std::string ob_path = dir_ + "orderbook_" + current_date_ + ".csv";
+  bool ob_is_new = (access(ob_path.c_str(), F_OK) != 0);
+  orderbook_file_.open(ob_path, std::ios::out | std::ios::app);
   if (!orderbook_file_.is_open()) {
     LOG_ERROR(GetLogger(), "CsvWriter: failed to open {}", ob_path);
     return false;
   }
-  // Header written on first AppendOrderbook call (dynamic columns per depth_level)
+  if (ob_is_new) depth_level_ = 0;  // trigger header on first orderbook write
 
-  LOG_INFO(GetLogger(), "CsvWriter opened: {} ({})", dir, exchange);
   return true;
 }
 
 void CsvWriter::AppendTick(const TickData& tick) {
-  if (!trade_file_.is_open()) return;
+  if (!RotateIfNeeded(tick.exchange_timestamp)) return;
   trade_file_ << tick.exchange_timestamp << ","
               << tick.local_timestamp << ","
               << tick.price << ","
@@ -55,42 +112,35 @@ void CsvWriter::AppendTick(const TickData& tick) {
 void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                                 uint64_t local_ts, std::string_view symbol,
                                 uint32_t depth_level) {
+  if (!RotateIfNeeded(exchange_ts)) return;
   if (!orderbook_file_.is_open()) return;
 
-  auto bids = lob.TopBids(depth_level);
-  auto asks = lob.TopAsks(depth_level);
-
-  // Write header with correct column count (idempotent via tellp check)
-  if (orderbook_file_.tellp() == 0) {
+  if (depth_level_ == 0) {
+    depth_level_ = depth_level;
     orderbook_file_ << "exchange_timestamp,local_timestamp,symbol";
-    for (uint32_t i = 0; i < depth_level; ++i) {
+    for (uint32_t i = 0; i < depth_level_; ++i)
       orderbook_file_ << ",AskPrice" << (i + 1) << ",AskSize" << (i + 1)
                       << ",BidPrice" << (i + 1) << ",BidSize" << (i + 1);
-    }
     orderbook_file_ << "\n";
   }
 
-  orderbook_file_ << exchange_ts << "," << local_ts << "," << symbol;
+  auto bids = lob.TopBids(depth_level_);
+  auto asks = lob.TopAsks(depth_level_);
 
-  for (uint32_t i = 0; i < depth_level; ++i) {
-    double ap = (i < asks.size()) ? asks[i].price : 0.0;
-    double aq = (i < asks.size()) ? asks[i].quantity : 0.0;
-    double bp = (i < bids.size()) ? bids[i].price : 0.0;
-    double bq = (i < bids.size()) ? bids[i].quantity : 0.0;
-    orderbook_file_ << "," << ap << "," << aq << "," << bp << "," << bq;
+  orderbook_file_ << exchange_ts << "," << local_ts << "," << symbol;
+  for (uint32_t i = 0; i < depth_level_; ++i) {
+    orderbook_file_ << ","
+                    << (i < asks.size() ? asks[i].price : 0.0) << ","
+                    << (i < asks.size() ? asks[i].quantity : 0.0) << ","
+                    << (i < bids.size() ? bids[i].price : 0.0) << ","
+                    << (i < bids.size() ? bids[i].quantity : 0.0);
   }
   orderbook_file_ << "\n";
 }
 
 void CsvWriter::Close() {
-  if (trade_file_.is_open()) {
-    trade_file_.flush();
-    trade_file_.close();
-  }
-  if (orderbook_file_.is_open()) {
-    orderbook_file_.flush();
-    orderbook_file_.close();
-  }
+  if (trade_file_.is_open()) { trade_file_.flush(); trade_file_.close(); }
+  if (orderbook_file_.is_open()) { orderbook_file_.flush(); orderbook_file_.close(); }
 }
 
 }  // namespace sqc

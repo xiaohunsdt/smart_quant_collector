@@ -24,7 +24,8 @@ class MmapStorageEngine {
   MmapStorageEngine(const MmapStorageEngine&) = delete;
   MmapStorageEngine& operator=(const MmapStorageEngine&) = delete;
 
-  bool OpenOrCreate(const std::string& output_path);
+  // file_prefix: "tick" or "ob" to distinguish file types
+  bool OpenOrCreate(const std::string& output_path, const std::string& file_prefix);
   void AppendRecord(const TickData& tick, uint32_t storage_target);
   void Sync();
   void Close();
@@ -39,6 +40,7 @@ class MmapStorageEngine {
   MmapMetaHeader* meta_header_ = nullptr;
   uint64_t current_mapped_offset_ = 64;  // after header
   std::string output_path_;
+  std::string file_prefix_;
   int file_sequence_ = 0;
 };
 
