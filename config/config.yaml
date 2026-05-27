@@ -1,0 +1,88 @@
+global:
+  environment: "production"
+  log_level: "info"
+  cpu_affinity: true
+  log_file_path: "./log/collector.log"
+
+threading_matrix:
+  network_core: 2
+  parser_cores: [3, 4]
+  storage_core: 5
+  pub_core: 6
+  telemetry_core: 7
+
+telemetry:
+  prometheus_enabled: true
+  listen_port: 8080
+  report_interval_ms: 1000
+
+gateway:
+  unified_pub_endpoint: "tcp://*:5555"
+  internal_router: "ipc:///tmp/gateway_router.ipc"
+  registered_channels:
+    - "ipc:///tmp/binance_spot.ipc"
+    - "ipc:///tmp/binance_perpetual.ipc"
+    - "ipc:///tmp/gateio_perpetual.ipc"
+
+storage:
+  use_engine: "csv"
+  dolphindb:
+    host: "127.0.0.1"
+    port: 8848
+    user: "admin"
+    password: "123"
+    buffer_size: 2000
+    flush_interval_ms: 10
+  mmap:
+    output_path: "./mmap_cache/"
+    sync_interval_records: 10000
+  csv:
+    output_path: "./trade_data/"
+
+exchanges:
+  - name: "binance"
+    enabled: false
+    channels:
+      - type: spot
+        ws_url: "wss://stream.binance.com:9443/ws"
+        symbols:
+          - name: "BTCUSDT"
+            depth_level: 5
+            record_tick: true
+          - name: "ETHUSDT"
+            depth_level: 20
+            record_tick: true
+      - type: perpetual
+        ws_url: "wss://fstream.binance.com/ws"
+        symbols:
+          - name: "BTCUSDT"
+            depth_level: 5
+            record_tick: true
+  - name: "gateio"
+    enabled: true
+    channels:
+      # - type: spot
+      #   ws_url: "wss://api.gateio.ws/ws/v4/"
+      #   symbols:
+      #     - name: "BTCUSDT"
+      #       depth_level: 10
+      #       record_tick: true
+      #     - name: "ETHUSDT"
+      #       depth_level: 20
+      #       record_tick: true
+      #     - name: "SOLUSDT"
+      #       depth_level: 20
+      #       record_tick: true
+      - type: perpetual
+        ws_url: "wss://fx-ws.gateio.ws/v4/ws/usdt"
+        symbols:
+          - name: "BTC_USDT"
+            enabled: true
+            depth_level: 10
+            record_tick: true
+          - name: "ETH_USDT"
+            depth_level: 20
+            record_tick: true
+          - name: "SOL_USDT"
+            depth_level: 20
+            record_tick: true

@@ -1,0 +1,82 @@
+#include "lockstep_fsm.h"
+
+#include "local_lob.h"
+#include "quill/LogMacros.h"
+#include "common/logger_init.h"
+#include "snapshot_client.h"
+
+namespace sqc {
+
+OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob) : lob_(lob) {}
+
+void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) {
+  if (state_ == SyncState::SYNCING) {
+    // Defensive check 1: 3-second timeout or ring buffer overflow → retry
+    auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
+    bool timed_out =
+        (now - snapshot_request_time_ > std::chrono::seconds(3));
+    bool overflow = ring_buffer_.full();
+
+    if (timed_out || overflow) {
+      sync_retry_count_++;
+      if (sync_retry_count_ >= 3) {
+        // Defensive check 2: 3 consecutive failures → force align
+        LOG_WARNING(GetLogger(),
+                    "LockStep FSM: 3 consecutive sync failures, force aligning");
+        state_ = SyncState::ACTIVE;
+        sync_retry_count_ = 0;
+        lob_.ForceAlignWithEvent(event);
+        ring_buffer_.clear();
+        return;
+      }
+      LOG_WARNING(GetLogger(),
+                  "LockStep FSM: sync retry {}/3 (timeout={}, overflow={})",
+                  sync_retry_count_, timed_out, overflow);
+      ResetSyncing();
+      return;
+    }
+    ring_buffer_.push_back(event);  // buffer events while syncing
+  } else {
+    // ACTIVE: normal update
+    lob_.UpdateDepth(event);
+  }
+}
+
+void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
+                                               const OrderbookSnapshot& snapshot) {
+  if (state_ != SyncState::SYNCING) return;
+
+  lob_.ApplySnapshot(snapshot);
+  uint64_t current_id = snapshot_last_id;
+
+  // Lock-step replay from ring buffer
+  for (const auto& next_event : ring_buffer_) {
+    if (next_event.u <= current_id) continue;
+    if (next_event.U <= current_id + 1 && next_event.u >= current_id + 1) {
+      lob_.UpdateDepth(next_event);
+      current_id = next_event.u;
+    }
+  }
+
+  last_update_id_ = current_id;
+  state_ = SyncState::ACTIVE;
+  sync_retry_count_ = 0;
+  ring_buffer_.clear();
+  LOG_INFO(GetLogger(),
+           "LockStep FSM: sync complete, last_update_id={}", current_id);
+}
+
+void OrderbookStateMachine::RequestHTTPSnapshot() {
+  snapshot_request_time_ =
+      use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
+  // Snapshot is requested externally; OnSnapshotReturned is called when it arrives
+  LOG_INFO(GetLogger(), "LockStep FSM: requesting HTTP snapshot");
+}
+
+void OrderbookStateMachine::ResetSyncing() {
+  ring_buffer_.clear();
+  state_ = SyncState::SYNCING;
+  RequestHTTPSnapshot();
+}
+
+}  // namespace sqc

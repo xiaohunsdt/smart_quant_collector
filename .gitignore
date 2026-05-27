@@ -1,0 +1,28 @@
+# Build artifacts
+build/
+build-*/
+build_*/
+
+# Coverage profiling data
+*.profraw
+*.profdata
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+conan_cache/
+_deps/
+log/
+trade_data/
+mmap_cache/
