@@ -24,16 +24,22 @@ StorageRouter::StorageRouter(const StorageConfig& storage_cfg,
   if (use_engine_ == "csv") {
     for (const auto& ex : exchanges) {
       if (!ex.enabled) continue;
-      CsvWriter w;
-      w.Open(storage_cfg.csv.output_path, ex.name);
-      csv_writers_.emplace(ex.name, std::move(w));
+      for (const auto& ch : ex.channels) {
+        std::string key = ex.name + "_" + ch.type;
+        if (csv_writers_.count(key)) continue;
+        CsvWriter w;
+        w.Open(storage_cfg.csv.output_path, key);
+        csv_writers_.emplace(std::move(key), std::move(w));
+      }
     }
   }
 }
 
-void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange) {
+void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
+                               std::string_view channel_type) {
   if (use_engine_ == "csv") {
-    auto it = csv_writers_.find(std::string(exchange));
+    auto key = std::string(exchange) + "_" + std::string(channel_type);
+    auto it = csv_writers_.find(key);
     if (it != csv_writers_.end()) it->second.AppendTick(tick);
   } else if (use_engine_ == "mmap") {
     mmap_.AppendRecord(tick, 0);
@@ -50,9 +56,11 @@ void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange) {
 
 void StorageRouter::RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                                     uint64_t local_ts, std::string_view symbol,
-                                    uint32_t depth_level, std::string_view exchange) {
+                                    uint32_t depth_level, std::string_view exchange,
+                                    std::string_view channel_type) {
   if (use_engine_ == "csv") {
-    auto it = csv_writers_.find(std::string(exchange));
+    auto key = std::string(exchange) + "_" + std::string(channel_type);
+    auto it = csv_writers_.find(key);
     if (it != csv_writers_.end())
       it->second.AppendOrderbook(lob, exchange_ts, local_ts, symbol, depth_level);
   } else if (use_engine_ == "mmap") {

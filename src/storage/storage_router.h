@@ -22,11 +22,13 @@ class StorageRouter {
   StorageRouter(const StorageConfig& storage_cfg,
                 const std::vector<ExchangeConfig>& exchanges);
 
-  void RouteTick(const TickData& tick, std::string_view exchange);
+  void RouteTick(const TickData& tick, std::string_view exchange,
+                  std::string_view channel_type);
 
   void RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                       uint64_t local_ts, std::string_view symbol,
-                      uint32_t depth_level, std::string_view exchange);
+                      uint32_t depth_level, std::string_view exchange,
+                      std::string_view channel_type);
 
   void FlushAndClose();
 

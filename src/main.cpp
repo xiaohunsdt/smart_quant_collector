@@ -123,7 +123,8 @@ int main(int argc, char* argv[]) {
       if (!tick) return;
       const auto* info = channel_registry.Lookup(tick->channel_id);
       const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-      storage_router.RouteTick(*tick, exchange);
+      const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+      storage_router.RouteTick(*tick, exchange, type);
       pub_worker.PublishTick(tick);
       WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
         }, [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
@@ -132,7 +133,8 @@ int main(int argc, char* argv[]) {
           if (lob) {
             const auto* info = channel_registry.Lookup(channel_id);
             const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, event.local_timestamp, event.symbol, lob->depth_level(), exchange);
+            const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, event.local_timestamp, event.symbol, lob->depth_level(), exchange, type);
           }
         });
 
