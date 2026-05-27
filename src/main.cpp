@@ -1,5 +1,4 @@
 #include <chrono>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -22,7 +21,6 @@
 #include "orderbook/local_lob.h"
 #include "orderbook/lockstep_fsm.h"
 #include "orderbook/orderbook_manager.h"
-#include "pubsub/gateway_router.h"
 #include "pubsub/gateway_supervisor.h"
 #include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"

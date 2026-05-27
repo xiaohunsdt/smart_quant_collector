@@ -1,6 +1,5 @@
 #include "gateio_parser.h"
 #include <cstring>
-#include <string>
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include "src/common/tick_data.h"

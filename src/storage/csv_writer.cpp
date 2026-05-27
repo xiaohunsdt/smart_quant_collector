@@ -1,7 +1,6 @@
 #include "csv_writer.h"
 
 #include <sys/stat.h>
-#include <errno.h>
 #include <cstdio>
 
 #include "quill/LogMacros.h"
