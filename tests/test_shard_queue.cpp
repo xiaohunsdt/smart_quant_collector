@@ -102,6 +102,31 @@ TEST(OnMessageParsePattern, ExtractSymbolGateioOrderBookObject) {
   EXPECT_EQ(symbol, "ETH_USDT");
 }
 
+TEST(OnMessageParsePattern, GateioSubscribeConfirmationIsControlMessage) {
+  // The actual message that was confusing the system:
+  // subscription confirmations have no "contract" field and should be skipped
+  constexpr const char* kJson = R"({"time":1779919271,"time_ms":1779919271077,"conn_id":"03a45eb1ad41ffdc","trace_id":"6aa71a76ba9301860555cbdadcc91df7","channel":"futures.tickers","event":"subscribe","payload":["BTC_USDT","ETH_USDT","SOL_USDT"],"result":{"status":"success"}})";
+  size_t size = std::strlen(kJson);
+
+  std::shared_ptr<char[]> json_data = std::make_shared<char[]>(size + kSimdjsonPadding);
+  std::memcpy(json_data.get(), kJson, size);
+  std::memset(json_data.get() + size, 0, kSimdjsonPadding);
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ASSERT_FALSE(parser.iterate(json_data.get(), size, size + kSimdjsonPadding).get(doc));
+
+  // "event" is "subscribe" — should be filtered out, not treated as data
+  std::string_view event = doc["event"];
+  EXPECT_EQ(event, "subscribe");
+
+  // "contract" doesn't exist in subscribe confirmations
+  bool contract_missing = false;
+  try { (void)std::string_view(doc["result"]["contract"]); }
+  catch (const simdjson::simdjson_error&) { contract_missing = true; }
+  EXPECT_TRUE(contract_missing) << "subscribe confirmation should not have top-level contract";
+}
+
 TEST(OnMessageParsePattern, TruncatedJsonFailsGracefully) {
   // Simulate truncated data as seen in the user's log
   constexpr const char* kTruncated = R"({"time":1779918309,"time_ms":1779918309804,"conn_id":"ef0a0208d049f24c","trace_i)";

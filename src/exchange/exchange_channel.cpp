@@ -124,7 +124,7 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
   int n = ++msg_count;
   if (n <= 3) {
     LOG_INFO(GetLogger(), "OnMessage #{} received {} bytes", n, size);
-    std::string preview(data, data + std::min(size, size_t(80)));
+    std::string preview(data, data + std::min(size, size_t(200)));
     LOG_INFO(GetLogger(), "OnMessage data: {}", preview);
   }
   if (size == 0 || shard_queues_.empty()) return;
@@ -134,19 +134,34 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
   std::memcpy(json_data.get(), data, size);
   std::memset(json_data.get() + size, 0, kSimdjsonPadding);
 
-  // Peek parse for symbol -> channel_id (uses same buffer, no extra copy)
+  // Peek parse to (1) filter control messages and (2) extract symbol -> channel_id
   uint32_t channel_id = 0;
   simdjson::ondemand::parser peek_parser;
   simdjson::ondemand::document peek_doc;
   auto err = peek_parser.iterate(json_data.get(), size, size + kSimdjsonPadding).get(peek_doc);
   if (!err) {
     try {
+      // Skip control messages (subscribe/unsubscribe confirmations, etc.)
+      if (spec_.exchange_name == "gateio") {
+        std::string_view event = peek_doc["event"];
+        if (event == "subscribe" || event == "unsubscribe"){
+          LOG_INFO(GetLogger(), "OnMessage #{} received control message: {}", n, event);
+          return;
+        } 
+      } else {
+        // Binance subscription responses have "result" but no "e" field
+        std::string_view etype;
+        try { etype = std::string_view(peek_doc["e"]); }
+        catch (...) { return; }  // non-data message
+      }
+
+      // Extract symbol for channel routing
       std::string_view symbol;
       if (spec_.exchange_name == "binance") {
         symbol = std::string_view(peek_doc["s"]);
       } else {
-        // Gate.io: "contract" is nested inside "result"
-        // futures.tickers: result is an array; futures.order_book: result is an object
+        // Gate.io data messages: "contract" is nested inside "result"
+        // futures.tickers: result[0].contract; futures.order_book: result.contract
         auto result = peek_doc["result"];
         simdjson::ondemand::array arr;
         if (!result.get_array().get(arr)) {
