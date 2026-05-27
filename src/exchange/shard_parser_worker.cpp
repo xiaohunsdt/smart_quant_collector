@@ -19,7 +19,7 @@ void ShardParserWorker::Run() {
   LOG_INFO(GetLogger(), "ShardParserWorker started on core {}", core_id_);
   while (true) {
     RawMessage msg = input_queue_.PopBlocking();
-    if (msg.data.empty() && msg.size == 0) {
+    if (!msg.data) {
       LOG_INFO(GetLogger(), "ShardParserWorker core {} received poison pill", core_id_);
       break;
     }
@@ -33,15 +33,11 @@ void ShardParserWorker::Run() {
 }
 
 void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
-  // Add simdjson padding to the string copy
-  std::string padded = msg.data;
-  padded.resize(padded.size() + kSimdjsonPadding, '\0');
-
+  // Buffer already has SIMDJSON_PADDING bytes appended by OnMessage
   simdjson::ondemand::document doc;
-  auto err = parser_.iterate(padded.data(), msg.size, padded.size()).get(doc);
+  auto err = parser_.iterate(msg.data.get(), msg.size, msg.size + kSimdjsonPadding).get(doc);
   if (err) {
-    std::string preview(msg.data.data(), msg.data.data() + std::min(msg.size, size_t(80)));
-    if (auto* log = GetLogger()) LOG_ERROR(log, "iterate failed on {} bytes preview: {}", msg.size, preview);
+    if (auto* log = GetLogger()) LOG_ERROR(log, "iterate err on {} bytes: {}", msg.size, simdjson::error_message(err));
     return;
   }
 
