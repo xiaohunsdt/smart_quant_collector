@@ -1,7 +1,5 @@
 #include "binance_parser.h"
 #include <cstring>
-#include <string>
-#include <limits>
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include "common/string_utils.h"
@@ -12,8 +10,10 @@ namespace binance_parser {
 
 ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
   ParseResult result;
+  auto e_field = doc.find_field("e");
+  if (e_field.error()) return result;
   try {
-    std::string_view event_type = doc["e"].get_string();
+    std::string_view event_type = e_field.get_string();
     if (event_type == "trade" || event_type == "aggTrade") {
       result.type = ParsedType::TICK;
       if (!ParseTradeEvent(doc, result.tick, channel_id)) {
@@ -33,13 +33,15 @@ ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id)
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
+    // Binance trade field order: e, E, s, t, p, q, b, a, T, m, M
+    // ("e" already consumed by ParseMessage, so start from E)
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
+    std::string_view sym = doc["s"].get_string();
+    out.trade_id = static_cast<uint64_t>(doc["t"].get_int64());
     out.price = SvToDouble(doc["p"].get_string());
     out.quantity = SvToDouble(doc["q"].get_string());
-    out.trade_id = static_cast<uint64_t>(doc["t"].get_int64());
     out.is_buyer_maker = doc["m"].get_bool();
     out.channel_id = channel_id;
-    std::string_view sym = doc["s"].get_string();
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
     out.symbol[std::min(sym.size(), sizeof(out.symbol) - 1)] = '\0';
     return true;
@@ -54,11 +56,13 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
+    // Binance depthUpdate field order: e, E, s, U, u, b, a
+    // ("e" already consumed by ParseMessage, so start from E)
+    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
+    std::string_view sym = doc["s"].get_string();
     out.U = static_cast<uint64_t>(doc["U"].get_int64());
     out.u = static_cast<uint64_t>(doc["u"].get_int64());
     out.channel_id = channel_id;
-    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
-    std::string_view sym = doc["s"].get_string();
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
 
     out.bid_count = 0;
