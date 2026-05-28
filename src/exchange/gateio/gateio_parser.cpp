@@ -12,8 +12,8 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     // IMPORTANT: ondemand requires forward-only field access — must match JSON order.
     // JSON order: time, time_ms, channel, event, result
 
-    // 1. time (int64 seconds) — comes before "result" in JSON
-    out.exchange_timestamp = doc["time"].get_uint64() * 1'000'000ULL;
+    // 1. time (int64 seconds) — consume for JSON field order; actual ts from item.t
+    (void)doc["time"].get_uint64();
 
     // 2. event — comes before "result"
     std::string_view ev = doc["event"].get_string();
