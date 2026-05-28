@@ -10,6 +10,7 @@
 
 #include "src/common/tick_data.h"
 #include "src/config/config_struct.h"
+#include "src/exchange/exchange_adapter.h"
 #include "csv_writer.h"
 #include "dolphindb_client.h"
 #include "mmap_engine.h"
@@ -24,18 +25,18 @@ class StorageRouter {
                 const std::vector<ExchangeConfig>& exchanges);
 
   void RouteTick(const TickData& tick, std::string_view exchange,
-                  std::string_view channel_type);
+                  ChannelType channel_type);
 
   void RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                       uint64_t local_ts, std::string_view symbol,
                       uint32_t depth_level, std::string_view exchange,
-                      std::string_view channel_type);
+                      ChannelType channel_type);
 
   void FlushAndClose();
 
  private:
   void FlushActiveBuffer();
-  static std::string MakeKey(std::string_view exchange, std::string_view type,
+  static std::string MakeKey(std::string_view exchange, ChannelType type,
                              std::string_view symbol);
 
   std::string use_engine_;

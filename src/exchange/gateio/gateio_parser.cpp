@@ -8,7 +8,7 @@
 namespace sqc {
 namespace gateio_parser {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view /*channel_type*/) {
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, ChannelType /*channel_type*/) {
   ParseResult result;
   try {
     std::string_view channel = doc["channel"].get_string();

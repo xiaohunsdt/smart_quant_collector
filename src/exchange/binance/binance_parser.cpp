@@ -8,7 +8,7 @@
 namespace sqc {
 namespace binance_parser {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view channel_type) {
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, ChannelType channel_type) {
   ParseResult result;
   auto e_field = doc.find_field("e");
   if (e_field.error()) return result;
@@ -59,7 +59,7 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
   }
 }
 
-bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view channel_type) {
+bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, ChannelType channel_type) {
   try {
     // Binance depthUpdate: spot has e,E,s,U,u,b,a; futures adds T,pu.
     // ("e" already consumed by ParseMessage, so start from E)
@@ -68,7 +68,7 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
     // Spot lacks "pu"; futures provides it.
-    if (channel_type == "perpetual") {
+    if (channel_type == ChannelType::Perpetual) {
       out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
     } else {
       out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;

@@ -227,7 +227,7 @@ TEST(GateioParserTest, ParseMessageDispatchesToDepthUpdate) {
 	auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
-	auto result = gateio_parser::ParseMessage(doc, 7, "spot");
+	auto result = gateio_parser::ParseMessage(doc, 7, ChannelType::Spot);
 	EXPECT_EQ(result.type, ParsedType::DEPTH);
 	EXPECT_EQ(result.depth.first_update_id, 81045888519u);
 }
@@ -243,7 +243,7 @@ TEST(GateioParserTest, ParseMessageDispatchesToBookTicker) {
 	auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
-	auto result = gateio_parser::ParseMessage(doc, 7, "spot");
+	auto result = gateio_parser::ParseMessage(doc, 7, ChannelType::Spot);
 	EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
 	EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 74486.0);
 }

@@ -74,21 +74,21 @@ int main(int argc, char* argv[]) {
       continue;
     }
     for (const auto& ch : ex.channels) {
-      std::string rest_host(adapter->endpoints(ch.type).rest_host);
+      std::string rest_host(adapter->endpoints(ParseChannelType(ch.type)).rest_host);
 
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
 
         ChannelInfo info;
         info.exchange = ex.name;
-        info.type = ch.type;
+        info.type = ParseChannelType(ch.type);
         info.symbol = sym.name;
         uint32_t id = channel_registry.Register(info);
         orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
-        orderbook_manager.SetChannelInfo(id, {rest_host, ch.type, sym.name, sym.depth_level, adapter->fetch_snapshot});
+        orderbook_manager.SetChannelInfo(id, {rest_host, ParseChannelType(ch.type), sym.name, sym.depth_level, adapter->fetch_snapshot});
 
         auto chan = std::make_shared<SymbolChannel>(
-            adapter, ch.type, sym.name, sym.depth_level, id,
+            adapter, ParseChannelType(ch.type), sym.name, sym.depth_level, id,
             io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
       }
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
       [&](TickData tick) -> void {
       const auto* info = channel_registry.Lookup(tick.channel_id);
       const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-      const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+      const ChannelType type = info ? info->type : ChannelType::Spot;
       uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
       tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
       storage_router.RouteTick(tick, exchange, type);
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
           if (lob) {
             const auto* info = channel_registry.Lookup(channel_id);
             const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-            const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+            const ChannelType type = info ? info->type : ChannelType::Spot;
             uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             uint64_t latency_ns = now_ns - event.local_timestamp;
             storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
             if (lob) {
               const auto* info = channel_registry.Lookup(channel_id);
               const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-              const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+              const ChannelType type = info ? info->type : ChannelType::Spot;
               uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
               uint64_t latency_ns = now_ns - event.local_timestamp;
               storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,

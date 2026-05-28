@@ -11,7 +11,7 @@ namespace sqc {
 namespace gateio_parser {
 
 // Unified entry point: parses the document and determines event type internally.
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view channel_type);
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, ChannelType channel_type);
 
 // Low-level parsers (exposed for unit tests)
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id);

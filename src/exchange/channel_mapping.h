@@ -4,12 +4,14 @@
 #include <string>
 #include <unordered_map>
 
+#include "src/exchange/exchange_adapter.h"
+
 namespace sqc {
 
 struct ChannelInfo {
   uint32_t id;
   std::string exchange;
-  std::string type;    // "spot" or "perpetual"
+  ChannelType type = ChannelType::Spot;
   std::string symbol;
 };
 

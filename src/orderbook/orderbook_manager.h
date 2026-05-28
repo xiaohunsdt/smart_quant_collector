@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "src/common/tick_data.h"
+#include "src/exchange/exchange_adapter.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -15,10 +16,10 @@ class OrderbookStateMachine;
 
 struct ChannelSnapshotInfo {
   std::string rest_host;
-  std::string channel_type;
+  ChannelType channel_type = ChannelType::Spot;
   std::string symbol;
   uint32_t depth_level = 10;
-  OrderbookSnapshot (*fetch_snapshot)(std::string_view, std::string_view, std::string_view) = nullptr;
+  OrderbookSnapshot (*fetch_snapshot)(std::string_view, ChannelType, std::string_view) = nullptr;
 };
 
 class OrderbookManager {

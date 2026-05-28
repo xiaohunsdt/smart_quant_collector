@@ -39,7 +39,7 @@ static void BM_BinanceParseTrade(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = binance_parser::ParseMessage(doc, 1, "spot");
+    auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }
@@ -57,7 +57,7 @@ static void BM_GateioParseTicker(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = gateio_parser::ParseMessage(doc, 2, "spot");
+    auto result = gateio_parser::ParseMessage(doc, 2, ChannelType::Spot);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }

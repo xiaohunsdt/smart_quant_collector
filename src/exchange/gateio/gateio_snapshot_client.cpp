@@ -71,15 +71,11 @@ static bool ParseDepth(const std::string& json, OrderbookSnapshot& out) {
   return true;
 }
 
-OrderbookSnapshot FetchSnapshot(std::string_view rest_host,
-                                 std::string_view channel_type,
-                                 std::string_view symbol,
-                                 uint32_t limit) {
+OrderbookSnapshot FetchSnapshot(std::string_view rest_host, ChannelType channel_type, std::string_view symbol, uint32_t limit) {
   OrderbookSnapshot snapshot{};
 
-  bool is_spot = (channel_type == "spot");
-  const char* api_path = is_spot ? "/api/v4/spot/order_book"
-                                 : "/api/v4/futures/usdt/order_book";
+  bool is_spot = (channel_type == ChannelType::Spot);
+  const char* api_path = is_spot ? "/api/v4/spot/order_book" : "/api/v4/futures/usdt/order_book";
 
   std::string target = api_path;
   target += "?";
@@ -89,8 +85,7 @@ OrderbookSnapshot FetchSnapshot(std::string_view rest_host,
   target += std::to_string(limit);
   if (is_spot) target += "&with_id=true";
 
-  LOG_INFO(GetLogger(), "GateioSnapshot: fetching {} order_book {} limit={}",
-           is_spot ? "spot" : "futures", symbol, limit);
+  LOG_INFO(GetLogger(), "GateioSnapshot: fetching {} order_book {} limit={}", is_spot ? "spot" : "futures", symbol, limit);
 
   std::string body = HttpsGet(rest_host, target);
   if (body.empty()) {

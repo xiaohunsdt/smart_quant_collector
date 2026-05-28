@@ -49,10 +49,10 @@ struct RawMessage {
   uint32_t channel_id = 0;
   uint64_t recv_timestamp = 0;  // steady_clock ns, set at OnMessage
   char exchange[16] = {};       // fixed-size, zero-allocation
-  char channel_type[12] = {};   // "spot" or "perpetual"
+  ChannelType channel_type = ChannelType::Spot;
 
   // Hot-path parse function pointer (set by SymbolChannel::OnMessage).
-  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view channel_type) = nullptr;
+  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id, ChannelType channel_type) = nullptr;
 };
 
 // Ring-buffer queue with MPSC safety on the producer side.

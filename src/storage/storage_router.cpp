@@ -1,18 +1,22 @@
 #include "storage_router.h"
 
+#include <cstring>
+
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include "src/orderbook/local_lob.h"
 
 namespace sqc {
 
-std::string StorageRouter::MakeKey(std::string_view exchange, std::string_view type,
+std::string StorageRouter::MakeKey(std::string_view exchange, ChannelType type,
                                    std::string_view symbol) {
+  auto name = ChannelTypeName(type);
+  size_t name_len = std::strlen(name);
   std::string key;
-  key.reserve(exchange.size() + type.size() + symbol.size() + 3);
+  key.reserve(exchange.size() + name_len + symbol.size() + 3);
   key += exchange;
   key += '/';
-  key += type;
+  key += name;
   key += '/';
   key += symbol;
   return key;
@@ -39,7 +43,7 @@ StorageRouter::StorageRouter(const StorageConfig& storage_cfg,
     for (const auto& ch : ex.channels) {
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
-        auto key = MakeKey(ex.name, ch.type, sym.name);
+        auto key = MakeKey(ex.name, ParseChannelType(ch.type), sym.name);
 
         if (use_engine_ == "csv") {
           CsvWriter w;
@@ -67,7 +71,7 @@ StorageRouter::StorageRouter(const StorageConfig& storage_cfg,
 }
 
 void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
-                               std::string_view channel_type) {
+                               ChannelType channel_type) {
   if (use_engine_ == "csv") {
     auto key = MakeKey(exchange, channel_type, tick.symbol);
     auto it = csv_writers_.find(key);
@@ -91,7 +95,7 @@ void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
 void StorageRouter::RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                                     uint64_t local_ts, std::string_view symbol,
                                     uint32_t depth_level, std::string_view exchange,
-                                    std::string_view channel_type) {
+                                    ChannelType channel_type) {
   auto key = MakeKey(exchange, channel_type, symbol);
 
   if (use_engine_ == "csv") {
