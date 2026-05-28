@@ -108,7 +108,7 @@ TEST(GateioParserTest, ParseRealOrderBookAll) {
   EXPECT_STREQ(event.symbol, "BTC_USDT");
   EXPECT_EQ(event.U, 113557080620u);
   EXPECT_EQ(event.u, 113557080620u);
-  EXPECT_EQ(event.exchange_timestamp, 1779923753000000ULL);
+  EXPECT_EQ(event.exchange_timestamp, 1779923753557000ULL);
 
   ASSERT_EQ(event.bid_count, 3u);
   EXPECT_DOUBLE_EQ(event.bids[0].price, 74486.0);

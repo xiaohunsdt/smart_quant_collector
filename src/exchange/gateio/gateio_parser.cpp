@@ -62,12 +62,14 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
     // Forward-only: access "time", "event", then "result" (JSON field order)
-    out.exchange_timestamp = doc["time"].get_uint64() * 1'000'000ULL;
+    // Consume "time" for field ordering; actual exchange_timestamp from result.t (ms)
+    (void)doc["time"].get_uint64();
 
     std::string_view ev = doc["event"].get_string();
     if (ev != "update" && ev != "all") return false;
 
     auto result = doc["result"];
+    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;  // ms → us
     out.U = result["id"].get_uint64();
     out.u = out.U;
     out.channel_id = channel_id;

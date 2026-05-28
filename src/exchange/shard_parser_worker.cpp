@@ -53,7 +53,7 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
     if (event_type == "trade" || event_type == "aggTrade" || event_type == "futures.tickers") {
       // Trade event
       auto tick = std::allocate_shared<TickData>(pool_.allocator());
-      tick->local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+      tick->local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
       bool ok = false;
       if (msg.exchange == "binance")
@@ -67,7 +67,7 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
       // Depth update event
       DepthUpdateEvent depth_event{};
       depth_event.local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+          std::chrono::system_clock::now().time_since_epoch()).count();
       bool ok = false;
       if (msg.exchange == "binance")
         ok = binance_parser::ParseDepthEvent(doc, depth_event, msg.channel_id);
