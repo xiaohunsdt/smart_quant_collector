@@ -29,6 +29,8 @@ class OrderbookManager {
   void SetChannelInfo(uint32_t channel_id, ChannelSnapshotInfo info);
   void OnTick(std::shared_ptr<TickData> tick);
   void OnDepthEvent(uint32_t channel_id, const DepthUpdateEvent& event);
+  // Returns true if best bid/ask prices changed.
+  bool OnBookTicker(uint32_t channel_id, const BookTickerEvent& event);
 
   LocalLOB* GetLOB(uint32_t channel_id);
   OrderbookStateMachine* GetFSM(uint32_t channel_id);

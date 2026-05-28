@@ -103,8 +103,7 @@ int main(int argc, char* argv[]) {
       const auto* info = channel_registry.Lookup(tick.channel_id);
       const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
       const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
-      uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::steady_clock::now().time_since_epoch()).count();
+      uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
       tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
       storage_router.RouteTick(tick, exchange, type);
       pub_worker.PublishTick(tick, i);
@@ -116,12 +115,26 @@ int main(int argc, char* argv[]) {
             const auto* info = channel_registry.Lookup(channel_id);
             const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
             const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
-            uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
+            uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             uint64_t latency_ns = now_ns - event.local_timestamp;
             storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
                                           event.symbol, lob->depth_level(), exchange, type);
           }
+        }, [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
+          bool changed = orderbook_manager.OnBookTicker(channel_id, event);
+          if (changed) {
+            auto* lob = orderbook_manager.GetLOB(channel_id);
+            if (lob) {
+              const auto* info = channel_registry.Lookup(channel_id);
+              const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
+              const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
+              uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+              uint64_t latency_ns = now_ns - event.local_timestamp;
+              storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
+                                            event.symbol, lob->depth_level(), exchange, type);
+            }
+          }
+          return changed;
         });
 
     parser_workers.push_back(std::move(worker));

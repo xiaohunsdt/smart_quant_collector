@@ -109,6 +109,15 @@ void SymbolChannel::Subscribe() {
                *depth_sub);
       ws_->Write(*depth_sub);
     });
+
+    auto book_ticker_sub = std::make_shared<std::string>(
+        R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})");
+    auto bt_timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(700));
+    bt_timer->async_wait([this, book_ticker_sub, bt_timer](boost::system::error_code) {
+      LOG_INFO(GetLogger(), "{}:{} sending bookTicker subscribe: {}", exchange_name_, symbol_,
+               *book_ticker_sub);
+      ws_->Write(*book_ticker_sub);
+    });
   } else if (exchange_name_ == "gateio") {
     auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();

@@ -119,8 +119,8 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
     depth_level_ = depth_level;
     orderbook_file_ << "exchange_timestamp,local_timestamp";
     for (uint32_t i = 0; i < depth_level_; ++i)
-      orderbook_file_ << ",AskPrice" << (i + 1) << ",AskSize" << (i + 1)
-                      << ",BidPrice" << (i + 1) << ",BidSize" << (i + 1);
+      orderbook_file_ << ",ask_price" << (i + 1) << ",ask_size" << (i + 1)
+                      << ",bid_price" << (i + 1) << ",bid_size" << (i + 1);
     orderbook_file_ << "\n";
   }
 
@@ -138,6 +138,7 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                     << (i < bid_count ? bids[i].quantity : 0.0);
   }
   orderbook_file_ << "\n";
+  LOG_INFO(GetLogger(), "RouteOrderbook: bid={}, ask={}, bid_volume={}, ask_volume={}", lob.BestBid(), lob.BestAsk(), lob.BestBidVolume(), lob.BestAskVolume());
 }
 
 void CsvWriter::Close() {

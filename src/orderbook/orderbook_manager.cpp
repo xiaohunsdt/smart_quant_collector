@@ -41,6 +41,14 @@ void OrderbookManager::OnDepthEvent(uint32_t channel_id, const DepthUpdateEvent&
   it->second->OnDepthEventReceived(event);
 }
 
+bool OrderbookManager::OnBookTicker(uint32_t channel_id, const BookTickerEvent& event) {
+  auto lob_it = lobs_.find(channel_id);
+  if (lob_it == lobs_.end()) return false;
+  return lob_it->second->UpdateBestPrice(
+      event.best_bid_price, event.best_bid_qty,
+      event.best_ask_price, event.best_ask_qty);
+}
+
 LocalLOB* OrderbookManager::GetLOB(uint32_t channel_id) {
   auto it = lobs_.find(channel_id);
   return it != lobs_.end() ? it->second.get() : nullptr;

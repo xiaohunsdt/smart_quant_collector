@@ -55,14 +55,14 @@ exchanges:
       - type: perpetual
         ws_url: "wss://fstream.binance.com/ws"
         symbols:
-          - name: "BTCUSDT"
-            depth_level: 10
-            record_tick: true
+          # - name: "BTCUSDT"
+          #   depth_level: 10
+          #   record_tick: true
           - name: "ETHUSDT"
             depth_level: 10
             record_tick: true
   - name: "gateio"
-    enabled: true
+    enabled: false
     channels:
       # - type: spot
       #   ws_url: "wss://api.gateio.ws/ws/v4/"

@@ -24,6 +24,11 @@ ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id)
       if (!ParseDepthEvent(doc, result.depth, channel_id)) {
         result.type = ParsedType::NONE;
       }
+    } else if (event_type == "bookTicker") {
+      result.type = ParsedType::BOOK_TICKER;
+      if (!ParseBookTickerEvent(doc, result.book_ticker, channel_id)) {
+        result.type = ParsedType::NONE;
+      }
     }
   } catch (const simdjson::simdjson_error& e) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance ParseMessage: {}", e.what());
@@ -93,6 +98,29 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     return false;
   } catch (...) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance depth parse: unknown error");
+    return false;
+  }
+}
+
+bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id) {
+  try {
+    // Binance bookTicker field order: e, u, s, b, B, a, A
+    // ("e" already consumed by ParseMessage)
+    std::string_view sym = doc["s"].get_string();
+    out.best_bid_price = SvToDouble(doc["b"].get_string());
+    out.best_bid_qty = SvToDouble(doc["B"].get_string());
+    out.best_ask_price = SvToDouble(doc["a"].get_string());
+    out.best_ask_qty = SvToDouble(doc["A"].get_string());
+    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
+    out.channel_id = channel_id;
+    std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
+    out.symbol[std::min(sym.size(), sizeof(out.symbol) - 1)] = '\0';
+    return true;
+  } catch (const simdjson::simdjson_error& e) {
+    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance bookTicker parse: {}", e.what());
+    return false;
+  } catch (...) {
+    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance bookTicker parse: unknown error");
     return false;
   }
 }

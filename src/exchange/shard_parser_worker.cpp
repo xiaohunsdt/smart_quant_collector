@@ -11,7 +11,11 @@
 
 namespace sqc {
 
-ShardParserWorker::ShardParserWorker(uint32_t core_id, ShardQueue& input_queue, TickHandler tick_handler, DepthHandler depth_handler) : core_id_(core_id), input_queue_(input_queue), tick_handler_(std::move(tick_handler)), depth_handler_(std::move(depth_handler)) {}
+ShardParserWorker::ShardParserWorker(uint32_t core_id, ShardQueue& input_queue, TickHandler tick_handler, DepthHandler depth_handler, BookTickerHandler book_ticker_handler)
+    : core_id_(core_id), input_queue_(input_queue),
+      tick_handler_(std::move(tick_handler)),
+      depth_handler_(std::move(depth_handler)),
+      book_ticker_handler_(std::move(book_ticker_handler)) {}
 
 void ShardParserWorker::Run() {
   LOG_INFO(GetLogger(), "ShardParserWorker started on core {}", core_id_);
@@ -48,6 +52,9 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
       } else if (result.type == binance_parser::ParsedType::DEPTH && depth_handler_) {
         result.depth.local_timestamp = msg.recv_timestamp;
         depth_handler_(msg.channel_id, result.depth);
+      } else if (result.type == binance_parser::ParsedType::BOOK_TICKER && book_ticker_handler_) {
+        result.book_ticker.local_timestamp = msg.recv_timestamp;
+        book_ticker_handler_(msg.channel_id, result.book_ticker);
       }
     } else if (std::string_view(msg.exchange) == "gateio") {
       auto result = gateio_parser::ParseMessage(doc, msg.channel_id);

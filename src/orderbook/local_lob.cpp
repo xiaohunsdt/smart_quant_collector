@@ -20,7 +20,7 @@ void LocalLOB::UpdateSide(PriceLevel* levels, uint32_t& count, uint32_t capacity
   for (; idx < count; ++idx) {
     if (levels[idx].price == price) {
       // Exact match: update or remove
-      if (qty == 0.0) {
+      if (qty <= 1e-12) {
         // Remove by shifting
         for (uint32_t j = idx; j + 1 < count; ++j)
           levels[j] = levels[j + 1];
@@ -39,7 +39,7 @@ void LocalLOB::UpdateSide(PriceLevel* levels, uint32_t& count, uint32_t capacity
     }
   }
 
-  if (qty == 0.0) return;  // nothing to insert
+  if (qty <= 1e-12) return;  // nothing to insert
 
   // Insert at idx, shift right
   if (count < capacity) {
@@ -79,6 +79,37 @@ void LocalLOB::ForceAlignWithEvent(const DepthUpdateEvent& event) {
   ask_count_ = event.ask_count;
 }
 
+bool LocalLOB::UpdateBestPrice(double best_bid_price, double best_bid_qty,
+                               double best_ask_price, double best_ask_qty) {
+  bool changed = false;
+
+  // Update best bid
+  if (bid_count_ == 0 || bids_[0].price != best_bid_price || bids_[0].quantity != best_bid_qty) {
+    changed = true;
+    if (bid_count_ == 0) {
+      bids_[0] = {best_bid_price, best_bid_qty};
+      bid_count_ = 1;
+    } else {
+      bids_[0].price = best_bid_price;
+      bids_[0].quantity = best_bid_qty;
+    }
+  }
+
+  // Update best ask
+  if (ask_count_ == 0 || asks_[0].price != best_ask_price || asks_[0].quantity != best_ask_qty) {
+    changed = true;
+    if (ask_count_ == 0) {
+      asks_[0] = {best_ask_price, best_ask_qty};
+      ask_count_ = 1;
+    } else {
+      asks_[0].price = best_ask_price;
+      asks_[0].quantity = best_ask_qty;
+    }
+  }
+
+  return changed;
+}
+
 double LocalLOB::BestBid() const {
   if (bid_count_ == 0) return 0.0;
   return bids_[0].price;
@@ -87,6 +118,16 @@ double LocalLOB::BestBid() const {
 double LocalLOB::BestAsk() const {
   if (ask_count_ == 0) return 0.0;
   return asks_[0].price;
+}
+
+double LocalLOB::BestBidVolume() const {
+  if (bid_count_ == 0) return 0.0;
+  return bids_[0].quantity;
+}
+
+double LocalLOB::BestAskVolume() const {
+  if (ask_count_ == 0) return 0.0;
+  return asks_[0].quantity;
 }
 
 uint32_t LocalLOB::TopBids(PriceLevel* out, uint32_t max_levels) const {

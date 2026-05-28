@@ -54,9 +54,29 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithoutEventField) {
   EXPECT_EQ(result.type, binance_parser::ParsedType::NONE);
 }
 
+TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
+  std::string json = R"({"e":"bookTicker","u":400900217,"s":"BNBUSDT","b":"25.19000000","B":"31.21000000","a":"25.20000000","A":"40.66000000","E":1716844800000})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_parser::ParseMessage(doc, 1);
+
+  EXPECT_EQ(result.type, binance_parser::ParsedType::BOOK_TICKER);
+  if (result.type == binance_parser::ParsedType::BOOK_TICKER) {
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 25.19);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_qty, 31.21);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_price, 25.20);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_qty, 40.66);
+    EXPECT_EQ(result.book_ticker.channel_id, 1);
+    EXPECT_STREQ(result.book_ticker.symbol, "BNBUSDT");
+  }
+}
+
 TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   // A message with an "e" field but an event type we don't handle.
-  std::string json = R"({"e":"bookTicker","u":400900217,"s":"BNBUSDT","b":"25.19000000","B":"31.21000000","a":"25.20000000","A":"40.66000000"})";
+  std::string json = R"({"e":"unknownEvent","s":"BNBUSDT","x":1})";
 
   simdjson::ondemand::parser parser;
   simdjson::ondemand::document doc;

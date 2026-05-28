@@ -26,6 +26,17 @@ struct DepthUpdateEvent {
   uint32_t ask_count = 0;
 };
 
+struct BookTickerEvent {
+  uint32_t channel_id;
+  uint64_t exchange_timestamp = 0;
+  uint64_t local_timestamp = 0;
+  char symbol[12] = {};
+  double best_bid_price = 0.0;
+  double best_bid_qty = 0.0;
+  double best_ask_price = 0.0;
+  double best_ask_qty = 0.0;
+};
+
 struct OrderbookSnapshot {
   uint64_t lastUpdateId;
 

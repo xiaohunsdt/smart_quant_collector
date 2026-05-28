@@ -17,8 +17,15 @@ class LocalLOB {
   void UpdateDepth(const DepthUpdateEvent& event);
   void ForceAlignWithEvent(const DepthUpdateEvent& event);
 
+  // Update best bid/ask from bookTicker. Returns true if best prices changed.
+  bool UpdateBestPrice(double best_bid_price, double best_bid_qty,
+                       double best_ask_price, double best_ask_qty);
+
   double BestBid() const;
   double BestAsk() const;
+
+  double BestBidVolume() const;
+  double BestAskVolume() const;
 
   uint64_t last_update_id() const { return last_update_id_; }
   void set_last_update_id(uint64_t id) { last_update_id_ = id; }
