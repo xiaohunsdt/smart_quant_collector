@@ -38,11 +38,11 @@ ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id)
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    // Binance trade field order: e, E, s, t, p, q, b, a, T, m, M
+    // Binance aggTrade field order: e, E, s, a, p, q, f, l, T, m
     // ("e" already consumed by ParseMessage, so start from E)
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
     std::string_view sym = doc["s"].get_string();
-    out.trade_id = static_cast<uint64_t>(doc["t"].get_int64());
+    out.trade_id = static_cast<uint64_t>(doc["a"].get_int64());
     out.price = SvToDouble(doc["p"].get_string());
     out.quantity = SvToDouble(doc["q"].get_string());
     out.is_buyer_maker = doc["m"].get_bool();
@@ -67,7 +67,7 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     std::string_view sym = doc["s"].get_string();
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
+    out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
 
