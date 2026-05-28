@@ -76,10 +76,10 @@ exchanges:
       - type: perpetual
         ws_url: "wss://fx-ws.gateio.ws/v4/ws/usdt"
         symbols:
-          - name: "BTC_USDT"
-            enabled: true
-            depth_level: 10
-            record_tick: true
+          # - name: "BTC_USDT"
+          #   enabled: true
+          #   depth_level: 10
+          #   record_tick: true
           - name: "ETH_USDT"
             depth_level: 20
             record_tick: true

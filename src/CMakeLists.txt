@@ -9,8 +9,7 @@ add_library(collector_objects OBJECT
     network/recv_buffer.cpp
     network/ws_client.cpp
     exchange/shard_queue.cpp
-    exchange/channel_spec.cpp
-    exchange/exchange_channel.cpp
+    exchange/symbol_channel.cpp
     exchange/shard_parser_worker.cpp
     exchange/binance/binance_parser.cpp
     exchange/gateio/gateio_parser.cpp

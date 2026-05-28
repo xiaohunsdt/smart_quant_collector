@@ -103,12 +103,10 @@ void WsClient::StartRead(MessageHandler handler) {
 }
 
 void WsClient::Write(std::string_view message) {
-  // Copy into shared_ptr so buffer outlives the async_write even if
-  // another Write() is called before this one completes.
   auto buf = std::make_shared<std::string>(message.data(), message.size());
-  ws_.async_write(net::buffer(*buf),[buf](beast::error_code ec, size_t /*bytes*/) -> void { 
-    if (ec) LOG_ERROR(GetLogger(), "WS write failed: {}",  ec.message()); 
-  });
+  beast::error_code ec;
+  ws_.write(net::buffer(*buf), ec);
+  if (ec) LOG_ERROR(GetLogger(), "WS write failed: {}", ec.message());
 }
 
 void WsClient::Close() {

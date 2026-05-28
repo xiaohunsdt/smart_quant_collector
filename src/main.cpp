@@ -2,7 +2,6 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include <boost/asio/io_context.hpp>
@@ -14,10 +13,9 @@
 #include "common/telemetry_slot.h"
 #include "config/config_loader.h"
 #include "exchange/channel_mapping.h"
-#include "exchange/channel_spec.h"
-#include "exchange/exchange_channel.h"
 #include "exchange/shard_parser_worker.h"
 #include "exchange/shard_queue.h"
+#include "exchange/symbol_channel.h"
 #include "orderbook/local_lob.h"
 #include "orderbook/lockstep_fsm.h"
 #include "orderbook/orderbook_manager.h"
@@ -40,27 +38,9 @@ int main(int argc, char* argv[]) {
 
   SignalHandler::Install();
 
-  // 1. Channel registry + symbol-to-channel_id map
+  // 1. Channel registry
   ChannelRegistry channel_registry;
-  std::unordered_map<std::string, uint32_t> symbol_to_channel_id;
   OrderbookManager orderbook_manager;
-
-  for (const auto& ex : config.exchanges) {
-    if (!ex.enabled) continue;
-    for (const auto& ch : ex.channels) {
-      for (const auto& sym : ch.symbols) {
-        if (!sym.enabled) continue;
-        ChannelInfo info;
-        info.exchange = ex.name;
-        info.type = ch.type;
-        info.symbol = sym.name;
-        auto id = channel_registry.Register(info);
-        orderbook_manager.RegisterChannel(id, sym.depth_level);
-        // Compound key: exchange:type:symbol, e.g. "gateio:perpetual:BTC_USDT"
-        symbol_to_channel_id[ex.name + ":" + ch.type + ":" + sym.name] = id;
-      }
-    }
-  }
 
   // 2. Shard queues
   auto num_parsers = config.threading_matrix.parser_cores.size();
@@ -83,33 +63,33 @@ int main(int argc, char* argv[]) {
   net::ssl::context ssl_ctx(net::ssl::context::tlsv12_client);
   ssl_ctx.set_verify_mode(net::ssl::verify_none);
 
-  // 6. Exchange channels
-  std::vector<std::shared_ptr<ExchangeChannel>> channels;
+  // 6. Symbol channels (one per symbol — register + create in single pass)
+  std::vector<std::shared_ptr<SymbolChannel>> channels;
   for (const auto& ex : config.exchanges) {
     if (!ex.enabled) continue;
     for (const auto& ch : ex.channels) {
-      ChannelSpec spec;
-      spec.exchange_name = ex.name;
-      spec.channel_type = ch.type;
-      spec.ws_url = ch.ws_url;
+      std::string rest_host;
       if (ex.name == "binance")
-        spec.rest_host = ch.type == "spot" ? "api.binance.com" : "fapi.binance.com";
+        rest_host = ch.type == "spot" ? "api.binance.com" : "fapi.binance.com";
       else if (ex.name == "gateio")
-        spec.rest_host = "api.gateio.ws";
+        rest_host = "api.gateio.ws";
 
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
-        SymbolSpec ss;
-        ss.name = sym.name;
-        ss.enabled = sym.enabled;
-        ss.depth_level = sym.depth_level;
-        ss.record_tick = sym.record_tick;
-        spec.symbols.push_back(ss);
-      }
 
-      auto channel = std::make_shared<ExchangeChannel>(
-          spec, io_ctx, ssl_ctx, shard_queues, symbol_to_channel_id);
-      channels.push_back(channel);
+        ChannelInfo info;
+        info.exchange = ex.name;
+        info.type = ch.type;
+        info.symbol = sym.name;
+        uint32_t id = channel_registry.Register(info);
+        orderbook_manager.RegisterChannel(id, sym.depth_level);
+
+        auto chan = std::make_shared<SymbolChannel>(
+            ex.name, ch.type, ch.ws_url, rest_host,
+            sym.name, sym.depth_level, id,
+            io_ctx, ssl_ctx, shard_queues);
+        channels.push_back(chan);
+      }
     }
   }
 
