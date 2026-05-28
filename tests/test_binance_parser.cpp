@@ -25,7 +25,7 @@ void ParseDoc(simdjson::ondemand::parser& parser, std::string& json,
 }
 
 TEST(BinanceParserTest, ParseTradeEvent) {
-  std::string json = R"({"e":"trade","E":1716844800000,"s":"BTCUSDT","t":123456789,"p":"50000.00","q":"1.50000000","b":123,"a":456,"T":1716844800001,"m":true,"M":true})";
+  std::string json = R"({"e":"aggTrade","E":1716844800000,"s":"BTCUSDT","a":123456789,"p":"50000.00","q":"1.50000000","f":123,"l":456,"T":1716844800001,"m":true})";
 
   simdjson::ondemand::parser parser;
   simdjson::ondemand::document doc;
@@ -88,9 +88,62 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
 
+TEST(BinanceParserTest, ParseDepthEventWithRealBinanceJson) {
+  // Real Binance depthUpdate JSON — no "pu" field exists in the API.
+  std::string json = R"({"e":"depthUpdate","E":1716844800000,"s":"BTCUSDT","U":1001,"u":1005,"b":[["50000.00","1.50000000"],["49990.00","0.50000000"]],"a":[["50010.00","2.00000000"],["50020.00","1.00000000"]]})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  DepthUpdateEvent depth{};
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 1);
+
+  EXPECT_TRUE(ok);
+  if (ok) {
+    EXPECT_EQ(depth.exchange_timestamp, 1716844800000000ULL);
+    EXPECT_STREQ(depth.symbol, "BTCUSDT");
+    EXPECT_EQ(depth.first_update_id, 1001ULL);
+    EXPECT_EQ(depth.last_update_id, 1005ULL);
+    EXPECT_EQ(depth.prev_last_update_id, 1000ULL);  // first_update_id - 1
+    EXPECT_EQ(depth.channel_id, 1);
+    EXPECT_EQ(depth.bid_count, 2);
+    if (depth.bid_count >= 2) {
+      EXPECT_DOUBLE_EQ(depth.bids[0].price, 50000.00);
+      EXPECT_DOUBLE_EQ(depth.bids[0].quantity, 1.5);
+      EXPECT_DOUBLE_EQ(depth.bids[1].price, 49990.00);
+      EXPECT_DOUBLE_EQ(depth.bids[1].quantity, 0.5);
+    }
+    EXPECT_EQ(depth.ask_count, 2);
+    if (depth.ask_count >= 2) {
+      EXPECT_DOUBLE_EQ(depth.asks[0].price, 50010.00);
+      EXPECT_DOUBLE_EQ(depth.asks[0].quantity, 2.0);
+      EXPECT_DOUBLE_EQ(depth.asks[1].price, 50020.00);
+      EXPECT_DOUBLE_EQ(depth.asks[1].quantity, 1.0);
+    }
+  }
+}
+
+TEST(BinanceParserTest, ParseDepthEventFirstUpdateIdZero) {
+  // first_update_id == 0 → prev_last_update_id should stay 0.
+  std::string json = R"({"e":"depthUpdate","E":1716844800000,"s":"BTCUSDT","U":0,"u":0,"b":[],"a":[]})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  DepthUpdateEvent depth{};
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 2);
+
+  EXPECT_TRUE(ok);
+  if (ok) {
+    EXPECT_EQ(depth.prev_last_update_id, 0ULL);
+  }
+}
+
 TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
-  // Trade event parsed end-to-end via ParseMessage.
-  std::string json = R"({"e":"trade","E":1716844800000,"s":"BTCUSDT","t":123456789,"p":"50000.00","q":"1.50000000","m":true})";
+  // aggTrade event parsed end-to-end via ParseMessage.
+  std::string json = R"({"e":"aggTrade","E":1716844800000,"s":"BTCUSDT","a":123456789,"p":"50000.00","q":"1.50000000","m":true})";
 
   simdjson::ondemand::parser parser;
   simdjson::ondemand::document doc;
