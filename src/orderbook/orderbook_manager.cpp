@@ -67,19 +67,15 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
   std::thread([info, fsm, channel_id]() {
     OrderbookSnapshot snapshot;
     if (info.rest_host.find("gateio") != std::string::npos) {
-      snapshot = gateio::FetchSnapshot(info.rest_host, info.channel_type,
-                                        info.symbol, info.depth_level);
+      snapshot = gateio::FetchSnapshot(info.rest_host, info.channel_type,info.symbol);
     } else {
-      snapshot = binance::FetchSnapshot(info.rest_host, info.symbol,
-                                         info.depth_level);
+      snapshot = binance::FetchSnapshot(info.rest_host, info.symbol);
     }
     if (snapshot.lastUpdateId == 0) {
-      LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",
-                  channel_id);
+      LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);
       return;
     }
-    std::lock_guard<std::mutex> lock(fsm->mutex());
-    fsm->OnSnapshotReturned(snapshot.lastUpdateId, snapshot);
+    fsm->PostSnapshot(snapshot, snapshot.lastUpdateId);
   }).detach();
 }
 

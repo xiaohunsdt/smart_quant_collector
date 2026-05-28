@@ -10,16 +10,25 @@ OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode)
     : lob_(lob), snapshot_mode_(snapshot_mode) {}
 
 void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) {
+  // Check for pending snapshot from bg thread before processing
+  if (pending_snapshot_ready_.load(std::memory_order_acquire)) {
+    pending_snapshot_ready_.store(false, std::memory_order_relaxed);
+    if (state_.load(std::memory_order_relaxed) == SyncState::SYNCING) {
+      ApplyPendingSnapshot();
+    }
+  }
+
   // Snapshot mode (e.g. Gate.io futures.order_book): each message is a full
   // orderbook snapshot — no incremental diff, no lockstep needed.
   if (snapshot_mode_) {
     lob_.ForceAlignWithEvent(event);
-    last_update_id_ = event.u;
-    state_ = SyncState::ACTIVE;
+    last_update_id_.store(event.u, std::memory_order_relaxed);
+    state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
     return;
   }
 
-  if (state_ == SyncState::SYNCING) {
+  auto st = state_.load(std::memory_order_relaxed);
+  if (st == SyncState::SYNCING) {
     // Defensive check 1: 3-second timeout or ring buffer overflow → retry
     auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
     bool timed_out =
@@ -27,42 +36,52 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
     bool overflow = ring_buffer_.full();
 
     if (timed_out || overflow) {
-      sync_retry_count_++;
-      if (sync_retry_count_ >= 3) {
+      auto retries = sync_retry_count_.load(std::memory_order_relaxed);
+      retries++;
+      sync_retry_count_.store(retries, std::memory_order_relaxed);
+      if (retries >= 3) {
         // Defensive check 2: 3 consecutive failures → force align
         LOG_WARNING(GetLogger(),
                     "LockStep FSM: 3 consecutive sync failures, force aligning");
-        state_ = SyncState::ACTIVE;
-        sync_retry_count_ = 0;
+        state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
+        sync_retry_count_.store(0, std::memory_order_relaxed);
         lob_.ForceAlignWithEvent(event);
         ring_buffer_.clear();
         return;
       }
       LOG_WARNING(GetLogger(),
                   "LockStep FSM: sync retry {}/3 (timeout={}, overflow={})",
-                  sync_retry_count_, timed_out, overflow);
+                  retries, timed_out, overflow);
       ResetSyncing();
       return;
     }
     ring_buffer_.push_back(event);  // buffer events while syncing
   } else {
     // ACTIVE: validate update_id continuity before applying
-    if (last_update_id_ != 0 && event.U != last_update_id_ + 1) {
+    auto last_id = last_update_id_.load(std::memory_order_relaxed);
+    if (last_id != 0 && event.U != last_id + 1) {
       LOG_WARNING(GetLogger(),
                   "LockStep FSM: gap detected (expected={}, got={}), entering SYNCING",
-                  last_update_id_ + 1, event.U);
+                  last_id + 1, event.U);
       ResetSyncing();
       ring_buffer_.push_back(event);
       return;
     }
     lob_.UpdateDepth(event);
-    last_update_id_ = event.u;
+    last_update_id_.store(event.u, std::memory_order_relaxed);
   }
+}
+
+void OrderbookStateMachine::PostSnapshot(const OrderbookSnapshot& snapshot,
+                                          uint64_t last_id) {
+  pending_snapshot_ = snapshot;
+  pending_snapshot_last_id_ = last_id;
+  pending_snapshot_ready_.store(true, std::memory_order_release);
 }
 
 void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
                                                const OrderbookSnapshot& snapshot) {
-  if (state_ != SyncState::SYNCING) return;
+  if (state_.load(std::memory_order_relaxed) != SyncState::SYNCING) return;
 
   lob_.ApplySnapshot(snapshot);
   uint64_t current_id = snapshot_last_id;
@@ -76,12 +95,16 @@ void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
     }
   }
 
-  last_update_id_ = current_id;
-  state_ = SyncState::ACTIVE;
-  sync_retry_count_ = 0;
+  last_update_id_.store(current_id, std::memory_order_relaxed);
+  state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
+  sync_retry_count_.store(0, std::memory_order_relaxed);
   ring_buffer_.clear();
   LOG_INFO(GetLogger(),
            "LockStep FSM: sync complete, last_update_id={}", current_id);
+}
+
+void OrderbookStateMachine::ApplyPendingSnapshot() {
+  OnSnapshotReturned(pending_snapshot_last_id_, pending_snapshot_);
 }
 
 void OrderbookStateMachine::RequestHTTPSnapshot() {
@@ -95,7 +118,7 @@ void OrderbookStateMachine::RequestHTTPSnapshot() {
 
 void OrderbookStateMachine::ResetSyncing() {
   ring_buffer_.clear();
-  state_ = SyncState::SYNCING;
+  state_.store(SyncState::SYNCING, std::memory_order_relaxed);
   RequestHTTPSnapshot();
 }
 
