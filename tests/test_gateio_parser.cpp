@@ -5,8 +5,8 @@
 #include "simdjson.h"
 #include "src/common/tick_data.h"
 #include "src/exchange/gateio/gateio_common.h"
-#include "src/exchange/gateio/gateio_spot_parser.h"
-#include "src/exchange/gateio/gateio_perpetual_parser.h"
+#include "src/exchange/gateio/gateio_spot.h"
+#include "src/exchange/gateio/gateio_perpetual.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {

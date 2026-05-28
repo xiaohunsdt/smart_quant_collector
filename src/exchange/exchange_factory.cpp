@@ -4,13 +4,11 @@
 #include <string>
 
 #include "exchange/binance/binance_common.h"
-#include "exchange/binance/binance_spot_parser.h"
-#include "exchange/binance/binance_perpetual_parser.h"
-#include "exchange/binance/binance_snapshot_client.h"
+#include "exchange/binance/binance_spot.h"
+#include "exchange/binance/binance_perpetual.h"
 #include "exchange/gateio/gateio_common.h"
-#include "exchange/gateio/gateio_spot_parser.h"
-#include "exchange/gateio/gateio_perpetual_parser.h"
-#include "exchange/gateio/gateio_snapshot_client.h"
+#include "exchange/gateio/gateio_spot.h"
+#include "exchange/gateio/gateio_perpetual.h"
 
 namespace sqc {
 namespace {
@@ -20,7 +18,6 @@ namespace {
 std::vector<std::pair<std::string, uint32_t>> BinanceBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
   std::string name(symbol);
   for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
   std::vector<std::pair<std::string, uint32_t>> subs;
   subs.emplace_back(R"({"method":"SUBSCRIBE","params":[")" + name + R"(@aggTrade"],"id":1})", 0);
   subs.emplace_back(R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth@100ms"],"id":2})", 500);
@@ -28,13 +25,12 @@ std::vector<std::pair<std::string, uint32_t>> BinanceBuildSubscribes(std::string
   return subs;
 }
 
-// ---- Gate.io subscribe builders (per channel type) ----
+// ---- Gate.io subscribe builders ----
 
 std::vector<std::pair<std::string, uint32_t>> GateioSpotBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
   auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
-
   std::vector<std::pair<std::string, uint32_t>> subs;
   subs.emplace_back(R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0);
   subs.emplace_back(R"({"time":)" + ts + R"(,"channel":"spot.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\"]}", 500);
@@ -46,30 +42,11 @@ std::vector<std::pair<std::string, uint32_t>> GateioPerpetualBuildSubscribes(std
   auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
-
   std::vector<std::pair<std::string, uint32_t>> subs;
   subs.emplace_back(R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0);
   subs.emplace_back(R"({"time":)" + ts + R"(,"channel":"futures.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\"]}", 500);
   subs.emplace_back(R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700);
   return subs;
-}
-
-// ---- fetch_snapshot wrappers ----
-
-OrderbookSnapshot BinanceSpotFetchSnapshot(std::string_view rest_host, std::string_view symbol) {
-  return binance::FetchSnapshot(rest_host, symbol);
-}
-
-OrderbookSnapshot BinancePerpetualFetchSnapshot(std::string_view rest_host, std::string_view symbol) {
-  return binance::FetchSnapshot(rest_host, symbol);
-}
-
-OrderbookSnapshot GateioSpotFetchSnapshot(std::string_view rest_host, std::string_view symbol) {
-  return gateio::FetchSnapshot(rest_host, ChannelType::Spot, symbol);
-}
-
-OrderbookSnapshot GateioPerpetualFetchSnapshot(std::string_view rest_host, std::string_view symbol) {
-  return gateio::FetchSnapshot(rest_host, ChannelType::Perpetual, symbol);
 }
 
 // ---- Adapter instances ----
@@ -81,7 +58,7 @@ const ExchangeAdapter kBinanceSpotAdapter = {
     .rest_host = "api.binance.com",
     .build_subscribes = BinanceBuildSubscribes,
     .parse = binance_spot::ParseMessage,
-    .fetch_snapshot = BinanceSpotFetchSnapshot,
+    .fetch_snapshot = binance_spot::FetchSnapshot,
 };
 
 const ExchangeAdapter kBinancePerpetualAdapter = {
@@ -91,7 +68,7 @@ const ExchangeAdapter kBinancePerpetualAdapter = {
     .rest_host = "fapi.binance.com",
     .build_subscribes = BinanceBuildSubscribes,
     .parse = binance_perpetual::ParseMessage,
-    .fetch_snapshot = BinancePerpetualFetchSnapshot,
+    .fetch_snapshot = binance_perpetual::FetchSnapshot,
 };
 
 const ExchangeAdapter kGateioSpotAdapter = {
@@ -101,7 +78,7 @@ const ExchangeAdapter kGateioSpotAdapter = {
     .rest_host = "api.gateio.ws",
     .build_subscribes = GateioSpotBuildSubscribes,
     .parse = gateio_spot::ParseMessage,
-    .fetch_snapshot = GateioSpotFetchSnapshot,
+    .fetch_snapshot = gateio_spot::FetchSnapshot,
 };
 
 const ExchangeAdapter kGateioPerpetualAdapter = {
@@ -111,7 +88,7 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
     .rest_host = "api.gateio.ws",
     .build_subscribes = GateioPerpetualBuildSubscribes,
     .parse = gateio_perpetual::ParseMessage,
-    .fetch_snapshot = GateioPerpetualFetchSnapshot,
+    .fetch_snapshot = gateio_perpetual::FetchSnapshot,
 };
 
 }  // namespace

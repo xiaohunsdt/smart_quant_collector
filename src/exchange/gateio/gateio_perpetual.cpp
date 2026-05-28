@@ -1,35 +1,35 @@
-#include "gateio_spot_parser.h"
+#include "gateio_perpetual.h"
 #include <cstring>
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include "common/string_utils.h"
 
 namespace sqc {
-namespace gateio_spot {
+namespace gateio_perpetual {
 
 ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
   ParseResult result;
   try {
     std::string_view channel = doc["channel"].get_string();
-    if (channel == "spot.trades") {
+    if (channel == "futures.trades") {
       result.type = ParsedType::TICK;
       if (!gateio::ParseTradeEvent(doc, result.tick, channel_id))
         result.type = ParsedType::NONE;
-    } else if (channel == "spot.order_book") {
+    } else if (channel == "futures.order_book") {
       result.type = ParsedType::DEPTH;
       if (!ParseDepthEvent(doc, result.depth, channel_id))
         result.type = ParsedType::NONE;
-    } else if (channel == "spot.order_book_update") {
+    } else if (channel == "futures.order_book_update") {
       result.type = ParsedType::DEPTH;
       if (!gateio::ParseDepthUpdateEvent(doc, result.depth, channel_id))
         result.type = ParsedType::NONE;
-    } else if (channel == "spot.book_ticker") {
+    } else if (channel == "futures.book_ticker") {
       result.type = ParsedType::BOOK_TICKER;
       if (!gateio::ParseBookTickerEvent(doc, result.book_ticker, channel_id))
         result.type = ParsedType::NONE;
     }
   } catch (const simdjson::simdjson_error& e) {
-    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io spot ParseMessage: {}", e.what());
+    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io perpetual ParseMessage: {}", e.what());
   }
   return result;
 }
@@ -65,13 +65,17 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     }
     return true;
   } catch (const simdjson::simdjson_error& e) {
-    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io spot depth parse: {}", e.what());
+    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io perpetual depth parse: {}", e.what());
     return false;
   } catch (...) {
-    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io spot depth parse: unknown error");
+    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io perpetual depth parse: unknown error");
     return false;
   }
 }
 
-}  // namespace gateio_spot
+OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol) {
+  return gateio::FetchSnapshot(rest_host, ChannelType::Perpetual, symbol);
+}
+
+}  // namespace gateio_perpetual
 }  // namespace sqc

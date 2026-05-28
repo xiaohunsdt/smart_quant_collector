@@ -6,8 +6,8 @@
 #include "simdjson.h"
 #include "src/common/tick_data.h"
 #include "src/exchange/binance/binance_common.h"
-#include "src/exchange/binance/binance_spot_parser.h"
-#include "src/exchange/binance/binance_perpetual_parser.h"
+#include "src/exchange/binance/binance_spot.h"
+#include "src/exchange/binance/binance_perpetual.h"
 #include "src/exchange/exchange_adapter.h"
 
 namespace sqc {

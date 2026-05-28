@@ -12,13 +12,11 @@ add_library(collector_objects OBJECT
     exchange/shard_parser_worker.cpp
     exchange/exchange_factory.cpp
     exchange/binance/binance_common.cpp
-    exchange/binance/binance_spot_parser.cpp
-    exchange/binance/binance_perpetual_parser.cpp
-    exchange/binance/binance_snapshot_client.cpp
+    exchange/binance/binance_spot.cpp
+    exchange/binance/binance_perpetual.cpp
     exchange/gateio/gateio_common.cpp
-    exchange/gateio/gateio_spot_parser.cpp
-    exchange/gateio/gateio_perpetual_parser.cpp
-    exchange/gateio/gateio_snapshot_client.cpp
+    exchange/gateio/gateio_spot.cpp
+    exchange/gateio/gateio_perpetual.cpp
     orderbook/local_lob.cpp
     orderbook/lockstep_fsm.cpp
     orderbook/orderbook_manager.cpp

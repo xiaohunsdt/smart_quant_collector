@@ -1,4 +1,4 @@
-#include "binance_perpetual_parser.h"
+#include "binance_perpetual.h"
 #include <cstring>
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
@@ -38,7 +38,6 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     std::string_view sym = doc["s"].get_string();
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    // Perpetual depthUpdate has "pu" field — read directly.
     out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
@@ -53,7 +52,6 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
       if (it != bid_level.end()) { q = SvToDouble((*it).get_string()); }
       out.bids[out.bid_count++] = {p, q};
     }
-
     out.ask_count = 0;
     for (auto ask_level : doc["a"]) {
       if (out.ask_count >= kMaxOrderbookLevels) break;
@@ -72,6 +70,10 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual depth parse: unknown error");
     return false;
   }
+}
+
+OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol) {
+  return binance::FetchSnapshot(rest_host, symbol);
 }
 
 }  // namespace binance_perpetual
