@@ -124,11 +124,6 @@ void ExchangeChannel::Subscribe() {
 void ExchangeChannel::OnMessage(const char* data, size_t size) {
   static std::atomic<int> msg_count{0};
   int n = ++msg_count;
-  // if (n <= 3) {
-  //   LOG_INFO(GetLogger(), "OnMessage #{} received {} bytes", n, size);
-  //   std::string preview(data, data + std::min(size, size_t(200)));
-  //   LOG_INFO(GetLogger(), "OnMessage data: {}", preview);
-  // }
   if (size == 0 || shard_queues_.empty()) return;
 
   // Allocate with trailing simdjson padding (parser reads past JSON end)
@@ -143,30 +138,17 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
   auto err = peek_parser.iterate(json_data.get(), size, size + kSimdjsonPadding).get(peek_doc);
   if (!err) {
     try {
-      // Skip control messages (subscribe/unsubscribe confirmations, etc.)
+      // CRITICAL: simdjson ondemand is forward-only — field access MUST match
+      // JSON field order. Gate.io: time, time_ms, channel, event, result
+      std::string_view symbol;
       if (spec_.exchange_name == "gateio") {
+        std::string_view channel = peek_doc["channel"];
         std::string_view event = peek_doc["event"];
-        if (event == "subscribe" || event == "unsubscribe"){
+        if (event == "subscribe" || event == "unsubscribe") {
           LOG_INFO(GetLogger(), "OnMessage #{} received control message: {}", n, event);
           return;
-        } 
-      } else {
-        // Binance subscription responses have "result" but no "e" field
-        std::string_view etype;
-        try { etype = std::string_view(peek_doc["e"]); }
-        catch (...) { return; }  // non-data message
-      }
-
-      // Extract symbol for channel routing
-      std::string_view symbol;
-      if (spec_.exchange_name == "binance") {
-        symbol = std::string_view(peek_doc["s"]);
-      } else {
-        // Gate.io: "contract" is inside "result", format varies by channel
-        // futures.tickers → result is an array of objects
-        // futures.order_book → result is an object with contract directly
-        // Read channel BEFORE result to avoid simdjson type-probe consuming the value
-        std::string_view channel = peek_doc["channel"];
+        }
+        // futures.tickers → result is array; futures.order_book → result is object
         auto result = peek_doc["result"];
         if (channel == "futures.tickers") {
           for (auto item : result.get_array()) {
@@ -176,6 +158,12 @@ void ExchangeChannel::OnMessage(const char* data, size_t size) {
         } else {
           symbol = std::string_view(result["contract"]);
         }
+      } else {
+        // Binance
+        std::string_view etype;
+        try { etype = std::string_view(peek_doc["e"]); }
+        catch (...) { return; }
+        symbol = std::string_view(peek_doc["s"]);
       }
       auto key = spec_.exchange_name + ":" + spec_.channel_type + ":" + std::string(symbol);
       auto it = symbol_to_channel_id_.find(key);
