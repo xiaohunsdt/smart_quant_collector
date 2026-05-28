@@ -9,8 +9,20 @@
 namespace sqc {
 namespace gateio_parser {
 
-bool ParseTradeEvent(simdjson::ondemand::document& doc, struct TickData& out, uint32_t channel_id);
+enum class ParsedType { NONE, TICK, DEPTH };
 
+struct ParseResult {
+  ParsedType type = ParsedType::NONE;
+  TickData tick{};
+  DepthUpdateEvent depth{};
+};
+
+// Unified entry point: parses the document and determines event type internally.
+// Does NOT consume any fields before determining type — safe for simdjson ondemand.
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id);
+
+// Low-level parsers (exposed for unit tests)
+bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id);
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id);
 
 }  // namespace gateio_parser

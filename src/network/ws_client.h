@@ -23,6 +23,7 @@ using tcp = net::ip::tcp;
 class WsClient {
  public:
   using MessageHandler = std::function<void(const char* data, size_t size)>;
+  using DisconnectHandler = std::function<void()>;
 
   WsClient(net::io_context& ioc, net::ssl::context& ssl_ctx);
   ~WsClient();
@@ -36,6 +37,9 @@ class WsClient {
   void Connect(std::string_view host, std::string_view port, std::string_view path,
                ConnectHandler on_connect = {});
 
+  // Set handler called when the connection drops after successful connect
+  void SetDisconnectHandler(DisconnectHandler handler);
+
   // Start async read loop; handler called for each complete message
   void StartRead(MessageHandler handler);
 
@@ -45,7 +49,7 @@ class WsClient {
   // Synchronous close
   void Close();
 
-  bool IsOpen() const { return is_open_; }
+  bool IsOpen() const { return is_open_.load(std::memory_order_acquire); }
 
  private:
   void OnResolve(beast::error_code ec, tcp::resolver::results_type results);
@@ -61,8 +65,9 @@ class WsClient {
   std::string host_;
   std::string port_;
   std::string path_;
-  bool is_open_ = false;
+  std::atomic<bool> is_open_{false};
   ConnectHandler on_connect_;
+  DisconnectHandler on_disconnect_;
 };
 
 }  // namespace sqc

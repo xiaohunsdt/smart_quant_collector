@@ -24,7 +24,8 @@ class SnapshotClient {
 
   // Gate.io-specific: GET /api/v4/spot/order_book?contract=BTC_USDT
   //              or: GET /api/v4/futures/usdt/order_book?contract=BTC_USDT
-  static OrderbookSnapshot FetchGateioSnapshot(std::string_view channel_type,
+  static OrderbookSnapshot FetchGateioSnapshot(std::string_view rest_host,
+                                               std::string_view channel_type,
                                                std::string_view symbol,
                                                uint32_t limit = 1000);
 };

@@ -22,8 +22,9 @@ TEST(LocalLOBTest, ApplySnapshot) {
   EXPECT_EQ(lob.last_update_id(), 100);
   EXPECT_DOUBLE_EQ(lob.BestBid(), 50000.0);
   EXPECT_DOUBLE_EQ(lob.BestAsk(), 50100.0);
-  EXPECT_EQ(lob.bids().size(), 2);
-  EXPECT_EQ(lob.asks().size(), 2);
+  PriceLevel top_bids[10], top_asks[10];
+  EXPECT_EQ(lob.TopBids(top_bids, 10), 2u);
+  EXPECT_EQ(lob.TopAsks(top_asks, 10), 2u);
 }
 
 TEST(LocalLOBTest, UpdateDepthUpsert) {
@@ -45,7 +46,9 @@ TEST(LocalLOBTest, UpdateDepthUpsert) {
   lob.UpdateDepth(event);
 
   EXPECT_DOUBLE_EQ(lob.BestBid(), 50000.0);
-  EXPECT_EQ(lob.bids().at(50000.0), 3.0);
+  PriceLevel top_bids[10];
+  EXPECT_EQ(lob.TopBids(top_bids, 10), 1u);
+  EXPECT_DOUBLE_EQ(top_bids[0].quantity, 3.0);
 }
 
 TEST(LocalLOBTest, UpdateDepthDelete) {
@@ -65,7 +68,8 @@ TEST(LocalLOBTest, UpdateDepthDelete) {
   event.bid_count = 1;
   lob.UpdateDepth(event);
 
-  EXPECT_EQ(lob.bids().size(), 1);
+  PriceLevel top_bids[10];
+  EXPECT_EQ(lob.TopBids(top_bids, 10), 1u);
   EXPECT_DOUBLE_EQ(lob.BestBid(), 49900.0);  // next best
 }
 
@@ -88,7 +92,8 @@ TEST(LocalLOBTest, ForceAlignWithEvent) {
 
   EXPECT_EQ(lob.last_update_id(), 200);
   EXPECT_DOUBLE_EQ(lob.BestBid(), 60000.0);
-  EXPECT_EQ(lob.bids().size(), 1);
+  PriceLevel top_bids[10];
+  EXPECT_EQ(lob.TopBids(top_bids, 10), 1u);
 }
 
 }  // namespace

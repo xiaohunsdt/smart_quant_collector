@@ -74,5 +74,55 @@ TEST_F(LockstepFSMTest, LockStepReplay) {
   // Verify no crash
 }
 
+// Snapshot-mode FSM (e.g. Gate.io futures.order_book) — each message is a full
+// orderbook snapshot, no incremental diff, no lockstep needed.
+TEST(LockstepFSMSnapshotMode, DirectSnapshotApply) {
+  LocalLOB lob;
+  OrderbookStateMachine fsm(lob, /*snapshot_mode=*/true);
+
+  EXPECT_EQ(fsm.state(), SyncState::ACTIVE);
+
+  DepthUpdateEvent event{};
+  event.U = 97722276323ULL;
+  event.u = 97722276323ULL;
+  event.bids[0] = {50000.0, 1.0};
+  event.bids[1] = {49999.0, 2.0};
+  event.bid_count = 2;
+  event.asks[0] = {50001.0, 1.5};
+  event.ask_count = 1;
+
+  fsm.OnDepthEventReceived(event);
+
+  // Should remain ACTIVE and update LOB directly
+  EXPECT_EQ(fsm.state(), SyncState::ACTIVE);
+  EXPECT_EQ(lob.last_update_id(), 97722276323ULL);
+  EXPECT_EQ(lob.BestBid(), 50000.0);
+  EXPECT_EQ(lob.BestAsk(), 50001.0);
+}
+
+TEST(LockstepFSMSnapshotMode, NonContiguousIdsAreFine) {
+  LocalLOB lob;
+  OrderbookStateMachine fsm(lob, /*snapshot_mode=*/true);
+
+  DepthUpdateEvent e1{};
+  e1.U = 100;
+  e1.u = 100;
+  e1.bids[0] = {50000.0, 1.0};
+  e1.bid_count = 1;
+  fsm.OnDepthEventReceived(e1);
+
+  // Non-contiguous ID — in snapshot mode this is fine
+  DepthUpdateEvent e2{};
+  e2.U = 200;
+  e2.u = 200;
+  e2.bids[0] = {51000.0, 2.0};
+  e2.bid_count = 1;
+  fsm.OnDepthEventReceived(e2);
+
+  EXPECT_EQ(fsm.state(), SyncState::ACTIVE);
+  EXPECT_EQ(lob.last_update_id(), 200);
+  EXPECT_EQ(lob.BestBid(), 51000.0);
+}
+
 }  // namespace
 }  // namespace sqc

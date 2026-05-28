@@ -7,9 +7,19 @@
 
 namespace sqc {
 
-OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob) : lob_(lob) {}
+OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode)
+    : lob_(lob), snapshot_mode_(snapshot_mode) {}
 
 void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) {
+  // Snapshot mode (e.g. Gate.io futures.order_book): each message is a full
+  // orderbook snapshot — no incremental diff, no lockstep needed.
+  if (snapshot_mode_) {
+    lob_.ForceAlignWithEvent(event);
+    last_update_id_ = event.u;
+    state_ = SyncState::ACTIVE;
+    return;
+  }
+
   if (state_ == SyncState::SYNCING) {
     // Defensive check 1: 3-second timeout or ring buffer overflow → retry
     auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
@@ -37,8 +47,17 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
     }
     ring_buffer_.push_back(event);  // buffer events while syncing
   } else {
-    // ACTIVE: normal update
+    // ACTIVE: validate update_id continuity before applying
+    if (last_update_id_ != 0 && event.U != last_update_id_ + 1) {
+      LOG_WARNING(GetLogger(),
+                  "LockStep FSM: gap detected (expected={}, got={}), entering SYNCING",
+                  last_update_id_ + 1, event.U);
+      ResetSyncing();
+      ring_buffer_.push_back(event);
+      return;
+    }
     lob_.UpdateDepth(event);
+    last_update_id_ = event.u;
   }
 }
 

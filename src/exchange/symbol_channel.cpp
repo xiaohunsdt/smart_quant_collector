@@ -54,13 +54,34 @@ void SymbolChannel::Start() {
   auto self = shared_from_this();
   ws_->Connect(host, port, path, [this, self](bool success) {
     if (success) {
+      reconnect_attempts_ = 0;  // reset on successful connection
+
+      // F17: auto-reconnect on disconnect with exponential backoff
+      ws_->SetDisconnectHandler([this, self]() {
+        LOG_WARNING(GetLogger(), "{}:{} disconnected, reconnecting...", exchange_name_,
+                    symbol_);
+        if (!SignalHandler::IsShutdownRequested()) {
+          uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);  // 1,2,4,8,16,32,64
+          delay = std::min(delay, kMaxReconnectDelaySec);
+          reconnect_attempts_++;
+          auto timer = std::make_shared<net::steady_timer>(
+              ioc_, std::chrono::seconds(delay));
+          timer->async_wait([this, self, timer](boost::system::error_code) {
+            if (!SignalHandler::IsShutdownRequested()) Start();
+          });
+        }
+      });
+
       Subscribe();
       ws_->StartRead([this](const char* data, size_t size) { OnMessage(data, size); });
       LOG_INFO(GetLogger(), "Read loop started for {}:{}", exchange_name_, symbol_);
     } else {
-      LOG_WARNING(GetLogger(), "{}:{} connect failed, retrying in 2s...", exchange_name_,
-                  symbol_);
-      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(2));
+      uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
+      delay = std::min(delay, kMaxReconnectDelaySec);
+      reconnect_attempts_++;
+      LOG_WARNING(GetLogger(), "{}:{} connect failed, retrying in {}s...",
+                  exchange_name_, symbol_, delay);
+      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
       timer->async_wait([this, self, timer](boost::system::error_code) {
         if (!SignalHandler::IsShutdownRequested()) Start();
       });
@@ -81,12 +102,12 @@ void SymbolChannel::Subscribe() {
     auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    std::string ticker_sub = R"({"time":)" + std::to_string(now_sec) +
-                             R"(,"channel":"futures.tickers","event":"subscribe","payload":[")" +
+    std::string trade_sub = R"({"time":)" + std::to_string(now_sec) +
+                             R"(,"channel":"futures.trades","event":"subscribe","payload":[")" +
                              symbol_ + R"("]})";
-    LOG_INFO(GetLogger(), "{}:{} sending ticker subscribe: {}", exchange_name_, symbol_,
-             ticker_sub);
-    ws_->Write(ticker_sub);
+    LOG_INFO(GetLogger(), "{}:{} sending trades subscribe: {}", exchange_name_, symbol_,
+             trade_sub);
+    ws_->Write(trade_sub);
 
     auto depth_sub = std::make_shared<std::string>(
         R"({"time":)" + std::to_string(now_sec) +
@@ -105,11 +126,17 @@ void SymbolChannel::Subscribe() {
 void SymbolChannel::OnMessage(const char* data, size_t size) {
   if (size == 0 || shard_queues_.empty()) return;
 
-  auto json_data = std::make_shared<char[]>(size + kSimdjsonPadding);
-  std::memcpy(json_data.get(), data, size);
-  std::memset(json_data.get() + size, 0, kSimdjsonPadding);
-
-  RawMessage msg{json_data, size, channel_id_, exchange_name_};
+  // F09: zero-allocation for messages ≤ 16 KiB (covers ~99 % of frames)
+  RawMessage msg;
+  if (!msg.allocate(size)) return;
+  std::memcpy(msg.buffer(), data, size);
+  std::memset(msg.buffer() + size, 0, kSimdjsonPadding);
+  msg.size = size;
+  msg.channel_id = channel_id_;
+  msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  std::strncpy(msg.exchange, exchange_name_.c_str(), sizeof(msg.exchange) - 1);
+  msg.exchange[sizeof(msg.exchange) - 1] = '\0';
 
   uint32_t shard = (channel_id_ ^ std::hash<std::string>{}(exchange_name_)) % shard_queues_.size();
   shard_queues_[shard]->Push(std::move(msg));

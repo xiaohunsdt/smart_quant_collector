@@ -6,7 +6,6 @@ add_library(collector_objects OBJECT
     common/signal_handler.cpp
     config/config_loader.cpp
     exchange/channel_mapping.cpp
-    network/recv_buffer.cpp
     network/ws_client.cpp
     exchange/shard_queue.cpp
     exchange/symbol_channel.cpp

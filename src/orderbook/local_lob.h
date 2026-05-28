@@ -1,15 +1,14 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
 #include <string_view>
-#include <vector>
 
 #include "orderbook_event.h"
 
 namespace sqc {
 
-// Local Limit Order Book — price to quantity map, per spec 2.2
+// Local Limit Order Book — flat sorted array, per spec 2.2
+// Replaces std::map to eliminate per-update heap allocation (F07).
 class LocalLOB {
  public:
   explicit LocalLOB(uint32_t depth_level = 10);
@@ -25,16 +24,21 @@ class LocalLOB {
   void set_last_update_id(uint64_t id) { last_update_id_ = id; }
   uint32_t depth_level() const { return depth_level_; }
 
-  const std::map<double, double, std::greater<double>>& bids() const { return bids_; }
-  const std::map<double, double>& asks() const { return asks_; }
-
-  // Returns top N price levels as vectors (for CSV writing)
-  std::vector<PriceLevel> TopBids(uint32_t max_levels = 0) const;
-  std::vector<PriceLevel> TopAsks(uint32_t max_levels = 0) const;
+  // Writes top N price levels into caller-provided array (zero-allocation).
+  // Returns number of levels written.
+  uint32_t TopBids(PriceLevel* out, uint32_t max_levels) const;
+  uint32_t TopAsks(PriceLevel* out, uint32_t max_levels) const;
 
  private:
-  std::map<double, double, std::greater<double>> bids_;
-  std::map<double, double> asks_;
+  // Update side (bid/ask) maintaining sorted order.
+  // Side == true for bids (descending), false for asks (ascending).
+  static void UpdateSide(PriceLevel* levels, uint32_t& count, uint32_t capacity,
+                         double price, double qty, bool is_bid);
+
+  PriceLevel bids_[kMaxOrderbookLevels];
+  PriceLevel asks_[kMaxOrderbookLevels];
+  uint32_t bid_count_ = 0;
+  uint32_t ask_count_ = 0;
   uint64_t last_update_id_ = 0;
   uint32_t depth_level_;
 };

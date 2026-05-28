@@ -16,7 +16,8 @@ class OrderbookManager {
  public:
   OrderbookManager() = default;
 
-  void RegisterChannel(uint32_t channel_id, uint32_t depth_level);
+  void RegisterChannel(uint32_t channel_id, uint32_t depth_level,
+                        bool snapshot_mode = false);
   void OnTick(std::shared_ptr<TickData> tick);
   void OnDepthEvent(uint32_t channel_id, const DepthUpdateEvent& event);
 

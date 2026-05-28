@@ -20,6 +20,7 @@ find_package(GTest REQUIRED)
 find_package(fmt REQUIRED)
 find_package(quill CONFIG REQUIRED)
 find_package(prometheus-cpp CONFIG REQUIRED)
+find_package(benchmark CONFIG REQUIRED)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options(
@@ -41,3 +42,4 @@ add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
+add_subdirectory(benchmarks)

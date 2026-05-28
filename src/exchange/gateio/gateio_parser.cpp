@@ -2,45 +2,58 @@
 #include <cstring>
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
+#include "common/string_utils.h"
 #include "src/common/tick_data.h"
 
 namespace sqc {
 namespace gateio_parser {
 
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
+  ParseResult result;
+  try {
+    std::string_view channel = doc["channel"].get_string();
+    if (channel == "futures.trades" || channel == "spot.trades") {
+      result.type = ParsedType::TICK;
+      if (!ParseTradeEvent(doc, result.tick, channel_id)) {
+        result.type = ParsedType::NONE;
+      }
+    } else if (channel == "futures.order_book" || channel == "spot.order_book") {
+      result.type = ParsedType::DEPTH;
+      if (!ParseDepthEvent(doc, result.depth, channel_id)) {
+        result.type = ParsedType::NONE;
+      }
+    }
+  } catch (const simdjson::simdjson_error& e) {
+    if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io ParseMessage: {}", e.what());
+  }
+  return result;
+}
+
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    // IMPORTANT: ondemand requires forward-only field access — must match JSON order.
-    // JSON order: time, time_ms, channel, event, result
-
-    // 1. time (int64 seconds) — consume for JSON field order; actual ts from item.t
+    // Top-level field order: time, time_ms, channel, event, result
     (void)doc["time"].get_uint64();
+    try { (void)doc["time_ms"].get_uint64(); } catch (...) {}
 
-    // 2. event — comes before "result"
     std::string_view ev = doc["event"].get_string();
     if (ev == "subscribe") return false;
 
-    // 3. result array — last field
     auto arr = doc["result"].get_array();
     auto it = arr.begin();
     if (it == arr.end()) return false;
+
+    // Only process the first trade in the batch
     auto item = *it;
 
-    // Gate.io ticker: all price/qty fields are STRINGS.
-    // simdjson string_view is NOT null-terminated — copy to stack buffer first.
-    char num_buf[32];
-    auto sv_to_double = [&](std::string_view sv) -> double {
-      size_t n = std::min(sv.size(), sizeof(num_buf) - 1);
-      std::memcpy(num_buf, sv.data(), n);
-      num_buf[n] = '\0';
-      return std::strtod(num_buf, nullptr);
-    };
-
-    out.price = sv_to_double(item["last"].get_string());
-    out.quantity = sv_to_double(item["volume_24h_base"].get_string());
-
-    // t is an integer (ms) — trade timestamp
-    out.exchange_timestamp = item["t"].get_uint64() * 1000ULL;
-    out.trade_id = out.exchange_timestamp;
+    // Trade object field order: id, create_time, create_time_ms, price, size, contract, is_internal
+    out.trade_id = item["id"].get_uint64();
+    (void)item["create_time"].get_uint64();
+    out.exchange_timestamp = item["create_time_ms"].get_uint64() * 1000ULL;
+    out.price = SvToDouble(item["price"].get_string());
+    // size is int64 (unlike price which is a string)
+    int64_t size = item["size"].get_int64();
+    out.quantity = static_cast<double>(size < 0 ? -size : size);
+    out.is_buyer_maker = (size < 0);  // negative = sell = maker
 
     out.channel_id = channel_id;
 
@@ -48,7 +61,6 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     size_t sym_len = std::min(sym.size(), sizeof(out.symbol) - 1);
     std::memcpy(out.symbol, sym.data(), sym_len);
     out.symbol[sym_len] = '\0';
-    out.is_buyer_maker = false;
     return true;
   } catch (const simdjson::simdjson_error& e) {
     if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io trade parse: {}", e.what());
@@ -61,48 +73,37 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    // Forward-only: access "time", "event", then "result" (JSON field order)
-    // Consume "time" for field ordering; actual exchange_timestamp from result.t (ms)
+    // Top-level field order: time, time_ms, channel, event, result
     (void)doc["time"].get_uint64();
+    try { (void)doc["time_ms"].get_uint64(); } catch (...) {}
 
     std::string_view ev = doc["event"].get_string();
     if (ev != "update" && ev != "all") return false;
 
     auto result = doc["result"];
-    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;  // ms → us
+    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
     out.U = result["id"].get_uint64();
     out.u = out.U;
     out.channel_id = channel_id;
 
-    // contract is inside "result", not at top level
     std::string_view sym = result["contract"].get_string();
     size_t sym_len = std::min(sym.size(), sizeof(out.symbol) - 1);
     std::memcpy(out.symbol, sym.data(), sym_len);
     out.symbol[sym_len] = '\0';
 
-    // Gate.io order_book levels: {"p": "string_price", "s": int_size}
-    // p is a STRING — must convert via strtod, not get_double
-    char num_buf[32];
-    auto sv_to_double = [&](std::string_view sv) -> double {
-      size_t n = std::min(sv.size(), sizeof(num_buf) - 1);
-      std::memcpy(num_buf, sv.data(), n);
-      num_buf[n] = '\0';
-      return std::strtod(num_buf, nullptr);
-    };
-
     out.bid_count = 0;
     for (auto lv : result["bids"]) {
       if (out.bid_count >= kMaxOrderbookLevels) break;
-      double p = sv_to_double(lv["p"].get_string());
-      double q = double(lv["s"].get_int64());
+      double p = SvToDouble(lv["p"].get_string());
+      double q = static_cast<double>(lv["s"].get_int64());
       out.bids[out.bid_count++] = {p, q};
     }
 
     out.ask_count = 0;
     for (auto lv : result["asks"]) {
       if (out.ask_count >= kMaxOrderbookLevels) break;
-      double p = sv_to_double(lv["p"].get_string());
-      double q = double(lv["s"].get_int64());
+      double p = SvToDouble(lv["p"].get_string());
+      double q = static_cast<double>(lv["s"].get_int64());
       out.asks[out.ask_count++] = {p, q};
     }
     return true;

@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace prometheus {
 class Registry;
@@ -14,6 +16,8 @@ class Counter;
 namespace sqc {
 
 // Prometheus metrics exposer, per spec §7.2
+// Metrics are lazily created and cached per channel_id to avoid
+// leaking memory via Family::Add() on every update (F16).
 class PrometheusExposer {
  public:
   explicit PrometheusExposer(uint16_t port);
@@ -31,12 +35,17 @@ class PrometheusExposer {
  private:
   std::shared_ptr<prometheus::Registry> registry_;
   std::unique_ptr<prometheus::Exposer> exposer_;
-  uint16_t port_;
   bool healthy_ = false;
 
-  // Metric families (created dynamically per channel)
+  // Metric families
   struct Metrics;
   std::unique_ptr<Metrics> metrics_;
+
+  // Cached metric instances per channel_id (protected by metrics_mtx_)
+  std::mutex metrics_mtx_;
+  std::unordered_map<uint32_t, prometheus::Gauge*> latency_gauges_;
+  std::unordered_map<uint32_t, prometheus::Gauge*> queue_depth_gauges_;
+  std::unordered_map<uint32_t, prometheus::Counter*> zmq_dropped_counters_;
 };
 
 }  // namespace sqc

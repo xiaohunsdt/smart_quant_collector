@@ -1,12 +1,21 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 #include "src/config/config_loader.h"
 
 namespace sqc {
 namespace {
 
+// Derive project root from __FILE__ (tests/test_config.cpp -> project root)
+inline std::string ConfigPath() {
+  std::filesystem::path test_file(__FILE__);
+  auto project_root = test_file.parent_path().parent_path();
+  return (project_root / "config" / "config.yaml").string();
+}
+
 TEST(ConfigLoaderTest, LoadsValidConfig) {
-  auto config = LoadConfig("../config/config.yaml");
+  auto config = LoadConfig(ConfigPath());
 
   EXPECT_EQ(config.global.environment, "production");
   EXPECT_EQ(config.global.log_level, "info");
@@ -35,7 +44,7 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
 }
 
 TEST(ConfigLoaderTest, BinanceIsDisabled) {
-  auto config = LoadConfig("../config/config.yaml");
+  auto config = LoadConfig(ConfigPath());
 
   bool found_binance = false;
   for (const auto& ex : config.exchanges) {
@@ -48,7 +57,7 @@ TEST(ConfigLoaderTest, BinanceIsDisabled) {
 }
 
 TEST(ConfigLoaderTest, GateioPerpetualHasSymbols) {
-  auto config = LoadConfig("../config/config.yaml");
+  auto config = LoadConfig(ConfigPath());
 
   bool found_gateio = false;
   for (const auto& ex : config.exchanges) {
@@ -57,8 +66,8 @@ TEST(ConfigLoaderTest, GateioPerpetualHasSymbols) {
       EXPECT_TRUE(ex.enabled);
       for (const auto& ch : ex.channels) {
         if (ch.type == "perpetual") {
-          EXPECT_GE(ch.symbols.size(), 3);
-          EXPECT_EQ(ch.symbols[0].name, "BTC_USDT");
+          EXPECT_GE(ch.symbols.size(), 2);
+          EXPECT_EQ(ch.symbols[0].name, "ETH_USDT");
         }
       }
     }

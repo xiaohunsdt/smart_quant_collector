@@ -18,7 +18,6 @@ struct PrometheusExposer::Metrics {
 
 PrometheusExposer::PrometheusExposer(uint16_t port)
     : registry_(std::make_shared<prometheus::Registry>()),
-      port_(port),
       metrics_(std::make_unique<Metrics>()) {
   metrics_->latency_family = &prometheus::BuildGauge()
                                   .Name("collector_latency_us")
@@ -52,20 +51,33 @@ PrometheusExposer::~PrometheusExposer() = default;
 bool PrometheusExposer::IsHealthy() const { return healthy_; }
 
 void PrometheusExposer::SetLatencyUs(uint32_t channel_id, double value) {
-  auto& g = metrics_->latency_family->Add({{"channel", std::to_string(channel_id)}});
-  g.Set(value);
+  std::lock_guard<std::mutex> lock(metrics_mtx_);
+  auto it = latency_gauges_.find(channel_id);
+  if (it == latency_gauges_.end()) {
+    auto& g = metrics_->latency_family->Add({{"channel", std::to_string(channel_id)}});
+    it = latency_gauges_.emplace(channel_id, &g).first;
+  }
+  it->second->Set(value);
 }
 
 void PrometheusExposer::SetQueueDepth(uint32_t channel_id, double value) {
-  auto& g =
-      metrics_->queue_depth_family->Add({{"channel", std::to_string(channel_id)}});
-  g.Set(value);
+  std::lock_guard<std::mutex> lock(metrics_mtx_);
+  auto it = queue_depth_gauges_.find(channel_id);
+  if (it == queue_depth_gauges_.end()) {
+    auto& g = metrics_->queue_depth_family->Add({{"channel", std::to_string(channel_id)}});
+    it = queue_depth_gauges_.emplace(channel_id, &g).first;
+  }
+  it->second->Set(value);
 }
 
 void PrometheusExposer::IncrementZmqDropped(uint32_t channel_id) {
-  auto& c =
-      metrics_->zmq_dropped_family->Add({{"channel", std::to_string(channel_id)}});
-  c.Increment();
+  std::lock_guard<std::mutex> lock(metrics_mtx_);
+  auto it = zmq_dropped_counters_.find(channel_id);
+  if (it == zmq_dropped_counters_.end()) {
+    auto& c = metrics_->zmq_dropped_family->Add({{"channel", std::to_string(channel_id)}});
+    it = zmq_dropped_counters_.emplace(channel_id, &c).first;
+  }
+  it->second->Increment();
 }
 
 }  // namespace sqc

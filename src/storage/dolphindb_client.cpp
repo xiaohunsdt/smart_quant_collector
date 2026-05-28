@@ -6,7 +6,8 @@
 namespace sqc {
 
 bool DolphinDBClient::Connect(const std::string& host, uint16_t port,
-                              const std::string& user, const std::string& password) {
+                              const std::string& user,
+                              [[maybe_unused]] const std::string& password) {
   host_ = host;
   port_ = port;
   // In production: use DolphinDB C++ API or TCP protocol to connect.

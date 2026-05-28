@@ -1,49 +1,50 @@
 #include "signal_handler.h"
 
 #include <atomic>
-#include <condition_variable>
+#include <cerrno>
 #include <csignal>
-#include <mutex>
+#include <pthread.h>
+
+#include "quill/LogMacros.h"
+#include "common/logger_init.h"
 
 namespace sqc {
 
 namespace {
 std::atomic<bool> shutdown_requested{false};
-std::mutex cv_mutex;
-std::condition_variable cv;
-bool notified = false;
 }  // namespace
 
 void SignalHandler::Install() {
   shutdown_requested = false;
-  notified = false;
 
-  auto handler = [](int /*signum*/) {
-    shutdown_requested = true;
-    {
-      std::lock_guard<std::mutex> lock(cv_mutex);
-      notified = true;
-    }
-    cv.notify_all();
-  };
-
-  std::signal(SIGINT, handler);
-  std::signal(SIGTERM, handler);
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGINT);
+  sigaddset(&set, SIGTERM);
+  if (pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) {
+    if (auto* log = GetLogger())
+      LOG_ERROR(log, "SignalHandler: pthread_sigmask failed");
+  }
 }
 
 bool SignalHandler::IsShutdownRequested() { return shutdown_requested; }
 
 void SignalHandler::WaitForShutdown() {
-  std::unique_lock<std::mutex> lock(cv_mutex);
-  cv.wait(lock, [] { return notified; });
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGINT);
+  sigaddset(&set, SIGTERM);
+  int sig = 0;
+  while (sigwait(&set, &sig) != 0) {
+    if (errno != EINTR) {
+      if (auto* log = GetLogger())
+        LOG_ERROR(log, "SignalHandler: sigwait failed (errno={})", errno);
+      return;
+    }
+  }
+  shutdown_requested = true;
 }
 
-void SignalHandler::Reset() {
-  shutdown_requested = false;
-  {
-    std::lock_guard<std::mutex> lock(cv_mutex);
-    notified = false;
-  }
-}
+void SignalHandler::Reset() { shutdown_requested = false; }
 
 }  // namespace sqc

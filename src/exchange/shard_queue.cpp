@@ -18,6 +18,7 @@ ShardQueue::ShardQueue(size_t capacity)
       slots_(capacity_) {}
 
 bool ShardQueue::TryPush(RawMessage msg) {
+  std::lock_guard<std::mutex> lock(push_mtx_);
   size_t w = write_pos_.load(std::memory_order_relaxed);
   size_t r = read_pos_.load(std::memory_order_acquire);
   if (w - r >= capacity_) return false;

@@ -1,7 +1,5 @@
 #include "shard_parser_worker.h"
 
-#include <chrono>
-#include <string>
 #include <cstring>
 
 #include "quill/LogMacros.h"
@@ -19,7 +17,7 @@ void ShardParserWorker::Run() {
   LOG_INFO(GetLogger(), "ShardParserWorker started on core {}", core_id_);
   while (true) {
     RawMessage msg = input_queue_.PopBlocking();
-    if (!msg.data) {
+    if (msg.size == 0) {  // poison pill
       LOG_INFO(GetLogger(), "ShardParserWorker core {} received poison pill", core_id_);
       break;
     }
@@ -35,45 +33,31 @@ void ShardParserWorker::Run() {
 void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
   // Buffer already has SIMDJSON_PADDING bytes appended by OnMessage
   simdjson::ondemand::document doc;
-  auto err = parser_.iterate(msg.data.get(), msg.size, msg.size + kSimdjsonPadding).get(doc);
+  auto err = parser_.iterate(msg.buffer(), msg.size, msg.size + kSimdjsonPadding).get(doc);
   if (err) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "iterate err on {} bytes: {}", msg.size, simdjson::error_message(err));
     return;
   }
 
   try {
-    // Determine event type
-    std::string_view event_type;
-    if (msg.exchange == "binance") {
-      try { event_type = std::string_view(doc["e"]); } catch (...) { return; }
-    } else if (msg.exchange == "gateio") {
-      try { event_type = std::string_view(doc["channel"]); } catch (...) { return; }
-    }
-
-    if (event_type == "trade" || event_type == "aggTrade" || event_type == "futures.tickers") {
-      // Trade event
-      auto tick = std::allocate_shared<TickData>(pool_.allocator());
-      tick->local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-      bool ok = false;
-      if (msg.exchange == "binance")
-        ok = binance_parser::ParseTradeEvent(doc, *tick, msg.channel_id);
-      else if (msg.exchange == "gateio")
-        ok = gateio_parser::ParseTradeEvent(doc, *tick, msg.channel_id);
-
-      if (ok && tick_handler_) tick_handler_(std::move(tick));
-
-    } else if (event_type == "depthUpdate" || event_type == "futures.order_book") {
-      // Depth update event
-      DepthUpdateEvent depth_event{};
-      depth_event.local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-      bool ok = false;
-      if (msg.exchange == "binance")
-        ok = binance_parser::ParseDepthEvent(doc, depth_event, msg.channel_id);
-      else if (msg.exchange == "gateio")
-        ok = gateio_parser::ParseDepthEvent(doc, depth_event, msg.channel_id);
-
-      if (ok && depth_handler_) depth_handler_(msg.channel_id, depth_event);
+    if (std::string_view(msg.exchange) == "binance") {
+      auto result = binance_parser::ParseMessage(doc, msg.channel_id);
+      if (result.type == binance_parser::ParsedType::TICK && tick_handler_) {
+        result.tick.local_timestamp = msg.recv_timestamp;
+        tick_handler_(std::move(result.tick));
+      } else if (result.type == binance_parser::ParsedType::DEPTH && depth_handler_) {
+        result.depth.local_timestamp = msg.recv_timestamp;
+        depth_handler_(msg.channel_id, result.depth);
+      }
+    } else if (std::string_view(msg.exchange) == "gateio") {
+      auto result = gateio_parser::ParseMessage(doc, msg.channel_id);
+      if (result.type == gateio_parser::ParsedType::TICK && tick_handler_) {
+        result.tick.local_timestamp = msg.recv_timestamp;
+        tick_handler_(std::move(result.tick));
+      } else if (result.type == gateio_parser::ParsedType::DEPTH && depth_handler_) {
+        result.depth.local_timestamp = msg.recv_timestamp;
+        depth_handler_(msg.channel_id, result.depth);
+      }
     }
   } catch (const simdjson::simdjson_error& e) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "ParseAndDispatch simdjson error on core {}: {}", core_id_, e.what());

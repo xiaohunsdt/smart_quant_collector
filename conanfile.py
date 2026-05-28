@@ -18,6 +18,7 @@ class SmartQuantCollector(ConanFile):
         self.requires("gtest/1.17.0")
         self.requires("quill/11.1.0")
         self.requires("prometheus-cpp/1.3.0")
+        self.requires("benchmark/1.9.4")
 
     def layout(self):
         self.folders.generators = "conan"

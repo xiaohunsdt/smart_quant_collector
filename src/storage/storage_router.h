@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -54,6 +55,7 @@ class StorageRouter {
   std::vector<TickData> buffer_a_;
   std::vector<TickData> buffer_b_;
   std::atomic<size_t> active_index_{0};
+  std::mutex buffer_mtx_;  // protects ActiveBuffer/SwapBuffer/FlushActiveBuffer
 
   std::vector<TickData>& ActiveBuffer();
   void SwapBuffer();

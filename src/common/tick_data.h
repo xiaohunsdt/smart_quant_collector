@@ -7,7 +7,7 @@ namespace sqc {
 // 64-byte cache-line aligned, per spec §2.1
 struct alignas(64) TickData {
   uint64_t exchange_timestamp;  // exchange timestamp in microseconds since epoch
-  uint64_t local_timestamp;     // local receive timestamp in nanoseconds (CLOCK_REALTIME)
+  uint64_t local_timestamp;     // end-to-end latency (receive→disk) in ns (CLOCK_MONOTONIC)
   uint64_t trade_id;            // trade ID
   double price;
   double quantity;

@@ -52,6 +52,10 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
   net::ssl::context& ssl_ctx_;
   std::unique_ptr<WsClient> ws_;
   std::vector<std::shared_ptr<ShardQueue>> shard_queues_;
+
+  // F17/F27: exponential backoff reconnect state
+  uint32_t reconnect_attempts_ = 0;
+  static constexpr uint32_t kMaxReconnectDelaySec = 60;
 };
 
 }  // namespace sqc

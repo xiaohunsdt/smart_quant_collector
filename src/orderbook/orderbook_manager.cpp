@@ -5,9 +5,10 @@
 
 namespace sqc {
 
-void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level) {
+void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level,
+                                          bool snapshot_mode) {
   auto lob = std::make_unique<LocalLOB>(depth_level);
-  auto fsm = std::make_unique<OrderbookStateMachine>(*lob);
+  auto fsm = std::make_unique<OrderbookStateMachine>(*lob, snapshot_mode);
   lobs_[channel_id] = std::move(lob);
   fsms_[channel_id] = std::move(fsm);
   depth_levels_[channel_id] = depth_level;

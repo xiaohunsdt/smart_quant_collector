@@ -18,7 +18,7 @@ struct alignas(64) TelemetrySlot {
 inline void WriteTelemetrySlot(TelemetrySlot* slot, uint64_t delay_ns,
                                uint64_t q_depth, uint64_t gap_count,
                                uint64_t zmq_dropped) {
-  slot->version.fetch_add(1, std::memory_order_acquire);  // odd = writing
+  slot->version.fetch_add(1, std::memory_order_relaxed);  // odd = writing
   slot->market_data_delay_ns = delay_ns;
   slot->queue_depth = q_depth;
   slot->sequence_gap_count = gap_count;

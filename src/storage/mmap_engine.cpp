@@ -57,6 +57,7 @@ bool MmapStorageEngine::OpenOrCreate(const std::string& output_path,
     mmap_ptr_ = nullptr;
     return false;
   }
+  mmap_size_ = mmap_size;
 
   meta_header_ = reinterpret_cast<MmapMetaHeader*>(mmap_ptr_);
   meta_header_->file_size = max_file_size_;
@@ -68,9 +69,10 @@ bool MmapStorageEngine::OpenOrCreate(const std::string& output_path,
 }
 
 void MmapStorageEngine::AppendRecord(const TickData& tick, uint32_t storage_target) {
+  if (!IsOpen()) return;
   // Boundary defense: 2GB file boundary protection per spec §4.2
   if (current_mapped_offset_ + sizeof(StorageTickEnvelope) >= max_file_size_) {
-    RollNewFile();
+    if (!RollNewFile()) return;
   }
 
   StorageTickEnvelope envelope{};
@@ -90,30 +92,63 @@ void MmapStorageEngine::AppendRecord(const TickData& tick, uint32_t storage_targ
   current_mapped_offset_ += sizeof(StorageTickEnvelope);
 }
 
-void MmapStorageEngine::RollNewFile() {
+void MmapStorageEngine::AppendRaw(const void* data, size_t size) {
+  if (!IsOpen() || data == nullptr || size == 0) return;
+  if (current_mapped_offset_ + size >= max_file_size_) {
+    if (!RollNewFile()) return;
+  }
+  std::memcpy(mmap_ptr_ + current_mapped_offset_, data, size);
+  meta_header_->write_offset.store(current_mapped_offset_ + size,
+                                   std::memory_order_release);
+  current_mapped_offset_ += size;
+}
+
+bool MmapStorageEngine::RollNewFile() {
   Sync();
-  munmap(mmap_ptr_, max_file_size_);
-  close(fd_);
+  if (mmap_ptr_ && mmap_ptr_ != MAP_FAILED) {
+    munmap(mmap_ptr_, mmap_size_);
+    mmap_ptr_ = nullptr;
+  }
+  if (fd_ >= 0) {
+    close(fd_);
+    fd_ = -1;
+  }
 
   file_sequence_++;
   std::string fname = MakeFileName(file_sequence_);
   fd_ = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
-    long page_size = sysconf(_SC_PAGESIZE);
+  if (fd_ < 0) {
+    LOG_ERROR(GetLogger(), "Failed to open new mmap file: {}", fname);
+    return false;
+  }
+  long page_size = sysconf(_SC_PAGESIZE);
   uint64_t mmap_size = ((max_file_size_ + page_size - 1) / page_size) * page_size;
 
   if (ftruncate(fd_, static_cast<off_t>(mmap_size)) != 0) {
     LOG_ERROR(GetLogger(), "Failed to truncate new mmap file: {}", fname);
-    return;
+    close(fd_);
+    fd_ = -1;
+    return false;
   }
 
   mmap_ptr_ = static_cast<char*>(
       mmap(nullptr, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
+  if (mmap_ptr_ == MAP_FAILED) {
+    LOG_ERROR(GetLogger(), "mmap failed for new file: {}", fname);
+    close(fd_);
+    fd_ = -1;
+    mmap_ptr_ = nullptr;
+    return false;
+  }
+  mmap_size_ = mmap_size;
+
   meta_header_ = reinterpret_cast<MmapMetaHeader*>(mmap_ptr_);
   meta_header_->file_size = max_file_size_;
   meta_header_->write_offset.store(64, std::memory_order_relaxed);
   current_mapped_offset_ = 64;
 
   LOG_INFO(GetLogger(), "MmapStorageEngine rolled to new file: {}", fname);
+  return true;
 }
 
 void MmapStorageEngine::Sync() {
@@ -125,7 +160,7 @@ void MmapStorageEngine::Sync() {
 void MmapStorageEngine::Close() {
   Sync();
   if (mmap_ptr_ && mmap_ptr_ != MAP_FAILED) {
-    munmap(mmap_ptr_, max_file_size_);
+    munmap(mmap_ptr_, mmap_size_);
     mmap_ptr_ = nullptr;
   }
   if (fd_ >= 0) {

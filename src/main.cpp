@@ -26,9 +26,8 @@
 #include "telemetry/prometheus_exposer.h"
 #include "telemetry/telemetry_agent.h"
 
-using namespace sqc;
-
 int main(int argc, char* argv[]) {
+  using namespace sqc;
   std::string config_path = "config/config.yaml";
   if (argc > 1) config_path = argv[1];
 
@@ -56,6 +55,7 @@ int main(int argc, char* argv[]) {
   TelemetryAgent telemetry_agent(&prometheus, config.telemetry.report_interval_ms);
   TelemetrySlot telemetry_slot;
   PubWorker pub_worker(config.gateway.unified_pub_endpoint);
+  pub_worker.Init(num_parsers);
   GatewaySupervisor gateway_supervisor(config.gateway.internal_router);
 
   // 5. Boost.Asio + SSL
@@ -82,7 +82,8 @@ int main(int argc, char* argv[]) {
         info.type = ch.type;
         info.symbol = sym.name;
         uint32_t id = channel_registry.Register(info);
-        orderbook_manager.RegisterChannel(id, sym.depth_level);
+        bool snapshot_mode = (ex.name == "gateio");
+        orderbook_manager.RegisterChannel(id, sym.depth_level, snapshot_mode);
 
         auto chan = std::make_shared<SymbolChannel>(
             ex.name, ch.type, ch.ws_url, rest_host,
@@ -97,13 +98,15 @@ int main(int argc, char* argv[]) {
   std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
   for (size_t i = 0; i < num_parsers; ++i) {
     auto worker = std::make_unique<ShardParserWorker>(config.threading_matrix.parser_cores[i], *shard_queues[i],
-      [&](std::shared_ptr<TickData> tick) -> void {
-      if (!tick) return;
-      const auto* info = channel_registry.Lookup(tick->channel_id);
+      [&](TickData tick) -> void {
+      const auto* info = channel_registry.Lookup(tick.channel_id);
       const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
       const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
-      storage_router.RouteTick(*tick, exchange, type);
-      pub_worker.PublishTick(tick);
+      uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count();
+      tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
+      storage_router.RouteTick(tick, exchange, type);
+      pub_worker.PublishTick(tick, i);
       WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
         }, [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           orderbook_manager.OnDepthEvent(channel_id, event);
@@ -112,7 +115,11 @@ int main(int argc, char* argv[]) {
             const auto* info = channel_registry.Lookup(channel_id);
             const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
             const std::string_view type = info ? std::string_view{info->type} : std::string_view{};
-            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, event.local_timestamp, event.symbol, lob->depth_level(), exchange, type);
+            uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            uint64_t latency_ns = now_ns - event.local_timestamp;
+            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
+                                          event.symbol, lob->depth_level(), exchange, type);
           }
         });
 
@@ -149,8 +156,7 @@ int main(int argc, char* argv[]) {
 
   std::thread pub_thread([&]() {
     if (config.global.cpu_affinity) PinToCore(config.threading_matrix.pub_core);
-    while (!SignalHandler::IsShutdownRequested())
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    pub_worker.Run();
   });
 
   LOG_INFO(GetLogger(), "All threads started, waiting for shutdown");
@@ -171,6 +177,7 @@ int main(int argc, char* argv[]) {
 
   telemetry_agent.Stop();
   if (telemetry_thread.joinable()) telemetry_thread.join();
+  pub_worker.Stop();
   if (pub_thread.joinable()) pub_thread.join();
   if (storage_thread.joinable()) storage_thread.join();
   gateway_supervisor.Stop();

@@ -109,7 +109,8 @@ void CsvWriter::AppendTick(const TickData& tick) {
 }
 
 void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
-                                uint64_t local_ts, std::string_view symbol,
+                                uint64_t local_ts,
+                                [[maybe_unused]] std::string_view symbol,
                                 uint32_t depth_level) {
   if (!RotateIfNeeded(exchange_ts)) return;
   if (!orderbook_file_.is_open()) return;
@@ -123,16 +124,18 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
     orderbook_file_ << "\n";
   }
 
-  auto bids = lob.TopBids(depth_level_);
-  auto asks = lob.TopAsks(depth_level_);
+  PriceLevel bids[kMaxOrderbookLevels];
+  PriceLevel asks[kMaxOrderbookLevels];
+  uint32_t bid_count = lob.TopBids(bids, depth_level_);
+  uint32_t ask_count = lob.TopAsks(asks, depth_level_);
 
   orderbook_file_ << exchange_ts << "," << local_ts;
   for (uint32_t i = 0; i < depth_level_; ++i) {
     orderbook_file_ << ","
-                    << (i < asks.size() ? asks[i].price : 0.0) << ","
-                    << (i < asks.size() ? asks[i].quantity : 0.0) << ","
-                    << (i < bids.size() ? bids[i].price : 0.0) << ","
-                    << (i < bids.size() ? bids[i].quantity : 0.0);
+                    << (i < ask_count ? asks[i].price : 0.0) << ","
+                    << (i < ask_count ? asks[i].quantity : 0.0) << ","
+                    << (i < bid_count ? bids[i].price : 0.0) << ","
+                    << (i < bid_count ? bids[i].quantity : 0.0);
   }
   orderbook_file_ << "\n";
 }

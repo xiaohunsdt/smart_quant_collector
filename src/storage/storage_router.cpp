@@ -24,8 +24,8 @@ StorageRouter::StorageRouter(const StorageConfig& storage_cfg,
       buffer_size_(storage_cfg.dolphindb.buffer_size),
       csv_output_path_(storage_cfg.csv.output_path),
       mmap_output_path_(storage_cfg.mmap.output_path),
-      buffer_a_(storage_cfg.dolphindb.buffer_size),
-      buffer_b_(storage_cfg.dolphindb.buffer_size) {
+      buffer_a_(),
+      buffer_b_() {
   buffer_a_.reserve(buffer_size_);
   buffer_b_.reserve(buffer_size_);
 
@@ -77,6 +77,7 @@ void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
     auto it = tick_mmap_.find(key);
     if (it != tick_mmap_.end()) it->second->AppendRecord(tick, 0);
   } else if (use_engine_ == "dolphindb") {
+    std::lock_guard<std::mutex> lock(buffer_mtx_);
     auto& buf = ActiveBuffer();
     buf.push_back(tick);
     if (buf.size() >= buffer_size_) {
@@ -98,12 +99,31 @@ void StorageRouter::RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
     if (it != csv_writers_.end())
       it->second.AppendOrderbook(lob, exchange_ts, local_ts, symbol, depth_level);
   } else if (use_engine_ == "mmap") {
-    TickData stub{};
-    stub.exchange_timestamp = exchange_ts;
-    stub.local_timestamp = local_ts;
-    std::strncpy(stub.symbol, symbol.data(), sizeof(stub.symbol) - 1);
     auto it = ob_mmap_.find(key);
-    if (it != ob_mmap_.end()) it->second->AppendRecord(stub, 0);
+    if (it == ob_mmap_.end()) return;
+    // F20: serialize full orderbook snapshot
+    PriceLevel bids[kMaxOrderbookLevels];
+    PriceLevel asks[kMaxOrderbookLevels];
+    uint32_t bid_count = lob.TopBids(bids, depth_level);
+    uint32_t ask_count = lob.TopAsks(asks, depth_level);
+
+    struct alignas(8) OrderbookRecordHeader {
+      uint64_t exchange_timestamp;
+      uint64_t local_timestamp;
+      char symbol[12];
+      uint32_t bid_count;
+      uint32_t ask_count;
+    };
+    OrderbookRecordHeader hdr{};
+    hdr.exchange_timestamp = exchange_ts;
+    hdr.local_timestamp = local_ts;
+    std::strncpy(hdr.symbol, symbol.data(), sizeof(hdr.symbol) - 1);
+    hdr.bid_count = bid_count;
+    hdr.ask_count = ask_count;
+
+    it->second->AppendRaw(&hdr, sizeof(hdr));
+    if (bid_count > 0) it->second->AppendRaw(bids, bid_count * sizeof(PriceLevel));
+    if (ask_count > 0) it->second->AppendRaw(asks, ask_count * sizeof(PriceLevel));
   }
 }
 
@@ -129,7 +149,10 @@ void StorageRouter::FlushActiveBuffer() {
 }
 
 void StorageRouter::FlushAndClose() {
-  FlushActiveBuffer();
+  {
+    std::lock_guard<std::mutex> lock(buffer_mtx_);
+    FlushActiveBuffer();
+  }
 
   for (auto& [k, w] : csv_writers_) w.Close();
   for (auto& [k, e] : tick_mmap_) { e->Sync(); e->Close(); }

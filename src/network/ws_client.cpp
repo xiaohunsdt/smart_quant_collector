@@ -21,6 +21,7 @@ void WsClient::Connect(std::string_view host, std::string_view port,
   port_ = port;
   path_ = path;
   on_connect_ = std::move(on_connect);
+  on_disconnect_ = {};
 
   resolver_.async_resolve(
       host_, port_,
@@ -42,12 +43,17 @@ void WsClient::OnResolve(beast::error_code ec,
   beast::get_lowest_layer(ws_).async_connect(
       results,
       [this](beast::error_code connect_ec,
-             tcp::resolver::results_type::endpoint_type /*ep*/) {
+             [[maybe_unused]] tcp::resolver::results_type::endpoint_type ep) {
         if (connect_ec) {
           LOG_ERROR(GetLogger(), "WS TCP connect failed: {}",
                     connect_ec.message());
+          if (on_connect_) on_connect_(false);
           return;
         }
+
+        // F21: disable Nagle's algorithm for low-latency market data
+        beast::get_lowest_layer(ws_).socket().set_option(
+            net::ip::tcp::no_delay(true));
 
         beast::get_lowest_layer(ws_).expires_never();
         ws_.set_option(
@@ -66,6 +72,7 @@ void WsClient::OnResolve(beast::error_code ec,
 void WsClient::OnSslHandshake(beast::error_code ec) {
   if (ec) {
     LOG_ERROR(GetLogger(), "SSL handshake failed: {}", ec.message());
+    if (on_connect_) on_connect_(false);
     return;
   }
   ws_.async_handshake(host_, path_,
@@ -78,9 +85,13 @@ void WsClient::OnHandshake(beast::error_code ec) {
     if (on_connect_) on_connect_(false);
     return;
   }
-  is_open_ = true;
+  is_open_.store(true, std::memory_order_release);
   LOG_INFO(GetLogger(), "WS connected to {}:{}{}", host_, port_, path_);
   if (on_connect_) on_connect_(true);
+}
+
+void WsClient::SetDisconnectHandler(DisconnectHandler handler) {
+  on_disconnect_ = std::move(handler);
 }
 
 void WsClient::StartRead(MessageHandler handler) {
@@ -89,31 +100,32 @@ void WsClient::StartRead(MessageHandler handler) {
       [this, handler](beast::error_code ec, size_t bytes_transferred) {
         if (ec) {
           LOG_ERROR(GetLogger(), "WS read failed: {}", ec.message());
-          is_open_ = false;
+          is_open_.store(false, std::memory_order_release);
+          if (on_disconnect_) on_disconnect_();
           return;
         }
         auto* data = static_cast<const char*>(read_buffer_.data().data());
         handler(data, bytes_transferred);
         read_buffer_.consume(bytes_transferred);
         // Recurse: start next read
-        if (is_open_) {
+        if (is_open_.load(std::memory_order_acquire)) {
           StartRead(handler);
         }
       });
 }
 
 void WsClient::Write(std::string_view message) {
-  auto buf = std::make_shared<std::string>(message.data(), message.size());
+  std::string buf(message);
   beast::error_code ec;
-  ws_.write(net::buffer(*buf), ec);
+  ws_.write(net::buffer(buf), ec);
   if (ec) LOG_ERROR(GetLogger(), "WS write failed: {}", ec.message());
 }
 
 void WsClient::Close() {
-  if (!is_open_) return;
+  if (!is_open_.load(std::memory_order_acquire)) return;
   beast::error_code ec;
   ws_.close(websocket::close_code::normal, ec);
-  is_open_ = false;
+  is_open_.store(false, std::memory_order_release);
   if (ec) {
     LOG_WARNING(GetLogger(), "WS close warning: {}", ec.message());
   }

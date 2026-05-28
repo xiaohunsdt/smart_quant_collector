@@ -27,14 +27,18 @@ class MmapStorageEngine {
   // file_prefix: "tick" or "ob" to distinguish file types
   bool OpenOrCreate(const std::string& output_path, const std::string& file_prefix);
   void AppendRecord(const TickData& tick, uint32_t storage_target);
+  // Write raw bytes (for orderbook serialization, F20)
+  void AppendRaw(const void* data, size_t size);
   void Sync();
   void Close();
+  bool IsOpen() const { return fd_ >= 0 && mmap_ptr_ != nullptr; }
 
  private:
-  void RollNewFile();
+  bool RollNewFile();
   std::string MakeFileName(int sequence) const;
 
   uint64_t max_file_size_;
+  uint64_t mmap_size_ = 0;  // actual page-aligned mmap length
   int fd_ = -1;
   char* mmap_ptr_ = nullptr;
   MmapMetaHeader* meta_header_ = nullptr;
