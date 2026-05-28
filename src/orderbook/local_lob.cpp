@@ -57,7 +57,7 @@ void LocalLOB::UpdateSide(PriceLevel* levels, uint32_t& count, uint32_t capacity
 }
 
 void LocalLOB::UpdateDepth(const DepthUpdateEvent& event) {
-  last_update_id_ = event.u;
+  last_update_id_ = event.last_update_id;
 
   for (uint32_t i = 0; i < event.bid_count; ++i)
     UpdateSide(bids_, bid_count_, kMaxOrderbookLevels,
@@ -70,7 +70,7 @@ void LocalLOB::UpdateDepth(const DepthUpdateEvent& event) {
 void LocalLOB::ForceAlignWithEvent(const DepthUpdateEvent& event) {
   bid_count_ = 0;
   ask_count_ = 0;
-  last_update_id_ = event.u;
+  last_update_id_ = event.last_update_id;
 
   for (uint32_t i = 0; i < event.bid_count; ++i)
     bids_[i] = event.bids[i];

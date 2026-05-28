@@ -72,9 +72,7 @@ static bool ParseDepth(const std::string& json, OrderbookSnapshot& out) {
   return true;
 }
 
-OrderbookSnapshot FetchSnapshot(std::string_view rest_host,
-                                 std::string_view symbol,
-                                 uint32_t limit) {
+OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol, uint32_t limit) {
   OrderbookSnapshot snapshot{};
 
   bool is_futures = (rest_host.find("fapi") != std::string_view::npos);

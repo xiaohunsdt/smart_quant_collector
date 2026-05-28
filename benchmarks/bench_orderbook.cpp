@@ -20,8 +20,8 @@ static void BM_LOB_UpdateDepth5(benchmark::State& state) {
 
   // Depth update: modify 3 bids + 3 asks
   DepthUpdateEvent event{};
-  event.U = 2;
-  event.u = 3;
+  event.first_update_id = 2;
+  event.last_update_id = 3;
   event.bids[0] = {50000.0, 2.5};
   event.bids[1] = {49990.0, 0.0};  // delete
   event.bids[2] = {49980.0, 5.0};

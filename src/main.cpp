@@ -84,8 +84,7 @@ int main(int argc, char* argv[]) {
         uint32_t id = channel_registry.Register(info);
         bool snapshot_mode = (ex.name == "gateio");
         orderbook_manager.RegisterChannel(id, sym.depth_level, snapshot_mode);
-        orderbook_manager.SetChannelInfo(id,
-            {rest_host, ch.type, sym.name, sym.depth_level});
+        orderbook_manager.SetChannelInfo(id,{rest_host, ch.type, sym.name, sym.depth_level});
 
         auto chan = std::make_shared<SymbolChannel>(
             ex.name, ch.type, ch.ws_url, rest_host,

@@ -12,8 +12,9 @@ struct PriceLevel {
 };
 
 struct DepthUpdateEvent {
-  uint64_t U;  // first update ID in this event
-  uint64_t u;  // last update ID in this event
+  uint64_t first_update_id = 0;       // first update ID in this event (Binance: U)
+  uint64_t last_update_id = 0;        // last update ID in this event (Binance: u)
+  uint64_t prev_last_update_id = 0;   // previous event's last update ID (Binance: pu)
   uint32_t channel_id;
   uint64_t exchange_timestamp = 0;
   uint64_t local_timestamp = 0;

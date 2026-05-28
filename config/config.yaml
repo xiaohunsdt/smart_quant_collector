@@ -41,22 +41,25 @@ storage:
 
 exchanges:
   - name: "binance"
-    enabled: false
+    enabled: true
     channels:
-      - type: spot
-        ws_url: "wss://stream.binance.com:9443/ws"
-        symbols:
-          - name: "BTCUSDT"
-            depth_level: 5
-            record_tick: true
-          - name: "ETHUSDT"
-            depth_level: 20
-            record_tick: true
+      # - type: spot
+      #   ws_url: "wss://stream.binance.com:9443/ws"
+      #   symbols:
+      #     - name: "BTCUSDT"
+      #       depth_level: 10
+      #       record_tick: true
+      #     - name: "ETHUSDT"
+      #       depth_level: 20
+      #       record_tick: true
       - type: perpetual
         ws_url: "wss://fstream.binance.com/ws"
         symbols:
           - name: "BTCUSDT"
-            depth_level: 5
+            depth_level: 10
+            record_tick: true
+          - name: "ETHUSDT"
+            depth_level: 10
             record_tick: true
   - name: "gateio"
     enabled: true
@@ -68,10 +71,10 @@ exchanges:
       #       depth_level: 10
       #       record_tick: true
       #     - name: "ETHUSDT"
-      #       depth_level: 20
+      #       depth_level: 10
       #       record_tick: true
       #     - name: "SOLUSDT"
-      #       depth_level: 20
+      #       depth_level: 10
       #       record_tick: true
       - type: perpetual
         ws_url: "wss://fx-ws.gateio.ws/v4/ws/usdt"
@@ -81,8 +84,8 @@ exchanges:
           #   depth_level: 10
           #   record_tick: true
           - name: "ETH_USDT"
-            depth_level: 20
+            depth_level: 10
             record_tick: true
           - name: "SOL_USDT"
-            depth_level: 20
+            depth_level: 10
             record_tick: true

@@ -100,8 +100,8 @@ TEST(GateioParserTest, ParseRealOrderBookAll) {
   EXPECT_TRUE(ok) << "ParseDepthEvent should accept 'all' events (initial snapshot)";
   EXPECT_EQ(event.channel_id, 7u);
   EXPECT_STREQ(event.symbol, "BTC_USDT");
-  EXPECT_EQ(event.U, 113557080620u);
-  EXPECT_EQ(event.u, 113557080620u);
+  EXPECT_EQ(event.first_update_id, 113557080620u);
+  EXPECT_EQ(event.last_update_id, 113557080620u);
   EXPECT_EQ(event.exchange_timestamp, 1779923753557000ULL);
 
   ASSERT_EQ(event.bid_count, 3u);

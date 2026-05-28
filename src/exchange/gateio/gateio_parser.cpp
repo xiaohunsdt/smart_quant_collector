@@ -82,8 +82,8 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
 
     auto result = doc["result"];
     out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
-    out.U = result["id"].get_uint64();
-    out.u = out.U;
+    out.first_update_id = result["id"].get_uint64();
+    out.last_update_id = out.first_update_id;
     out.channel_id = channel_id;
 
     std::string_view sym = result["contract"].get_string();

@@ -60,8 +60,9 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     // ("e" already consumed by ParseMessage, so start from E)
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
     std::string_view sym = doc["s"].get_string();
-    out.U = static_cast<uint64_t>(doc["U"].get_int64());
-    out.u = static_cast<uint64_t>(doc["u"].get_int64());
+    out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
+    out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
+    out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
 

@@ -22,7 +22,7 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
   // orderbook snapshot — no incremental diff, no lockstep needed.
   if (snapshot_mode_) {
     lob_.ForceAlignWithEvent(event);
-    last_update_id_.store(event.u, std::memory_order_relaxed);
+    last_update_id_.store(event.last_update_id, std::memory_order_relaxed);
     state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
     return;
   }
@@ -31,8 +31,7 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
   if (st == SyncState::SYNCING) {
     // Defensive check 1: 3-second timeout or ring buffer overflow → retry
     auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
-    bool timed_out =
-        (now - snapshot_request_time_ > std::chrono::seconds(3));
+    bool timed_out = (now - snapshot_request_time_ > std::chrono::seconds(3));
     bool overflow = ring_buffer_.full();
 
     if (timed_out || overflow) {
@@ -41,17 +40,14 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
       sync_retry_count_.store(retries, std::memory_order_relaxed);
       if (retries >= 3) {
         // Defensive check 2: 3 consecutive failures → force align
-        LOG_WARNING(GetLogger(),
-                    "LockStep FSM: 3 consecutive sync failures, force aligning");
+        LOG_WARNING(GetLogger(), "LockStep FSM: 3 consecutive sync failures, force aligning");
         state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
         sync_retry_count_.store(0, std::memory_order_relaxed);
         lob_.ForceAlignWithEvent(event);
         ring_buffer_.clear();
         return;
       }
-      LOG_WARNING(GetLogger(),
-                  "LockStep FSM: sync retry {}/3 (timeout={}, overflow={})",
-                  retries, timed_out, overflow);
+      LOG_WARNING(GetLogger(), "LockStep FSM: sync retry {}/3 (timeout={}, overflow={})", retries, timed_out, overflow);
       ResetSyncing();
       return;
     }
@@ -59,28 +55,24 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
   } else {
     // ACTIVE: validate update_id continuity before applying
     auto last_id = last_update_id_.load(std::memory_order_relaxed);
-    if (last_id != 0 && event.U != last_id + 1) {
-      LOG_WARNING(GetLogger(),
-                  "LockStep FSM: gap detected (expected={}, got={}), entering SYNCING",
-                  last_id + 1, event.U);
+    if (last_id != 0 && event.prev_last_update_id != last_id) {
+      LOG_WARNING(GetLogger(),"LockStep FSM: gap detected (expected={}, got={}), entering SYNCING", last_id, event.prev_last_update_id);
       ResetSyncing();
       ring_buffer_.push_back(event);
       return;
     }
     lob_.UpdateDepth(event);
-    last_update_id_.store(event.u, std::memory_order_relaxed);
+    last_update_id_.store(event.last_update_id, std::memory_order_relaxed);
   }
 }
 
-void OrderbookStateMachine::PostSnapshot(const OrderbookSnapshot& snapshot,
-                                          uint64_t last_id) {
+void OrderbookStateMachine::PostSnapshot(const OrderbookSnapshot& snapshot, uint64_t last_id) {
   pending_snapshot_ = snapshot;
   pending_snapshot_last_id_ = last_id;
   pending_snapshot_ready_.store(true, std::memory_order_release);
 }
 
-void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
-                                               const OrderbookSnapshot& snapshot) {
+void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id, const OrderbookSnapshot& snapshot) {
   if (state_.load(std::memory_order_relaxed) != SyncState::SYNCING) return;
 
   lob_.ApplySnapshot(snapshot);
@@ -88,10 +80,10 @@ void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
 
   // Lock-step replay from ring buffer
   for (const auto& next_event : ring_buffer_) {
-    if (next_event.u <= current_id) continue;
-    if (next_event.U <= current_id + 1 && next_event.u >= current_id + 1) {
+    if (next_event.last_update_id <= current_id) continue;
+    if (next_event.first_update_id <= current_id + 1 && next_event.last_update_id >= current_id + 1) {
       lob_.UpdateDepth(next_event);
-      current_id = next_event.u;
+      current_id = next_event.last_update_id;
     }
   }
 

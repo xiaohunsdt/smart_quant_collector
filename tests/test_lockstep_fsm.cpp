@@ -21,8 +21,8 @@ TEST_F(LockstepFSMTest, StartsInActiveState) {
 
 TEST_F(LockstepFSMTest, ActiveStateUpdatesLOB) {
   DepthUpdateEvent event{};
-  event.U = 1;
-  event.u = 1;
+  event.first_update_id = 1;
+  event.last_update_id = 1;
   event.bids[0] = {50000.0, 1.0};
   event.bid_count = 1;
 
@@ -55,8 +55,8 @@ TEST_F(LockstepFSMTest, ForceAlignAfterThreeRetries) {
 
   // Active events should pass through normally
   DepthUpdateEvent event{};
-  event.U = 1;
-  event.u = 2;
+  event.first_update_id = 1;
+  event.last_update_id = 2;
   event.bids[0] = {60000.0, 1.0};
   event.bid_count = 1;
   fsm_.OnDepthEventReceived(event);
@@ -83,8 +83,8 @@ TEST(LockstepFSMSnapshotMode, DirectSnapshotApply) {
   EXPECT_EQ(fsm.state(), SyncState::ACTIVE);
 
   DepthUpdateEvent event{};
-  event.U = 97722276323ULL;
-  event.u = 97722276323ULL;
+  event.first_update_id = 97722276323ULL;
+  event.last_update_id = 97722276323ULL;
   event.bids[0] = {50000.0, 1.0};
   event.bids[1] = {49999.0, 2.0};
   event.bid_count = 2;
@@ -105,16 +105,16 @@ TEST(LockstepFSMSnapshotMode, NonContiguousIdsAreFine) {
   OrderbookStateMachine fsm(lob, /*snapshot_mode=*/true);
 
   DepthUpdateEvent e1{};
-  e1.U = 100;
-  e1.u = 100;
+  e1.first_update_id = 100;
+  e1.last_update_id = 100;
   e1.bids[0] = {50000.0, 1.0};
   e1.bid_count = 1;
   fsm.OnDepthEventReceived(e1);
 
   // Non-contiguous ID — in snapshot mode this is fine
   DepthUpdateEvent e2{};
-  e2.U = 200;
-  e2.u = 200;
+  e2.first_update_id = 200;
+  e2.last_update_id = 200;
   e2.bids[0] = {51000.0, 2.0};
   e2.bid_count = 1;
   fsm.OnDepthEventReceived(e2);

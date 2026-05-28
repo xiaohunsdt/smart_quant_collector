@@ -39,8 +39,8 @@ TEST(LocalLOBTest, UpdateDepthUpsert) {
 
   // Update existing level
   DepthUpdateEvent event{};
-  event.U = 1;
-  event.u = 2;
+  event.first_update_id = 1;
+  event.last_update_id = 2;
   event.bids[0] = {50000.0, 3.0};  // upsert quantity
   event.bid_count = 1;
   lob.UpdateDepth(event);
@@ -62,8 +62,8 @@ TEST(LocalLOBTest, UpdateDepthDelete) {
 
   // Delete level with qty=0
   DepthUpdateEvent event{};
-  event.U = 1;
-  event.u = 2;
+  event.first_update_id = 1;
+  event.last_update_id = 2;
   event.bids[0] = {50000.0, 0.0};  // delete
   event.bid_count = 1;
   lob.UpdateDepth(event);
@@ -84,8 +84,8 @@ TEST(LocalLOBTest, ForceAlignWithEvent) {
 
   // Force-align with new event (clears old state)
   DepthUpdateEvent event{};
-  event.U = 200;
-  event.u = 200;
+  event.first_update_id = 200;
+  event.last_update_id = 200;
   event.bids[0] = {60000.0, 5.0};
   event.bid_count = 1;
   lob.ForceAlignWithEvent(event);

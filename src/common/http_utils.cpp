@@ -51,8 +51,7 @@ std::string HttpsGet(std::string_view host, std::string_view target) {
     stream.shutdown(ec);
 
     if (res.result() != http::status::ok) {
-      LOG_ERROR(GetLogger(), "HTTP {} for {}: {}", static_cast<int>(res.result()),
-                target, res.body());
+      LOG_ERROR(GetLogger(), "HTTP {} for {}: {}", static_cast<int>(res.result()), target, res.body());
       return {};
     }
     return res.body();
