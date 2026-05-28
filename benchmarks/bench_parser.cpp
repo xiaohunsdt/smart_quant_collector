@@ -2,8 +2,8 @@
 #include <cstring>
 #include "simdjson.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/binance/binance_parser.h"
-#include "src/exchange/gateio/gateio_parser.h"
+#include "src/exchange/binance/binance_spot_parser.h"
+#include "src/exchange/gateio/gateio_spot_parser.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -39,7 +39,7 @@ static void BM_BinanceParseTrade(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
+    auto result = binance_spot::ParseMessage(doc, 1);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }
@@ -57,7 +57,7 @@ static void BM_GateioParseTicker(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = gateio_parser::ParseMessage(doc, 2, ChannelType::Spot);
+    auto result = gateio_spot::ParseMessage(doc, 2);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }

@@ -20,7 +20,7 @@ class WsClient;
 
 class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
  public:
-  SymbolChannel(const ExchangeAdapter* adapter, ChannelType channel_type,
+  SymbolChannel(const ExchangeAdapter* adapter,
                 std::string symbol, uint32_t depth_level,
                 uint32_t channel_id,
                 net::io_context& ioc, net::ssl::context& ssl_ctx,
@@ -35,7 +35,7 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
 
   const std::string& symbol() const { return symbol_; }
   std::string_view exchange_name() const { return adapter_->name; }
-  ChannelType channel_type() const { return channel_type_; }
+  ChannelType channel_type() const { return adapter_->channel_type; }
   uint32_t channel_id() const { return channel_id_; }
 
  private:
@@ -43,7 +43,6 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
   void Subscribe();
 
   const ExchangeAdapter* adapter_;
-  ChannelType channel_type_;
   std::string symbol_;
   uint32_t depth_level_;
   uint32_t channel_id_;

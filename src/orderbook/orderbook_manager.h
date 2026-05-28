@@ -16,10 +16,9 @@ class OrderbookStateMachine;
 
 struct ChannelSnapshotInfo {
   std::string rest_host;
-  ChannelType channel_type = ChannelType::Spot;
   std::string symbol;
   uint32_t depth_level = 10;
-  OrderbookSnapshot (*fetch_snapshot)(std::string_view, ChannelType, std::string_view) = nullptr;
+  OrderbookSnapshot (*fetch_snapshot)(std::string_view, std::string_view) = nullptr;
 };
 
 class OrderbookManager {
@@ -31,7 +30,6 @@ class OrderbookManager {
   void SetChannelInfo(uint32_t channel_id, ChannelSnapshotInfo info);
   void OnTick(std::shared_ptr<TickData> tick);
   void OnDepthEvent(uint32_t channel_id, const DepthUpdateEvent& event);
-  // Returns true if best bid/ask prices changed.
   bool OnBookTicker(uint32_t channel_id, const BookTickerEvent& event);
 
   LocalLOB* GetLOB(uint32_t channel_id);

@@ -12,13 +12,12 @@
 namespace sqc {
 
 SymbolChannel::SymbolChannel(
-    const ExchangeAdapter* adapter, ChannelType channel_type,
+    const ExchangeAdapter* adapter,
     std::string symbol, uint32_t depth_level,
     uint32_t channel_id,
     net::io_context& ioc, net::ssl::context& ssl_ctx,
     std::vector<std::shared_ptr<ShardQueue>> shard_queues)
     : adapter_(adapter),
-      channel_type_(channel_type),
       symbol_(std::move(symbol)),
       depth_level_(depth_level),
       channel_id_(channel_id),
@@ -30,7 +29,7 @@ SymbolChannel::SymbolChannel(
 SymbolChannel::~SymbolChannel() = default;
 
 void SymbolChannel::Start() {
-  std::string_view ws_url = adapter_->endpoints(channel_type_).ws_url;
+  std::string_view ws_url = adapter_->ws_url;
   std::string url(ws_url);
   std::string host, port = "443", path = "/";
   if (url.starts_with("wss://")) url = url.substr(6);
@@ -89,7 +88,7 @@ void SymbolChannel::Start() {
 void SymbolChannel::Stop() { if (ws_) ws_->Close(); }
 
 void SymbolChannel::Subscribe() {
-  subscribes_ = adapter_->build_subscribes(channel_type_, symbol_, depth_level_);
+  subscribes_ = adapter_->build_subscribes(symbol_, depth_level_);
   for (size_t i = 0; i < subscribes_.size(); ++i) {
     const auto& [msg, delay_ms] = subscribes_[i];
     if (delay_ms == 0) {
@@ -117,7 +116,6 @@ void SymbolChannel::OnMessage(const char* data, size_t size) {
   std::memset(msg.buffer() + size, 0, kSimdjsonPadding);
   msg.size = size;
   msg.channel_id = channel_id_;
-  msg.channel_type = channel_type_;
   msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
   msg.parse_fn = adapter_->parse;
 

@@ -5,7 +5,9 @@
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/binance/binance_parser.h"
+#include "src/exchange/binance/binance_common.h"
+#include "src/exchange/binance/binance_spot_parser.h"
+#include "src/exchange/binance/binance_perpetual_parser.h"
 #include "src/exchange/exchange_adapter.h"
 
 namespace sqc {
@@ -32,7 +34,7 @@ TEST(BinanceParserTest, ParseTradeEvent) {
   ParseDoc(parser, json, doc);
 
   TickData tick{};
-  bool ok = binance_parser::ParseTradeEvent(doc, tick, 1);
+  bool ok = binance::ParseTradeEvent(doc, tick, 1);
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -50,7 +52,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithoutEventField) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
+  auto result = binance_spot::ParseMessage(doc, 1);
 
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
@@ -62,7 +64,7 @@ TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
+  auto result = binance_spot::ParseMessage(doc, 1);
 
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   if (result.type == ParsedType::BOOK_TICKER) {
@@ -83,7 +85,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
+  auto result = binance_spot::ParseMessage(doc, 1);
 
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
@@ -97,7 +99,7 @@ TEST(BinanceParserTest, ParseDepthEventSpotNoPuField) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 1, ChannelType::Spot);
+  bool ok = binance_spot::ParseDepthEvent(doc, depth, 1);
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -133,7 +135,7 @@ TEST(BinanceParserTest, ParseDepthEventFuturesHasPuField) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 3, ChannelType::Perpetual);
+  bool ok = binance_perpetual::ParseDepthEvent(doc, depth, 3);
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -155,7 +157,7 @@ TEST(BinanceParserTest, ParseDepthEventFirstUpdateIdZero) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 2, ChannelType::Spot);
+  bool ok = binance_spot::ParseDepthEvent(doc, depth, 2);
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -171,7 +173,7 @@ TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1, ChannelType::Spot);
+  auto result = binance_spot::ParseMessage(doc, 1);
 
   EXPECT_EQ(result.type, ParsedType::TICK);
   if (result.type == ParsedType::TICK) {

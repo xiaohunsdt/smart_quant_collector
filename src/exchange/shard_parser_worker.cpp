@@ -42,7 +42,7 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
 
   try {
     if (!msg.parse_fn) return;
-    auto result = msg.parse_fn(doc, msg.channel_id, msg.channel_type);
+    auto result = msg.parse_fn(doc, msg.channel_id);
     switch (result.type) {
       case ParsedType::TICK:
         if (tick_handler_) {

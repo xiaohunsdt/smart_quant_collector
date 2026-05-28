@@ -73,7 +73,7 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
   std::thread([info, fsm, channel_id]() {
     OrderbookSnapshot snapshot;
     if (info.fetch_snapshot) {
-      snapshot = info.fetch_snapshot(info.rest_host, info.channel_type, info.symbol);
+      snapshot = info.fetch_snapshot(info.rest_host, info.symbol);
     }
     if (snapshot.lastUpdateId == 0) {
       LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);

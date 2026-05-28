@@ -4,7 +4,9 @@
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/gateio/gateio_parser.h"
+#include "src/exchange/gateio/gateio_common.h"
+#include "src/exchange/gateio/gateio_spot_parser.h"
+#include "src/exchange/gateio/gateio_perpetual_parser.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -44,7 +46,7 @@ TEST(GateioParserTest, ParseRealTradeUpdate) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   TickData tick{};
-  bool ok = gateio_parser::ParseTradeEvent(doc, tick, 2);
+  bool ok = gateio::ParseTradeEvent(doc, tick, 2);
 
   EXPECT_TRUE(ok) << "ParseTradeEvent should succeed on real Gate.io trades data";
   EXPECT_EQ(tick.channel_id, 2u);
@@ -95,7 +97,7 @@ TEST(GateioParserTest, ParseRealOrderBookAll) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   DepthUpdateEvent event{};
-  bool ok = gateio_parser::ParseDepthEvent(doc, event, 7);
+  bool ok = gateio_spot::ParseDepthEvent(doc, event, 7);
 
   EXPECT_TRUE(ok) << "ParseDepthEvent should accept 'all' events (initial snapshot)";
   EXPECT_EQ(event.channel_id, 7u);
@@ -155,7 +157,7 @@ TEST(GateioParserTest, ParseRealOrderBookUpdate) {
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
 	DepthUpdateEvent event{};
-	bool ok = gateio_parser::ParseDepthUpdateEvent(doc, event, 7);
+	bool ok = gateio::ParseDepthUpdateEvent(doc, event, 7);
 
 	EXPECT_TRUE(ok);
 	EXPECT_EQ(event.channel_id, 7u);
@@ -204,7 +206,7 @@ TEST(GateioParserTest, ParseRealBookTicker) {
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
 	BookTickerEvent event{};
-	bool ok = gateio_parser::ParseBookTickerEvent(doc, event, 7);
+	bool ok = gateio::ParseBookTickerEvent(doc, event, 7);
 
 	EXPECT_TRUE(ok);
 	EXPECT_EQ(event.channel_id, 7u);
@@ -227,7 +229,7 @@ TEST(GateioParserTest, ParseMessageDispatchesToDepthUpdate) {
 	auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
-	auto result = gateio_parser::ParseMessage(doc, 7, ChannelType::Spot);
+	auto result = gateio_perpetual::ParseMessage(doc, 7);
 	EXPECT_EQ(result.type, ParsedType::DEPTH);
 	EXPECT_EQ(result.depth.first_update_id, 81045888519u);
 }
@@ -243,7 +245,7 @@ TEST(GateioParserTest, ParseMessageDispatchesToBookTicker) {
 	auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
-	auto result = gateio_parser::ParseMessage(doc, 7, ChannelType::Spot);
+	auto result = gateio_perpetual::ParseMessage(doc, 7);
 	EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
 	EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 74486.0);
 }
@@ -268,7 +270,7 @@ TEST(GateioParserTest, ParseDepthUpdateSkipsSubscribeEvent) {
 	ASSERT_FALSE(err) << simdjson::error_message(err);
 
 	DepthUpdateEvent event{};
-	bool ok = gateio_parser::ParseDepthUpdateEvent(doc, event, 7);
+	bool ok = gateio::ParseDepthUpdateEvent(doc, event, 7);
 	EXPECT_FALSE(ok) << "subscribe event should be skipped";
 }
 

@@ -68,27 +68,27 @@ int main(int argc, char* argv[]) {
   std::vector<std::shared_ptr<SymbolChannel>> channels;
   for (const auto& ex : config.exchanges) {
     if (!ex.enabled) continue;
-    const auto* adapter = GetAdapter(ex.name);
-    if (!adapter) {
-      LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
-      continue;
-    }
     for (const auto& ch : ex.channels) {
-      std::string rest_host(adapter->endpoints(ParseChannelType(ch.type)).rest_host);
+      const auto* adapter = GetAdapter(ex.name, ParseChannelType(ch.type));
+      if (!adapter) {
+        LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
+        continue;
+      }
+      std::string rest_host(adapter->rest_host);
 
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
 
         ChannelInfo info;
         info.exchange = ex.name;
-        info.type = ParseChannelType(ch.type);
+        info.type = adapter->channel_type;
         info.symbol = sym.name;
         uint32_t id = channel_registry.Register(info);
         orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
-        orderbook_manager.SetChannelInfo(id, {rest_host, ParseChannelType(ch.type), sym.name, sym.depth_level, adapter->fetch_snapshot});
+        orderbook_manager.SetChannelInfo(id, {rest_host, sym.name, sym.depth_level, adapter->fetch_snapshot});
 
         auto chan = std::make_shared<SymbolChannel>(
-            adapter, ParseChannelType(ch.type), sym.name, sym.depth_level, id,
+            adapter, sym.name, sym.depth_level, id,
             io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
       }
