@@ -1,13 +1,14 @@
 #include "gateway_supervisor.h"
 
+#include "config/config_loader.h"
 #include "gateway_router.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 
 namespace sqc {
 
-GatewaySupervisor::GatewaySupervisor(const std::string& bind_addr)
-    : bind_addr_(bind_addr) {}
+GatewaySupervisor::GatewaySupervisor()
+    : bind_addr_(Config::Instance().gateway.internal_router) {}
 
 GatewaySupervisor::~GatewaySupervisor() = default;
 

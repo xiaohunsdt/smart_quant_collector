@@ -38,15 +38,20 @@ inline const char* ChannelTypeName(ChannelType t) {
   return "unknown";
 }
 
+// A group of subscriptions sharing the same WebSocket connection.
+struct SubscriptionGroup {
+  std::string ws_url;
+  std::vector<std::pair<std::string, uint32_t>> messages;  // {message, delay_ms}
+};
+
 // Single adapter per (exchange, channel_type) — no runtime branching.
 struct ExchangeAdapter {
   std::string_view name;
   ChannelType channel_type;
   bool snapshot_mode = false;
-  std::string_view ws_url;
   std::string_view rest_host;
 
-  std::vector<std::pair<std::string, uint32_t>> (*build_subscribes)(std::string_view symbol, uint32_t depth_level);
+  std::vector<SubscriptionGroup> (*build_subscribes)(std::string_view symbol, uint32_t depth_level);
   ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id);
   OrderbookSnapshot (*fetch_snapshot)(std::string_view rest_host, std::string_view symbol);
 };

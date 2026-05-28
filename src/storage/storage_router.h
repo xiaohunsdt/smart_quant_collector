@@ -21,8 +21,7 @@ class LocalLOB;
 
 class StorageRouter {
  public:
-  StorageRouter(const StorageConfig& storage_cfg,
-                const std::vector<ExchangeConfig>& exchanges);
+  explicit StorageRouter();
 
   void RouteTick(const TickData& tick, std::string_view exchange, ChannelType channel_type);
   void RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,

@@ -53,6 +53,7 @@ struct CsvConfig {
 
 struct StorageConfig {
   std::string use_engine = "csv";
+  bool persist_to_disk = true;
   DolphinDBConfig dolphindb;
   MmapConfig mmap;
   CsvConfig csv;
@@ -63,6 +64,7 @@ struct SymbolConfig {
   bool enabled = true;
   uint32_t depth_level = 5;
   bool record_tick = true;
+  bool persist_to_disk = true;
 };
 
 struct ChannelConfig {

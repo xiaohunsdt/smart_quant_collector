@@ -14,7 +14,7 @@ class PrometheusExposer;
 // Polls POSIX shared memory slots and aggregates into Prometheus.
 class TelemetryAgent {
  public:
-  TelemetryAgent(PrometheusExposer* exposer, uint32_t report_interval_ms);
+  TelemetryAgent(PrometheusExposer* exposer);
 
   void RegisterSlot(const std::string& name, TelemetrySlot* slot);
   void PollAll();

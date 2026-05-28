@@ -10,6 +10,33 @@
 #include "src/network/ws_client.h"
 
 namespace sqc {
+namespace {
+
+struct ParsedUrl {
+  std::string host;
+  std::string port = "443";
+  std::string path = "/";
+};
+
+ParsedUrl ParseWsUrl(std::string_view ws_url) {
+  std::string url(ws_url);
+  ParsedUrl result{};
+  if (url.starts_with("wss://")) url = url.substr(6);
+  auto colon = url.find(':');
+  auto slash = url.find('/');
+  if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
+    result.host = url.substr(0, colon);
+    result.port = url.substr(colon + 1, slash - colon - 1);
+  } else if (slash != std::string::npos) {
+    result.host = url.substr(0, slash);
+  } else {
+    result.host = url;
+  }
+  if (slash != std::string::npos) result.path = url.substr(slash);
+  return result;
+}
+
+}  // namespace
 
 SymbolChannel::SymbolChannel(
     const ExchangeAdapter* adapter,
@@ -22,85 +49,110 @@ SymbolChannel::SymbolChannel(
       depth_level_(depth_level),
       channel_id_(channel_id),
       ioc_(ioc), ssl_ctx_(ssl_ctx),
-      shard_queues_(std::move(shard_queues)) {
-  ws_ = std::make_unique<WsClient>(ioc_, ssl_ctx_);
-}
+      shard_queues_(std::move(shard_queues)) {}
 
 SymbolChannel::~SymbolChannel() = default;
 
 void SymbolChannel::Start() {
-  std::string_view ws_url = adapter_->ws_url;
-  std::string url(ws_url);
-  std::string host, port = "443", path = "/";
-  if (url.starts_with("wss://")) url = url.substr(6);
-  auto colon = url.find(':');
-  auto slash = url.find('/');
-  if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
-    host = url.substr(0, colon);
-    port = url.substr(colon + 1, slash - colon - 1);
-  } else if (slash != std::string::npos) {
-    host = url.substr(0, slash);
-  } else {
-    host = url;
-  }
-  if (slash != std::string::npos) path = url.substr(slash);
+  groups_ = adapter_->build_subscribes(symbol_, depth_level_);
+  if (groups_.empty()) return;
+  ws_clients_.resize(groups_.size());
 
-  LOG_INFO(GetLogger(), "SymbolChannel {}:{} connecting to {}:{} {}", adapter_->name, symbol_,
-           host, port, path);
+  for (size_t g = 0; g < groups_.size(); ++g) {
+    std::string_view ws_url = groups_[g].ws_url;
 
-  auto self = shared_from_this();
-  ws_->Connect(host, port, path, [this, self](bool success) {
-    if (success) {
-      reconnect_attempts_ = 0;
+    auto parsed = ParseWsUrl(ws_url);
 
-      ws_->SetDisconnectHandler([this, self]() {
-        LOG_WARNING(GetLogger(), "{}:{} disconnected, reconnecting...", adapter_->name,
-                    symbol_);
-        if (!SignalHandler::IsShutdownRequested()) {
+    LOG_INFO(GetLogger(), "SymbolChannel {}:{} group {} connecting to {}:{} {}",
+             adapter_->name, symbol_, g, parsed.host, parsed.port, parsed.path);
+
+    auto ws = std::make_unique<WsClient>(ioc_, ssl_ctx_);
+    auto* ws_raw = ws.get();
+    ws_clients_[g] = std::move(ws);
+
+    auto self = shared_from_this();
+    ws_raw->Connect(parsed.host, parsed.port, parsed.path,
+                    [this, self, g](bool success) {
+      if (success) {
+        reconnect_attempts_ = 0;
+        ws_clients_[g]->SetDisconnectHandler(
+            [this, self]() { OnDisconnect(); });
+        SendGroupSubscriptions(g);
+        ws_clients_[g]->StartRead(
+            [this](const char* data, size_t size) { OnMessage(data, size); });
+        LOG_INFO(GetLogger(), "Read loop started for {}:{} group {}",
+                 adapter_->name, symbol_, g);
+      } else {
+        LOG_WARNING(GetLogger(), "{}:{} group {} connect failed",
+                    adapter_->name, symbol_, g);
+        if (!is_reconnecting_) {
+          is_reconnecting_ = true;
           uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
           delay = std::min(delay, kMaxReconnectDelaySec);
           reconnect_attempts_++;
           auto timer = std::make_shared<net::steady_timer>(
               ioc_, std::chrono::seconds(delay));
           timer->async_wait([this, self, timer](boost::system::error_code) {
-            if (!SignalHandler::IsShutdownRequested()) Start();
+            if (!SignalHandler::IsShutdownRequested()) {
+              is_reconnecting_ = false;
+              Start();
+            }
           });
         }
-      });
+      }
+    });
+  }
+}
 
-      Subscribe();
-      ws_->StartRead([this](const char* data, size_t size) { OnMessage(data, size); });
-      LOG_INFO(GetLogger(), "Read loop started for {}:{}", adapter_->name, symbol_);
-    } else {
-      uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
-      delay = std::min(delay, kMaxReconnectDelaySec);
-      reconnect_attempts_++;
-      LOG_WARNING(GetLogger(), "{}:{} connect failed, retrying in {}s...",
-                  adapter_->name, symbol_, delay);
-      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
-      timer->async_wait([this, self, timer](boost::system::error_code) {
-        if (!SignalHandler::IsShutdownRequested()) Start();
-      });
+void SymbolChannel::Stop() {
+  for (auto& ws : ws_clients_) {
+    if (ws) ws->Close();
+  }
+}
+
+void SymbolChannel::OnDisconnect() {
+  if (is_reconnecting_) return;
+  LOG_WARNING(GetLogger(), "{}:{} disconnected, reconnecting...",
+              adapter_->name, symbol_);
+  if (SignalHandler::IsShutdownRequested()) return;
+
+  is_reconnecting_ = true;
+  for (auto& ws : ws_clients_) {
+    if (ws) ws->Close();
+  }
+
+  uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
+  delay = std::min(delay, kMaxReconnectDelaySec);
+  reconnect_attempts_++;
+  auto self = shared_from_this();
+  auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
+  timer->async_wait([this, self, timer](boost::system::error_code) {
+    if (!SignalHandler::IsShutdownRequested()) {
+      is_reconnecting_ = false;
+      Start();
     }
   });
 }
 
-void SymbolChannel::Stop() { if (ws_) ws_->Close(); }
-
-void SymbolChannel::Subscribe() {
-  subscribes_ = adapter_->build_subscribes(symbol_, depth_level_);
-  for (size_t i = 0; i < subscribes_.size(); ++i) {
-    const auto& [msg, delay_ms] = subscribes_[i];
+void SymbolChannel::SendGroupSubscriptions(size_t g) {
+  if (g >= groups_.size()) return;
+  const auto& group = groups_[g];
+  for (size_t i = 0; i < group.messages.size(); ++i) {
+    const auto& [msg, delay_ms] = group.messages[i];
     if (delay_ms == 0) {
-      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, msg);
-      ws_->Write(msg);
+      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}",
+               adapter_->name, symbol_, msg);
+      ws_clients_[g]->Write(msg);
     } else {
-      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(delay_ms));
-      timer->async_wait([this, i, timer](boost::system::error_code) {
+      auto timer = std::make_shared<net::steady_timer>(
+          ioc_, std::chrono::milliseconds(delay_ms));
+      auto self = shared_from_this();
+      timer->async_wait([this, self, g, i, timer](boost::system::error_code) {
         if (!SignalHandler::IsShutdownRequested()) {
-          const auto& [m, _] = subscribes_[i];
-          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, m);
-          ws_->Write(m);
+          const auto& [m, _] = groups_[g].messages[i];
+          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}",
+                   adapter_->name, symbol_, m);
+          ws_clients_[g]->Write(m);
         }
       });
     }
@@ -116,10 +168,12 @@ void SymbolChannel::OnMessage(const char* data, size_t size) {
   std::memset(msg.buffer() + size, 0, kSimdjsonPadding);
   msg.size = size;
   msg.channel_id = channel_id_;
-  msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
   msg.parse_fn = adapter_->parse;
 
-  uint32_t shard = (channel_id_ ^ std::hash<std::string_view>{}(adapter_->name)) % shard_queues_.size();
+  uint32_t shard = (channel_id_ ^ std::hash<std::string_view>{}(adapter_->name))
+                   % shard_queues_.size();
   shard_queues_[shard]->Push(std::move(msg));
 }
 

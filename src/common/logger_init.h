@@ -6,7 +6,7 @@
 
 namespace sqc {
 
-void InitLogger(const std::string& log_file_path, const std::string& log_level_str);
+void InitLogger();
 quill::Logger* GetLogger();
 
 }  // namespace sqc

@@ -13,7 +13,7 @@ class GatewayRouter;
 // Restarts gateway within 100ms on crash.
 class GatewaySupervisor {
  public:
-  GatewaySupervisor(const std::string& bind_addr);
+  GatewaySupervisor();
 
   GatewaySupervisor(const GatewaySupervisor&) = delete;
   GatewaySupervisor& operator=(const GatewaySupervisor&) = delete;

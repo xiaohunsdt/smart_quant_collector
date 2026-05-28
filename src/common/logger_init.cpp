@@ -4,6 +4,7 @@
 #include <mutex>
 #include <vector>
 
+#include "config/config_loader.h"
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
 #include "quill/LogMacros.h"
@@ -15,20 +16,21 @@ namespace sqc {
 static quill::Logger* g_logger = nullptr;
 static std::once_flag g_logger_init_flag;
 
-void InitLogger(const std::string& log_file_path, const std::string& log_level_str) {
+void InitLogger() {
+  const auto& cfg = Config::Instance().global;
   quill::Backend::start();
 
   quill::LogLevel level = quill::LogLevel::Info;
-  if (log_level_str == "debug") level = quill::LogLevel::Debug;
-  else if (log_level_str == "trace_l3") level = quill::LogLevel::TraceL3;
-  else if (log_level_str == "trace_l2") level = quill::LogLevel::TraceL2;
-  else if (log_level_str == "trace_l1") level = quill::LogLevel::TraceL1;
-  else if (log_level_str == "warning") level = quill::LogLevel::Warning;
-  else if (log_level_str == "error") level = quill::LogLevel::Error;
+  if (cfg.log_level == "debug") level = quill::LogLevel::Debug;
+  else if (cfg.log_level == "trace_l3") level = quill::LogLevel::TraceL3;
+  else if (cfg.log_level == "trace_l2") level = quill::LogLevel::TraceL2;
+  else if (cfg.log_level == "trace_l1") level = quill::LogLevel::TraceL1;
+  else if (cfg.log_level == "warning") level = quill::LogLevel::Warning;
+  else if (cfg.log_level == "error") level = quill::LogLevel::Error;
 
   auto stdout_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("stdout");
   auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>(
-      log_file_path, quill::FileSinkConfig{});
+      cfg.log_file_path, quill::FileSinkConfig{});
 
   std::vector<std::shared_ptr<quill::Sink>> sinks;
   sinks.push_back(std::move(stdout_sink));

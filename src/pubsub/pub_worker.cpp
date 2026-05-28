@@ -4,15 +4,17 @@
 #include <cstring>
 #include <thread>
 
+#include "config/config_loader.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 
 namespace sqc {
 
-PubWorker::PubWorker(const std::string& endpoint) : ctx_(1), pub_socket_(ctx_, ZMQ_PUB) {
+PubWorker::PubWorker() : ctx_(1), pub_socket_(ctx_, ZMQ_PUB) {
+  const auto& ep = Config::Instance().gateway.unified_pub_endpoint;
   pub_socket_.set(zmq::sockopt::sndhwm, 10000);
-  pub_socket_.bind(endpoint);
-  LOG_INFO(GetLogger(), "PubWorker bound to {}", endpoint);
+  pub_socket_.bind(ep);
+  LOG_INFO(GetLogger(), "PubWorker bound to {}", ep);
 }
 
 void PubWorker::Init(size_t num_queues) {

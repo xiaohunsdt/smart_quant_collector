@@ -29,11 +29,11 @@
 
 int main(int argc, char* argv[]) {
   using namespace sqc;
-  std::string config_path = "config/config.yaml";
+  std::string config_path = "config/Config::Instance().yaml";
   if (argc > 1) config_path = argv[1];
 
-  auto config = LoadConfig(config_path);
-  InitLogger(config.global.log_file_path, config.global.log_level);
+  Config::Load(config_path);
+  InitLogger();
   LOG_INFO(GetLogger(), "smart_quant_collector v1.0.0 starting");
 
   SignalHandler::Install();
@@ -43,21 +43,21 @@ int main(int argc, char* argv[]) {
   OrderbookManager orderbook_manager;
 
   // 2. Shard queues
-  auto num_parsers = config.threading_matrix.parser_cores.size();
+  auto num_parsers = Config::Instance().threading_matrix.parser_cores.size();
   std::vector<std::shared_ptr<ShardQueue>> shard_queues;
   for (size_t i = 0; i < num_parsers; ++i)
     shard_queues.push_back(std::make_shared<ShardQueue>());
 
   // 3. Storage
-  StorageRouter storage_router(config.storage, config.exchanges);
+  StorageRouter storage_router;
 
   // 4. Telemetry + Pub/Sub
-  PrometheusExposer prometheus(config.telemetry.listen_port);
-  TelemetryAgent telemetry_agent(&prometheus, config.telemetry.report_interval_ms);
+  PrometheusExposer prometheus;
+  TelemetryAgent telemetry_agent(&prometheus);
   TelemetrySlot telemetry_slot;
-  PubWorker pub_worker(config.gateway.unified_pub_endpoint);
+  PubWorker pub_worker;
   pub_worker.Init(num_parsers);
-  GatewaySupervisor gateway_supervisor(config.gateway.internal_router);
+  GatewaySupervisor gateway_supervisor;
 
   // 5. Boost.Asio + SSL
   net::io_context io_ctx;
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
 
   // 6. Symbol channels (one per symbol — register + create in single pass)
   std::vector<std::shared_ptr<SymbolChannel>> channels;
-  for (const auto& ex : config.exchanges) {
+  for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
     for (const auto& ch : ex.channels) {
       const auto* adapter = GetAdapter(ex.name, ParseChannelType(ch.type));
@@ -87,9 +87,7 @@ int main(int argc, char* argv[]) {
         orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
         orderbook_manager.SetChannelInfo(id, {rest_host, sym.name, sym.depth_level, adapter->fetch_snapshot});
 
-        auto chan = std::make_shared<SymbolChannel>(
-            adapter, sym.name, sym.depth_level, id,
-            io_ctx, ssl_ctx, shard_queues);
+        auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
       }
     }
@@ -98,16 +96,17 @@ int main(int argc, char* argv[]) {
   // 7. Parser workers
   std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
   for (size_t i = 0; i < num_parsers; ++i) {
-    auto worker = std::make_unique<ShardParserWorker>(config.threading_matrix.parser_cores[i], *shard_queues[i],
+    auto worker = std::make_unique<ShardParserWorker>(Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
       [&](TickData tick) -> void {
-      const auto* info = channel_registry.Lookup(tick.channel_id);
-      const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-      const ChannelType type = info ? info->type : ChannelType::Spot;
-      uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-      tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
-      storage_router.RouteTick(tick, exchange, type);
-      pub_worker.PublishTick(tick, i);
-      WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
+          // LOG_DEBUG(GetLogger(), "Tick: symbol={}, price={}, quantity={}", tick.symbol, tick.price, tick.quantity);
+          const auto* info = channel_registry.Lookup(tick.channel_id);
+          const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
+          const ChannelType type = info ? info->type : ChannelType::Spot;
+          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+          tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
+          storage_router.RouteTick(tick, exchange, type);
+          pub_worker.PublishTick(tick, i);
+          WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
         }, 
         [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           orderbook_manager.OnDepthEvent(channel_id, event);
@@ -118,8 +117,7 @@ int main(int argc, char* argv[]) {
             const ChannelType type = info ? info->type : ChannelType::Spot;
             uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
             uint64_t latency_ns = now_ns - event.local_timestamp;
-            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
-                                          event.symbol, lob->depth_level(), exchange, type);
+            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,event.symbol, lob->depth_level(), exchange, type);
           }
         }, 
         [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
@@ -127,13 +125,13 @@ int main(int argc, char* argv[]) {
           if (changed) {
             auto* lob = orderbook_manager.GetLOB(channel_id);
             if (lob) {
+              LOG_DEBUG(GetLogger(), "BookTicker: bid={}, ask={}, bid_volume={}, ask_volume={}", lob->BestBid(), lob->BestAsk(), lob->BestBidVolume(), lob->BestAskVolume());
               const auto* info = channel_registry.Lookup(channel_id);
               const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
               const ChannelType type = info ? info->type : ChannelType::Spot;
               uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
               uint64_t latency_ns = now_ns - event.local_timestamp;
-              storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
-                                            event.symbol, lob->depth_level(), exchange, type);
+              storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,event.symbol, lob->depth_level(), exchange, type);
             }
           }
           return changed;
@@ -146,32 +144,32 @@ int main(int argc, char* argv[]) {
   gateway_supervisor.Start();
 
   std::thread telemetry_thread([&]() {
-    if (config.global.cpu_affinity) PinToCore(config.threading_matrix.telemetry_core);
+    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.telemetry_core);
     telemetry_agent.Run();
   });
 
   std::thread storage_thread([&]() {
-    if (config.global.cpu_affinity) PinToCore(config.threading_matrix.storage_core);
+    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.storage_core);
     while (!SignalHandler::IsShutdownRequested())
-      std::this_thread::sleep_for(std::chrono::milliseconds(config.storage.dolphindb.flush_interval_ms));
+      std::this_thread::sleep_for(std::chrono::milliseconds(Config::Instance().storage.dolphindb.flush_interval_ms));
   });
 
   std::vector<std::thread> parser_threads;
   for (size_t i = 0; i < num_parsers; ++i)
     parser_threads.emplace_back([&, i]() {
-      if (config.global.cpu_affinity) PinToCore(config.threading_matrix.parser_cores[i]);
+      if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
       parser_workers[i]->Run();
     });
 
   std::thread network_thread([&]() {
-    if (config.global.cpu_affinity) PinToCore(config.threading_matrix.network_core);
+    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.network_core);
     for (auto& ch : channels) ch->Start();
     auto work_guard = net::make_work_guard(io_ctx);
     io_ctx.run();
   });
 
   std::thread pub_thread([&]() {
-    if (config.global.cpu_affinity) PinToCore(config.threading_matrix.pub_core);
+    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.pub_core);
     pub_worker.Run();
   });
 

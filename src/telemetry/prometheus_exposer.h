@@ -20,7 +20,7 @@ namespace sqc {
 // leaking memory via Family::Add() on every update (F16).
 class PrometheusExposer {
  public:
-  explicit PrometheusExposer(uint16_t port);
+  PrometheusExposer();
   ~PrometheusExposer();
 
   PrometheusExposer(const PrometheusExposer&) = delete;

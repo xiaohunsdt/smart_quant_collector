@@ -5,6 +5,7 @@
 #include <prometheus/gauge.h>
 #include <prometheus/registry.h>
 
+#include "config/config_loader.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 
@@ -16,9 +17,10 @@ struct PrometheusExposer::Metrics {
   prometheus::Family<prometheus::Counter>* zmq_dropped_family;
 };
 
-PrometheusExposer::PrometheusExposer(uint16_t port)
+PrometheusExposer::PrometheusExposer()
     : registry_(std::make_shared<prometheus::Registry>()),
       metrics_(std::make_unique<Metrics>()) {
+  auto port = Config::Instance().telemetry.listen_port;
   metrics_->latency_family = &prometheus::BuildGauge()
                                   .Name("collector_latency_us")
                                   .Help("End-to-end latency in microseconds")

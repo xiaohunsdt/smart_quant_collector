@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "config/config_loader.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include "src/orderbook/local_lob.h"
@@ -22,27 +23,29 @@ std::string StorageRouter::MakeKey(std::string_view exchange, ChannelType type,
   return key;
 }
 
-StorageRouter::StorageRouter(const StorageConfig& storage_cfg,
-                             const std::vector<ExchangeConfig>& exchanges)
-    : use_engine_(storage_cfg.use_engine),
-      buffer_size_(storage_cfg.dolphindb.buffer_size),
-      csv_output_path_(storage_cfg.csv.output_path),
-      mmap_output_path_(storage_cfg.mmap.output_path),
+StorageRouter::StorageRouter()
+    : use_engine_(Config::Instance().storage.use_engine),
+      buffer_size_(Config::Instance().storage.dolphindb.buffer_size),
+      csv_output_path_(Config::Instance().storage.csv.output_path),
+      mmap_output_path_(Config::Instance().storage.mmap.output_path),
       buffer_a_(),
       buffer_b_() {
   buffer_a_.reserve(buffer_size_);
   buffer_b_.reserve(buffer_size_);
 
   if (use_engine_ == "dolphindb")
-    dolphindb_.Connect(storage_cfg.dolphindb.host, storage_cfg.dolphindb.port,
-                       storage_cfg.dolphindb.user, storage_cfg.dolphindb.password);
+    dolphindb_.Connect(Config::Instance().storage.dolphindb.host,
+                       Config::Instance().storage.dolphindb.port,
+                       Config::Instance().storage.dolphindb.user,
+                       Config::Instance().storage.dolphindb.password);
 
   // Pre-allocate all writers at startup — runtime maps are read-only, no lock needed
-  for (const auto& ex : exchanges) {
+  for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
     for (const auto& ch : ex.channels) {
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
+        if (!Config::Instance().storage.persist_to_disk || !sym.persist_to_disk) continue;
         auto key = MakeKey(ex.name, ParseChannelType(ch.type), sym.name);
 
         if (use_engine_ == "csv") {

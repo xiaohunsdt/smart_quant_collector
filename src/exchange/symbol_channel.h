@@ -40,7 +40,8 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
 
  private:
   void OnMessage(const char* data, size_t size);
-  void Subscribe();
+  void SendGroupSubscriptions(size_t g);
+  void OnDisconnect();
 
   const ExchangeAdapter* adapter_;
   std::string symbol_;
@@ -48,11 +49,12 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
   uint32_t channel_id_;
   net::io_context& ioc_;
   net::ssl::context& ssl_ctx_;
-  std::unique_ptr<WsClient> ws_;
+  std::vector<SubscriptionGroup> groups_;
+  std::vector<std::unique_ptr<WsClient>> ws_clients_;
   std::vector<std::shared_ptr<ShardQueue>> shard_queues_;
-  std::vector<std::pair<std::string, uint32_t>> subscribes_;
 
   uint32_t reconnect_attempts_ = 0;
+  bool is_reconnecting_ = false;
   static constexpr uint32_t kMaxReconnectDelaySec = 60;
 };
 

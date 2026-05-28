@@ -14,6 +14,7 @@ SymbolConfig ParseSymbol(const YAML::Node& node) {
   if (node["enabled"]) s.enabled = node["enabled"].as<bool>();
   if (node["depth_level"]) s.depth_level = node["depth_level"].as<uint32_t>();
   if (node["record_tick"]) s.record_tick = node["record_tick"].as<bool>();
+  if (node["persist_to_disk"]) s.persist_to_disk = node["persist_to_disk"].as<bool>();
   return s;
 }
 
@@ -86,6 +87,7 @@ RootConfig LoadConfig(const std::string& path) {
   if (root["storage"]) {
     auto s = root["storage"];
     if (s["use_engine"]) config.storage.use_engine = s["use_engine"].as<std::string>();
+    if (s["persist_to_disk"]) config.storage.persist_to_disk = s["persist_to_disk"].as<bool>();
     if (s["dolphindb"]) {
       auto d = s["dolphindb"];
       if (d["host"]) config.storage.dolphindb.host = d["host"].as<std::string>();
@@ -112,5 +114,10 @@ RootConfig LoadConfig(const std::string& path) {
 
   return config;
 }
+
+RootConfig Config::instance_;
+
+void Config::Load(const std::string& path) { instance_ = LoadConfig(path); }
+const RootConfig& Config::Instance() { return instance_; }
 
 }  // namespace sqc

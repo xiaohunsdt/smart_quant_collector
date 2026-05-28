@@ -2,14 +2,16 @@
 
 #include <thread>
 
+#include "config/config_loader.h"
 #include "prometheus_exposer.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 
 namespace sqc {
 
-TelemetryAgent::TelemetryAgent(PrometheusExposer* exposer, uint32_t report_interval_ms)
-    : exposer_(exposer), report_interval_ms_(report_interval_ms) {}
+TelemetryAgent::TelemetryAgent(PrometheusExposer* exposer)
+    : exposer_(exposer),
+      report_interval_ms_(Config::Instance().telemetry.report_interval_ms) {}
 
 void TelemetryAgent::RegisterSlot(const std::string& name, TelemetrySlot* slot) {
   slots_.push_back({name, slot});

@@ -46,7 +46,7 @@ struct TickSPSCQueue {
 // Dedicated pub thread (single-threaded) reads from all queues and sends via ZMQ.
 class PubWorker {
  public:
-  explicit PubWorker(const std::string& endpoint);
+  explicit PubWorker();
 
   PubWorker(const PubWorker&) = delete;
   PubWorker& operator=(const PubWorker&) = delete;
