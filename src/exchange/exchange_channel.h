@@ -48,4 +48,11 @@ class ExchangeChannel : public std::enable_shared_from_this<ExchangeChannel> {
   const std::unordered_map<std::string, uint32_t>& symbol_to_channel_id_;
 };
 
+// Builds the Gate.io futures.order_book subscribe JSON payload.
+// payload contains only contract names — depth_level and interval are
+// client-side config, not API subscribe parameters.
+std::string BuildGateioOrderBookSubscribePayload(
+    const std::vector<SymbolSpec>& symbols,
+    uint64_t timestamp_seconds);
+
 }  // namespace sqc

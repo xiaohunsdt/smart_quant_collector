@@ -14,6 +14,23 @@
 
 namespace sqc {
 
+std::string BuildGateioOrderBookSubscribePayload(
+    const std::vector<SymbolSpec>& symbols,
+    uint64_t timestamp_seconds) {
+  std::string payload =
+      R"({"time":)" + std::to_string(timestamp_seconds) +
+      R"(,"channel":"futures.order_book","event":"subscribe","payload":[)";
+  bool first = true;
+  for (const auto& sym : symbols) {
+    if (!sym.enabled) continue;
+    if (!first) payload += ",";
+    payload += "\"" + sym.name + "\"";
+    first = false;
+  }
+  payload += "]}";
+  return payload;
+}
+
 ExchangeChannel::~ExchangeChannel() = default;
 
 ExchangeChannel::ExchangeChannel(
@@ -96,22 +113,11 @@ void ExchangeChannel::Subscribe() {
 
   // Chain order_book subscribe after tickers subscribe completes
   if (spec_.exchange_name == "gateio") {
-    // Use a timer to delay the second subscribe (avoids concurrent writes)
     auto depth_sub = std::make_shared<std::string>(
-        R"({"time":)" +
-        std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count()) +
-        R"(,"channel":"futures.order_book","event":"subscribe","payload":[)");
-    bool first = true;
-    for (const auto& sym : spec_.symbols) {
-      if (!sym.enabled) continue;
-      if (!first) *depth_sub += ",";
-      // Gate.io order_book payload: ["contract", "limit", "interval"]
-      *depth_sub += "\"" + sym.name + "\",\"" +
-                    std::to_string(sym.depth_level) + "\",\"0\"";
-      first = false;
-    }
-    *depth_sub += "]}";
+        BuildGateioOrderBookSubscribePayload(
+          spec_.symbols,
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()));
 
     auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(500));
     timer->async_wait([this, depth_sub, timer](boost::system::error_code) {
