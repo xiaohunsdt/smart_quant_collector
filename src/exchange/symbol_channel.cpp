@@ -95,7 +95,8 @@ void SymbolChannel::Subscribe() {
   if (exchange_name_ == "binance") {
     std::string name = symbol_;
     for (auto& c : name) c = static_cast<char>(std::tolower(c));
-    std::string sub = R"({"method":"SUBSCRIBE","params":[")" + name + R"(@trade"],"id":1})";
+    std::string sub = R"({"method":"SUBSCRIBE","params":[")" + name +
+                      R"(@trade",")" + name + R"(@depth@100ms"],"id":1})";
     LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", exchange_name_, symbol_, sub);
     ws_->Write(sub);
   } else if (exchange_name_ == "gateio") {
