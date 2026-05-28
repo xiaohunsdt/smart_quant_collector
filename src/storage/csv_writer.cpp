@@ -83,7 +83,7 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     return false;
   }
   if (trade_is_new)
-    trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction,symbol\n";
+    trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction\n";
 
   // Open orderbook file
   std::string ob_path = dir_ + "orderbook_" + current_date_ + ".csv";
@@ -104,7 +104,7 @@ void CsvWriter::AppendTick(const TickData& tick) {
               << tick.local_timestamp << ","
               << tick.price << ","
               << tick.quantity << ","
-              << (tick.is_buyer_maker ? -1 : 1) << ","
+              << (tick.is_buyer_maker ? -1 : 1)
               << "\n";
 }
 
@@ -116,7 +116,7 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
 
   if (depth_level_ == 0) {
     depth_level_ = depth_level;
-    orderbook_file_ << "exchange_timestamp,local_timestamp,symbol";
+    orderbook_file_ << "exchange_timestamp,local_timestamp";
     for (uint32_t i = 0; i < depth_level_; ++i)
       orderbook_file_ << ",AskPrice" << (i + 1) << ",AskSize" << (i + 1)
                       << ",BidPrice" << (i + 1) << ",BidSize" << (i + 1);
@@ -126,7 +126,7 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
   auto bids = lob.TopBids(depth_level_);
   auto asks = lob.TopAsks(depth_level_);
 
-  orderbook_file_ << exchange_ts << "," << local_ts << "," << symbol;
+  orderbook_file_ << exchange_ts << "," << local_ts;
   for (uint32_t i = 0; i < depth_level_; ++i) {
     orderbook_file_ << ","
                     << (i < asks.size() ? asks[i].price : 0.0) << ","

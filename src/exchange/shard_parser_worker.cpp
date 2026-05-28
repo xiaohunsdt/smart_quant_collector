@@ -66,8 +66,7 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
     } else if (event_type == "depthUpdate" || event_type == "futures.order_book") {
       // Depth update event
       DepthUpdateEvent depth_event{};
-      depth_event.local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::system_clock::now().time_since_epoch()).count();
+      depth_event.local_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       bool ok = false;
       if (msg.exchange == "binance")
         ok = binance_parser::ParseDepthEvent(doc, depth_event, msg.channel_id);

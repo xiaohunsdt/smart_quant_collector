@@ -9,6 +9,8 @@ namespace sqc {
 GatewaySupervisor::GatewaySupervisor(const std::string& bind_addr)
     : bind_addr_(bind_addr) {}
 
+GatewaySupervisor::~GatewaySupervisor() = default;
+
 void GatewaySupervisor::Start() {
   running_ = true;
   router_ = std::make_unique<GatewayRouter>(bind_addr_);

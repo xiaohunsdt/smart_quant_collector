@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -18,6 +17,8 @@ class GatewaySupervisor {
 
   GatewaySupervisor(const GatewaySupervisor&) = delete;
   GatewaySupervisor& operator=(const GatewaySupervisor&) = delete;
+
+  ~GatewaySupervisor();
 
   void Start();
   void Stop();
