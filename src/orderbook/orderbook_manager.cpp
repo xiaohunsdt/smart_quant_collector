@@ -2,6 +2,8 @@
 
 #include <thread>
 
+#include "quill/LogMacros.h"
+#include "common/logger_init.h"
 #include "lockstep_fsm.h"
 #include "local_lob.h"
 #include "src/exchange/binance/binance_snapshot_client.h"
@@ -62,7 +64,7 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
   auto info = info_it->second;
   auto* fsm = fsm_it->second.get();
 
-  std::thread([info, fsm]() {
+  std::thread([info, fsm, channel_id]() {
     OrderbookSnapshot snapshot;
     if (info.rest_host.find("gateio") != std::string::npos) {
       snapshot = gateio::FetchSnapshot(info.rest_host, info.channel_type,
@@ -70,6 +72,11 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
     } else {
       snapshot = binance::FetchSnapshot(info.rest_host, info.symbol,
                                          info.depth_level);
+    }
+    if (snapshot.lastUpdateId == 0) {
+      LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",
+                  channel_id);
+      return;
     }
     std::lock_guard<std::mutex> lock(fsm->mutex());
     fsm->OnSnapshotReturned(snapshot.lastUpdateId, snapshot);

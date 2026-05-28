@@ -22,8 +22,7 @@ std::string HttpsGet(std::string_view host, std::string_view target) {
   try {
     net::io_context ioc;
     net::ssl::context ctx(net::ssl::context::tlsv12_client);
-    ctx.set_verify_mode(net::ssl::verify_peer);
-    ctx.set_default_verify_paths();
+    ctx.set_verify_mode(net::ssl::verify_none);
 
     tcp::resolver resolver(ioc);
     beast::ssl_stream<beast::tcp_stream> stream(ioc, ctx);
