@@ -53,7 +53,6 @@ exchanges:
       #       depth_level: 20
       #       record_tick: true
       - type: perpetual
-        ws_url: "wss://fstream.binance.com/ws"
         symbols:
           # - name: "BTCUSDT"
           #   depth_level: 10
@@ -77,7 +76,6 @@ exchanges:
       #       depth_level: 10
       #       record_tick: true
       - type: perpetual
-        ws_url: "wss://fx-ws.gateio.ws/v4/ws/usdt"
         symbols:
           # - name: "BTC_USDT"
           #   enabled: true

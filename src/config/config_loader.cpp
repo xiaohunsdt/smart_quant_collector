@@ -20,7 +20,6 @@ SymbolConfig ParseSymbol(const YAML::Node& node) {
 ChannelConfig ParseChannel(const YAML::Node& node) {
   ChannelConfig c;
   c.type = node["type"].as<std::string>();
-  c.ws_url = node["ws_url"].as<std::string>();
   if (node["symbols"] && node["symbols"].IsSequence()) {
     for (const auto& sym : node["symbols"]) {
       c.symbols.push_back(ParseSymbol(sym));

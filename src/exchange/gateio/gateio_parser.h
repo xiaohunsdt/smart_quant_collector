@@ -4,21 +4,13 @@
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
+#include "src/exchange/exchange_adapter.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
 namespace gateio_parser {
 
-enum class ParsedType { NONE, TICK, DEPTH };
-
-struct ParseResult {
-  ParsedType type = ParsedType::NONE;
-  TickData tick{};
-  DepthUpdateEvent depth{};
-};
-
 // Unified entry point: parses the document and determines event type internally.
-// Does NOT consume any fields before determining type — safe for simdjson ondemand.
 ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id);
 
 // Low-level parsers (exposed for unit tests)

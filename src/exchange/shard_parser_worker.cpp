@@ -5,8 +5,6 @@
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
 #include <exception>
-#include "binance/binance_parser.h"
-#include "gateio/gateio_parser.h"
 #include "src/common/simdjson_utils.h"
 
 namespace sqc {
@@ -35,7 +33,6 @@ void ShardParserWorker::Run() {
 }
 
 void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
-  // Buffer already has SIMDJSON_PADDING bytes appended by OnMessage
   simdjson::ondemand::document doc;
   auto err = parser_.iterate(msg.buffer(), msg.size, msg.size + kSimdjsonPadding).get(doc);
   if (err) {
@@ -44,27 +41,29 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
   }
 
   try {
-    if (std::string_view(msg.exchange) == "binance") {
-      auto result = binance_parser::ParseMessage(doc, msg.channel_id);
-      if (result.type == binance_parser::ParsedType::TICK && tick_handler_) {
-        result.tick.local_timestamp = msg.recv_timestamp;
-        tick_handler_(std::move(result.tick));
-      } else if (result.type == binance_parser::ParsedType::DEPTH && depth_handler_) {
-        result.depth.local_timestamp = msg.recv_timestamp;
-        depth_handler_(msg.channel_id, result.depth);
-      } else if (result.type == binance_parser::ParsedType::BOOK_TICKER && book_ticker_handler_) {
-        result.book_ticker.local_timestamp = msg.recv_timestamp;
-        book_ticker_handler_(msg.channel_id, result.book_ticker);
-      }
-    } else if (std::string_view(msg.exchange) == "gateio") {
-      auto result = gateio_parser::ParseMessage(doc, msg.channel_id);
-      if (result.type == gateio_parser::ParsedType::TICK && tick_handler_) {
-        result.tick.local_timestamp = msg.recv_timestamp;
-        tick_handler_(std::move(result.tick));
-      } else if (result.type == gateio_parser::ParsedType::DEPTH && depth_handler_) {
-        result.depth.local_timestamp = msg.recv_timestamp;
-        depth_handler_(msg.channel_id, result.depth);
-      }
+    if (!msg.parse_fn) return;
+    auto result = msg.parse_fn(doc, msg.channel_id);
+    switch (result.type) {
+      case ParsedType::TICK:
+        if (tick_handler_) {
+          result.tick.local_timestamp = msg.recv_timestamp;
+          tick_handler_(std::move(result.tick));
+        }
+        break;
+      case ParsedType::DEPTH:
+        if (depth_handler_) {
+          result.depth.local_timestamp = msg.recv_timestamp;
+          depth_handler_(msg.channel_id, result.depth);
+        }
+        break;
+      case ParsedType::BOOK_TICKER:
+        if (book_ticker_handler_) {
+          result.book_ticker.local_timestamp = msg.recv_timestamp;
+          book_ticker_handler_(msg.channel_id, result.book_ticker);
+        }
+        break;
+      case ParsedType::NONE:
+        break;
     }
   } catch (const simdjson::simdjson_error& e) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "ParseAndDispatch simdjson error on core {}: {}", core_id_, e.what());

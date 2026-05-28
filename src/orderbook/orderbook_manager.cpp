@@ -6,8 +6,6 @@
 #include "common/logger_init.h"
 #include "lockstep_fsm.h"
 #include "local_lob.h"
-#include "src/exchange/binance/binance_snapshot_client.h"
-#include "src/exchange/gateio/gateio_snapshot_client.h"
 
 namespace sqc {
 
@@ -74,10 +72,8 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
 
   std::thread([info, fsm, channel_id]() {
     OrderbookSnapshot snapshot;
-    if (info.rest_host.find("gateio") != std::string::npos) {
-      snapshot = gateio::FetchSnapshot(info.rest_host, info.channel_type,info.symbol);
-    } else {
-      snapshot = binance::FetchSnapshot(info.rest_host, info.symbol);
+    if (info.fetch_snapshot) {
+      snapshot = info.fetch_snapshot(info.rest_host, info.channel_type, info.symbol);
     }
     if (snapshot.lastUpdateId == 0) {
       LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);

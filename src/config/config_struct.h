@@ -67,7 +67,6 @@ struct SymbolConfig {
 
 struct ChannelConfig {
   std::string type;  // "spot" or "perpetual"
-  std::string ws_url;
   std::vector<SymbolConfig> symbols;
 };
 

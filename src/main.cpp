@@ -13,6 +13,7 @@
 #include "common/telemetry_slot.h"
 #include "config/config_loader.h"
 #include "exchange/channel_mapping.h"
+#include "exchange/exchange_adapter.h"
 #include "exchange/shard_parser_worker.h"
 #include "exchange/shard_queue.h"
 #include "exchange/symbol_channel.h"
@@ -67,12 +68,13 @@ int main(int argc, char* argv[]) {
   std::vector<std::shared_ptr<SymbolChannel>> channels;
   for (const auto& ex : config.exchanges) {
     if (!ex.enabled) continue;
+    const auto* adapter = GetAdapter(ex.name);
+    if (!adapter) {
+      LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
+      continue;
+    }
     for (const auto& ch : ex.channels) {
-      std::string rest_host;
-      if (ex.name == "binance")
-        rest_host = ch.type == "spot" ? "api.binance.com" : "fapi.binance.com";
-      else if (ex.name == "gateio")
-        rest_host = "api.gateio.ws";
+      std::string rest_host(adapter->endpoints(ch.type).rest_host);
 
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
@@ -82,13 +84,11 @@ int main(int argc, char* argv[]) {
         info.type = ch.type;
         info.symbol = sym.name;
         uint32_t id = channel_registry.Register(info);
-        bool snapshot_mode = (ex.name == "gateio");
-        orderbook_manager.RegisterChannel(id, sym.depth_level, snapshot_mode);
-        orderbook_manager.SetChannelInfo(id,{rest_host, ch.type, sym.name, sym.depth_level});
+        orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
+        orderbook_manager.SetChannelInfo(id, {rest_host, ch.type, sym.name, sym.depth_level, adapter->fetch_snapshot});
 
         auto chan = std::make_shared<SymbolChannel>(
-            ex.name, ch.type, ch.ws_url, rest_host,
-            sym.name, sym.depth_level, id,
+            adapter, ch.type, sym.name, sym.depth_level, id,
             io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
       }
@@ -108,7 +108,8 @@ int main(int argc, char* argv[]) {
       storage_router.RouteTick(tick, exchange, type);
       pub_worker.PublishTick(tick, i);
       WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
-        }, [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
+        }, 
+        [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           orderbook_manager.OnDepthEvent(channel_id, event);
           auto* lob = orderbook_manager.GetLOB(channel_id);
           if (lob) {
@@ -120,7 +121,8 @@ int main(int argc, char* argv[]) {
             storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,
                                           event.symbol, lob->depth_level(), exchange, type);
           }
-        }, [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
+        }, 
+        [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
           bool changed = orderbook_manager.OnBookTicker(channel_id, event);
           if (changed) {
             auto* lob = orderbook_manager.GetLOB(channel_id);

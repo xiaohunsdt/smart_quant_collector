@@ -6,6 +6,7 @@
 #include "simdjson.h"
 #include "src/common/tick_data.h"
 #include "src/exchange/binance/binance_parser.h"
+#include "src/exchange/exchange_adapter.h"
 
 namespace sqc {
 namespace {
@@ -51,7 +52,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithoutEventField) {
 
   auto result = binance_parser::ParseMessage(doc, 1);
 
-  EXPECT_EQ(result.type, binance_parser::ParsedType::NONE);
+  EXPECT_EQ(result.type, ParsedType::NONE);
 }
 
 TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
@@ -63,8 +64,8 @@ TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
 
   auto result = binance_parser::ParseMessage(doc, 1);
 
-  EXPECT_EQ(result.type, binance_parser::ParsedType::BOOK_TICKER);
-  if (result.type == binance_parser::ParsedType::BOOK_TICKER) {
+  EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
+  if (result.type == ParsedType::BOOK_TICKER) {
     EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 25.19);
     EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_qty, 31.21);
     EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_price, 25.20);
@@ -84,7 +85,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
 
   auto result = binance_parser::ParseMessage(doc, 1);
 
-  EXPECT_EQ(result.type, binance_parser::ParsedType::NONE);
+  EXPECT_EQ(result.type, ParsedType::NONE);
 }
 
 TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
@@ -97,8 +98,8 @@ TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
 
   auto result = binance_parser::ParseMessage(doc, 1);
 
-  EXPECT_EQ(result.type, binance_parser::ParsedType::TICK);
-  if (result.type == binance_parser::ParsedType::TICK) {
+  EXPECT_EQ(result.type, ParsedType::TICK);
+  if (result.type == ParsedType::TICK) {
     EXPECT_DOUBLE_EQ(result.tick.price, 50000.00);
   }
 }

@@ -18,6 +18,7 @@ struct ChannelSnapshotInfo {
   std::string channel_type;
   std::string symbol;
   uint32_t depth_level = 10;
+  OrderbookSnapshot (*fetch_snapshot)(std::string_view, std::string_view, std::string_view) = nullptr;
 };
 
 class OrderbookManager {

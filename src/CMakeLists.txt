@@ -10,6 +10,7 @@ add_library(collector_objects OBJECT
     exchange/shard_queue.cpp
     exchange/symbol_channel.cpp
     exchange/shard_parser_worker.cpp
+    exchange/exchange_factory.cpp
     exchange/binance/binance_parser.cpp
     exchange/binance/binance_snapshot_client.cpp
     exchange/gateio/gateio_parser.cpp

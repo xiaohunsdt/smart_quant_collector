@@ -7,6 +7,7 @@
 #include <string>
 
 #include "src/common/simdjson_utils.h"
+#include "src/exchange/exchange_adapter.h"
 
 namespace sqc {
 
@@ -48,6 +49,9 @@ struct RawMessage {
   uint32_t channel_id = 0;
   uint64_t recv_timestamp = 0;  // steady_clock ns, set at OnMessage
   char exchange[16] = {};       // fixed-size, zero-allocation
+
+  // Hot-path parse function pointer (set by SymbolChannel::OnMessage).
+  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id) = nullptr;
 };
 
 // Ring-buffer queue with MPSC safety on the producer side.
