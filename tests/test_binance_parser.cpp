@@ -88,8 +88,8 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
 
-TEST(BinanceParserTest, ParseDepthEventWithRealBinanceJson) {
-  // Real Binance depthUpdate JSON — no "pu" field exists in the API.
+TEST(BinanceParserTest, ParseDepthEventSpotNoPuField) {
+  // Binance SPOT depthUpdate — no "pu" field. Computed from first_update_id - 1.
   std::string json = R"({"e":"depthUpdate","E":1716844800000,"s":"BTCUSDT","U":1001,"u":1005,"b":[["50000.00","1.50000000"],["49990.00","0.50000000"]],"a":[["50010.00","2.00000000"],["50020.00","1.00000000"]]})";
 
   simdjson::ondemand::parser parser;
@@ -124,8 +124,30 @@ TEST(BinanceParserTest, ParseDepthEventWithRealBinanceJson) {
   }
 }
 
+TEST(BinanceParserTest, ParseDepthEventFuturesHasPuField) {
+  // Binance USDⓈ-M Futures depthUpdate — HAS "pu" field.
+  std::string json = R"({"e":"depthUpdate","E":1716844800000,"T":1716844800001,"s":"BTCUSDT","U":1001,"u":1005,"pu":999,"b":[["50000.00","1.50000000"]],"a":[["50010.00","2.00000000"]]})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  DepthUpdateEvent depth{};
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 3);
+
+  EXPECT_TRUE(ok);
+  if (ok) {
+    EXPECT_EQ(depth.first_update_id, 1001ULL);
+    EXPECT_EQ(depth.last_update_id, 1005ULL);
+    EXPECT_EQ(depth.prev_last_update_id, 999ULL);  // from "pu" field
+    EXPECT_EQ(depth.channel_id, 3);
+    EXPECT_EQ(depth.bid_count, 1);
+    EXPECT_EQ(depth.ask_count, 1);
+  }
+}
+
 TEST(BinanceParserTest, ParseDepthEventFirstUpdateIdZero) {
-  // first_update_id == 0 → prev_last_update_id should stay 0.
+  // first_update_id == 0, no "pu" → prev_last_update_id should stay 0.
   std::string json = R"({"e":"depthUpdate","E":1716844800000,"s":"BTCUSDT","U":0,"u":0,"b":[],"a":[]})";
 
   simdjson::ondemand::parser parser;

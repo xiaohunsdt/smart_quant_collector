@@ -67,7 +67,13 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     std::string_view sym = doc["s"].get_string();
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
+    // Spot depthUpdate has no "pu" field; futures does. Try "pu" first, fall back to computed.
+    auto pu_field = doc.find_field("pu");
+    if (pu_field.error()) {
+      out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
+    } else {
+      out.prev_last_update_id = static_cast<uint64_t>(pu_field.get_int64());
+    }
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
 
