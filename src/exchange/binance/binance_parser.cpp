@@ -8,7 +8,7 @@
 namespace sqc {
 namespace binance_parser {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
+ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view channel_type) {
   ParseResult result;
   auto e_field = doc.find_field("e");
   if (e_field.error()) return result;
@@ -21,7 +21,7 @@ ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id)
       }
     } else if (event_type == "depthUpdate") {
       result.type = ParsedType::DEPTH;
-      if (!ParseDepthEvent(doc, result.depth, channel_id)) {
+      if (!ParseDepthEvent(doc, result.depth, channel_id, channel_type)) {
         result.type = ParsedType::NONE;
       }
     } else if (event_type == "bookTicker") {
@@ -59,20 +59,19 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
   }
 }
 
-bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
+bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view channel_type) {
   try {
-    // Binance depthUpdate field order: e, E, s, U, u, b, a
+    // Binance depthUpdate: spot has e,E,s,U,u,b,a; futures adds T,pu.
     // ("e" already consumed by ParseMessage, so start from E)
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
     std::string_view sym = doc["s"].get_string();
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    // Spot depthUpdate has no "pu" field; futures does. Try "pu" first, fall back to computed.
-    auto pu_field = doc.find_field("pu");
-    if (pu_field.error()) {
-      out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
+    // Spot lacks "pu"; futures provides it.
+    if (channel_type == "perpetual") {
+      out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
     } else {
-      out.prev_last_update_id = static_cast<uint64_t>(pu_field.get_int64());
+      out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
     }
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));

@@ -117,8 +117,8 @@ void SymbolChannel::OnMessage(const char* data, size_t size) {
   std::memset(msg.buffer() + size, 0, kSimdjsonPadding);
   msg.size = size;
   msg.channel_id = channel_id_;
-  msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
+  std::memcpy(msg.channel_type, channel_type_.data(), std::min(channel_type_.size(), sizeof(msg.channel_type) - 1));
+  msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
   msg.parse_fn = adapter_->parse;
 
   uint32_t shard = (channel_id_ ^ std::hash<std::string_view>{}(adapter_->name)) % shard_queues_.size();

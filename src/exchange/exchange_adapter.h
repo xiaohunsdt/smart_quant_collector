@@ -45,16 +45,13 @@ struct ExchangeAdapter {
 
   // Build WebSocket subscribe messages: vector of (JSON_payload, delay_ms).
   // 0 delay = send immediately; >0 = schedule after N ms.
-  std::vector<std::pair<std::string, uint32_t>> (*build_subscribes)(
-      std::string_view channel_type, std::string_view symbol, uint32_t depth_level);
+  std::vector<std::pair<std::string, uint32_t>> (*build_subscribes)(std::string_view channel_type, std::string_view symbol, uint32_t depth_level);
 
   // Hot-path: parse a WebSocket frame into a ParseResult.
-  ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id);
+  ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view channel_type);
 
   // Cold-path: fetch REST orderbook snapshot on a background thread.
-  OrderbookSnapshot (*fetch_snapshot)(std::string_view rest_host,
-                                      std::string_view channel_type,
-                                      std::string_view symbol);
+  OrderbookSnapshot (*fetch_snapshot)(std::string_view rest_host, std::string_view channel_type, std::string_view symbol);
 };
 
 // Returns nullptr for unknown exchange names.

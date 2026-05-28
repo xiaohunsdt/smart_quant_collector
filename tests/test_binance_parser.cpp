@@ -50,7 +50,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithoutEventField) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1);
+  auto result = binance_parser::ParseMessage(doc, 1, "spot");
 
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
@@ -62,7 +62,7 @@ TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1);
+  auto result = binance_parser::ParseMessage(doc, 1, "spot");
 
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   if (result.type == ParsedType::BOOK_TICKER) {
@@ -83,7 +83,7 @@ TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1);
+  auto result = binance_parser::ParseMessage(doc, 1, "spot");
 
   EXPECT_EQ(result.type, ParsedType::NONE);
 }
@@ -97,7 +97,7 @@ TEST(BinanceParserTest, ParseDepthEventSpotNoPuField) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 1);
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 1, "spot");
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -133,7 +133,7 @@ TEST(BinanceParserTest, ParseDepthEventFuturesHasPuField) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 3);
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 3, "perpetual");
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -155,7 +155,7 @@ TEST(BinanceParserTest, ParseDepthEventFirstUpdateIdZero) {
   ParseDoc(parser, json, doc);
 
   DepthUpdateEvent depth{};
-  bool ok = binance_parser::ParseDepthEvent(doc, depth, 2);
+  bool ok = binance_parser::ParseDepthEvent(doc, depth, 2, "spot");
 
   EXPECT_TRUE(ok);
   if (ok) {
@@ -171,7 +171,7 @@ TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_parser::ParseMessage(doc, 1);
+  auto result = binance_parser::ParseMessage(doc, 1, "spot");
 
   EXPECT_EQ(result.type, ParsedType::TICK);
   if (result.type == ParsedType::TICK) {
