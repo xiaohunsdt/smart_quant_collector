@@ -95,10 +95,20 @@ void SymbolChannel::Subscribe() {
   if (exchange_name_ == "binance") {
     std::string name = symbol_;
     for (auto& c : name) c = static_cast<char>(std::tolower(c));
-    std::string sub = R"({"method":"SUBSCRIBE","params":[")" + name +
-                      R"(@trade",")" + name + R"(@depth@100ms"],"id":1})";
-    LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", exchange_name_, symbol_, sub);
-    ws_->Write(sub);
+
+    std::string trade_sub = R"({"method":"SUBSCRIBE","params":[")" + name +
+                            R"(@trade"],"id":1})";
+    LOG_INFO(GetLogger(), "{}:{} sending trade subscribe: {}", exchange_name_, symbol_, trade_sub);
+    ws_->Write(trade_sub);
+
+    auto depth_sub = std::make_shared<std::string>(
+        R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth@100ms"],"id":2})");
+    auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(500));
+    timer->async_wait([this, depth_sub, timer](boost::system::error_code) {
+      LOG_INFO(GetLogger(), "{}:{} sending depth subscribe: {}", exchange_name_, symbol_,
+               *depth_sub);
+      ws_->Write(*depth_sub);
+    });
   } else if (exchange_name_ == "gateio") {
     auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();

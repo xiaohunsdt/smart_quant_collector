@@ -11,11 +11,13 @@ add_library(collector_objects OBJECT
     exchange/symbol_channel.cpp
     exchange/shard_parser_worker.cpp
     exchange/binance/binance_parser.cpp
+    exchange/binance/binance_snapshot_client.cpp
     exchange/gateio/gateio_parser.cpp
+    exchange/gateio/gateio_snapshot_client.cpp
     orderbook/local_lob.cpp
-    orderbook/snapshot_client.cpp
     orderbook/lockstep_fsm.cpp
     orderbook/orderbook_manager.cpp
+    common/http_utils.cpp
     storage/dolphindb_client.cpp
     storage/mmap_engine.cpp
     storage/storage_router.cpp

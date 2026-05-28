@@ -1,7 +1,11 @@
 #include "orderbook_manager.h"
 
-#include "local_lob.h"
+#include <thread>
+
 #include "lockstep_fsm.h"
+#include "local_lob.h"
+#include "src/exchange/binance/binance_snapshot_client.h"
+#include "src/exchange/gateio/gateio_snapshot_client.h"
 
 namespace sqc {
 
@@ -12,6 +16,16 @@ void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level
   lobs_[channel_id] = std::move(lob);
   fsms_[channel_id] = std::move(fsm);
   depth_levels_[channel_id] = depth_level;
+}
+
+void OrderbookManager::SetChannelInfo(uint32_t channel_id, ChannelSnapshotInfo info) {
+  channel_info_[channel_id] = info;
+  auto fsm_it = fsms_.find(channel_id);
+  if (fsm_it != fsms_.end()) {
+    fsm_it->second->SetSnapshotFetchCb([this, channel_id]() {
+      FetchSnapshotForChannel(channel_id);
+    });
+  }
 }
 
 void OrderbookManager::OnTick(std::shared_ptr<TickData> tick) {
@@ -38,6 +52,28 @@ OrderbookStateMachine* OrderbookManager::GetFSM(uint32_t channel_id) {
 uint32_t OrderbookManager::GetDepthLevel(uint32_t channel_id) const {
   auto it = depth_levels_.find(channel_id);
   return it != depth_levels_.end() ? it->second : 10;
+}
+
+void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
+  auto info_it = channel_info_.find(channel_id);
+  auto fsm_it = fsms_.find(channel_id);
+  if (info_it == channel_info_.end() || fsm_it == fsms_.end()) return;
+
+  auto info = info_it->second;
+  auto* fsm = fsm_it->second.get();
+
+  std::thread([info, fsm]() {
+    OrderbookSnapshot snapshot;
+    if (info.rest_host.find("gateio") != std::string::npos) {
+      snapshot = gateio::FetchSnapshot(info.rest_host, info.channel_type,
+                                        info.symbol, info.depth_level);
+    } else {
+      snapshot = binance::FetchSnapshot(info.rest_host, info.symbol,
+                                         info.depth_level);
+    }
+    std::lock_guard<std::mutex> lock(fsm->mutex());
+    fsm->OnSnapshotReturned(snapshot.lastUpdateId, snapshot);
+  }).detach();
 }
 
 }  // namespace sqc

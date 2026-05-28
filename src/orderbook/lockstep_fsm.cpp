@@ -3,7 +3,6 @@
 #include "local_lob.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
-#include "snapshot_client.h"
 
 namespace sqc {
 
@@ -88,8 +87,10 @@ void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id,
 void OrderbookStateMachine::RequestHTTPSnapshot() {
   snapshot_request_time_ =
       use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
-  // Snapshot is requested externally; OnSnapshotReturned is called when it arrives
   LOG_INFO(GetLogger(), "LockStep FSM: requesting HTTP snapshot");
+  if (snapshot_fetch_cb_) {
+    snapshot_fetch_cb_();
+  }
 }
 
 void OrderbookStateMachine::ResetSyncing() {

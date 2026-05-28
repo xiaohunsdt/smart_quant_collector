@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
+#include <mutex>
 
 #include <boost/circular_buffer.hpp>
 
@@ -15,6 +17,8 @@ enum class SyncState { ACTIVE, SYNCING };
 
 class OrderbookStateMachine {
  public:
+  using SnapshotFetchCb = std::function<void()>;
+
   explicit OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode = false);
 
   void OnDepthEventReceived(const DepthUpdateEvent& event);
@@ -22,6 +26,9 @@ class OrderbookStateMachine {
 
   SyncState state() const { return state_; }
   uint32_t sync_retry_count() const { return sync_retry_count_; }
+
+  void SetSnapshotFetchCb(SnapshotFetchCb cb) { snapshot_fetch_cb_ = std::move(cb); }
+  std::mutex& mutex() { return mutex_; }
 
   // For testing: inject custom time
   void set_now(std::chrono::steady_clock::time_point now) {
@@ -40,6 +47,8 @@ class OrderbookStateMachine {
   std::chrono::steady_clock::time_point snapshot_request_time_;
   boost::circular_buffer<DepthUpdateEvent> ring_buffer_{10000};
   bool snapshot_mode_ = false;
+  std::mutex mutex_;
+  SnapshotFetchCb snapshot_fetch_cb_;
 
   // Test-injectable clock
   std::chrono::steady_clock::time_point now_{};
