@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <string>
-#include <cstdio>
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
@@ -11,36 +10,76 @@
 namespace sqc {
 namespace {
 
-TEST(BinanceParserTest, ParseTradeEvent) {
-  fprintf(stderr, "=== test start ===\n");
-  std::string json = R"({"e":"trade","E":1716844800000,"s":"BTCUSDT","t":123456789,"p":"50000.00","q":"1.50000000","b":123,"a":456,"T":1716844800001,"m":true,"M":true})";
-  fprintf(stderr, "json built, size=%zu\n", json.size());
+// Helper: pads the string and iterates it into a document.
+// The caller MUST keep the string (json) alive for the lifetime of doc
+// because simdjson ondemand borrows the input buffer.
+void ParseDoc(simdjson::ondemand::parser& parser, std::string& json,
+              simdjson::ondemand::document& doc) {
   json.resize(json.size() + simdjson::SIMDJSON_PADDING, '\0');
-  fprintf(stderr, "resized to %zu\n", json.size());
-
-  simdjson::ondemand::parser parser;
-  fprintf(stderr, "parser created\n");
-  simdjson::ondemand::document doc;
-  fprintf(stderr, "doc declared, iterating...\n");
   auto error = parser.iterate(json.data(), json.size() - simdjson::SIMDJSON_PADDING,
                               json.size()).get(doc);
-  fprintf(stderr, "iterate done, error=%d\n", (int)error);
   if (error) {
-    fprintf(stderr, "simdjson error: %s\n", simdjson::error_message(error));
     FAIL() << "simdjson iterate error: " << simdjson::error_message(error);
   }
-  fprintf(stderr, "doc ready\n");
+}
+
+TEST(BinanceParserTest, ParseTradeEvent) {
+  std::string json = R"({"e":"trade","E":1716844800000,"s":"BTCUSDT","t":123456789,"p":"50000.00","q":"1.50000000","b":123,"a":456,"T":1716844800001,"m":true,"M":true})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
 
   TickData tick{};
-  fprintf(stderr, "calling ParseTradeEvent...\n");
   bool ok = binance_parser::ParseTradeEvent(doc, tick, 1);
-  fprintf(stderr, "ParseTradeEvent returned %d\n", ok);
 
   EXPECT_TRUE(ok);
   if (ok) {
     EXPECT_EQ(tick.exchange_timestamp, 1716844800000000ULL);
     EXPECT_DOUBLE_EQ(tick.price, 50000.00);
-    fprintf(stderr, "=== test passed ===\n");
+  }
+}
+
+TEST(BinanceParserTest, ParseMessageSkipsMessageWithoutEventField) {
+  // Binance subscription confirmation: {"result":null,"id":1}
+  // These messages lack the "e" field and should be silently skipped.
+  std::string json = R"({"result":null,"id":1})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_parser::ParseMessage(doc, 1);
+
+  EXPECT_EQ(result.type, binance_parser::ParsedType::NONE);
+}
+
+TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
+  // A message with an "e" field but an event type we don't handle.
+  std::string json = R"({"e":"bookTicker","u":400900217,"s":"BNBUSDT","b":"25.19000000","B":"31.21000000","a":"25.20000000","A":"40.66000000"})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_parser::ParseMessage(doc, 1);
+
+  EXPECT_EQ(result.type, binance_parser::ParsedType::NONE);
+}
+
+TEST(BinanceParserTest, ParseMessageHandlesTradeEvent) {
+  // Trade event parsed end-to-end via ParseMessage.
+  std::string json = R"({"e":"trade","E":1716844800000,"s":"BTCUSDT","t":123456789,"p":"50000.00","q":"1.50000000","m":true})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_parser::ParseMessage(doc, 1);
+
+  EXPECT_EQ(result.type, binance_parser::ParsedType::TICK);
+  if (result.type == binance_parser::ParsedType::TICK) {
+    EXPECT_DOUBLE_EQ(result.tick.price, 50000.00);
   }
 }
 
