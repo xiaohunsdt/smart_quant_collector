@@ -57,7 +57,7 @@ static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string
   std::string ts = std::to_string(now_sec);
   return {{"wss://fx-ws.gateio.ws/v4/ws/usdt", {
     {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0},
-    {R"({"time":)" + ts + R"(,"channel":"futures.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\"]}", 500},
+    {R"({"time":)" + ts + R"(,"channel":"futures.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"100\"]}", 500},
     {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700},
   }}};
 }

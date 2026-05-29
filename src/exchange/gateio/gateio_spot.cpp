@@ -268,9 +268,9 @@ OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view sym
   OrderbookSnapshot snapshot{};
   std::string target = "/api/v4/spot/order_book?currency_pair=";
   target += symbol;
-  target += "&limit=50";
+  target += "&limit=100";
   target += "&with_id=true";
-  LOG_INFO(GetLogger(), "GateioSnapshot: fetching spot order_book {} limit=50", symbol);
+  LOG_INFO(GetLogger(), "GateioSnapshot: fetching spot order_book {} limit=100", symbol);
   std::string body = HttpsGet(rest_host, target);
   if (body.empty()) {
     LOG_ERROR(GetLogger(), "GateioSnapshot: HTTP empty response");

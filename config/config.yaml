@@ -25,7 +25,7 @@ gateway:
     - "ipc:///tmp/gateio_perpetual.ipc"
 
 storage:
-  persist_to_disk: false
+  persist_to_disk: true
   use_engine: "csv"
   dolphindb:
     host: "127.0.0.1"
@@ -46,43 +46,49 @@ exchanges:
     channels:
       - type: spot
         symbols:
-          # - name: "BTCUSDT"
-          #   depth_level: 10
-          #   record_tick: true
-          # - name: "ETHUSDT"
-          #   depth_level: 20
-          #   record_tick: true
+          - name: "BTCUSDT"
+            depth_level: 10
+            record_tick: true
+          - name: "ETHUSDT"
+            depth_level: 10
+            record_tick: true
+          - name: "SOLUSDT"
+            depth_level: 10
+            record_tick: true
       - type: perpetual
         symbols:
-          # - name: "BTCUSDT"
-          #   depth_level: 10
-          #   record_tick: true
-          # - name: "ETHUSDT"
-          #   depth_level: 10
-          #   record_tick: true
+          - name: "BTCUSDT"
+            depth_level: 10
+            record_tick: true
+          - name: "ETHUSDT"
+            depth_level: 10
+            record_tick: true
+          - name: "SOLUSDT"
+            depth_level: 10
+            record_tick: true
   - name: "gateio"
     enabled: true
     channels:
       - type: spot
         symbols:
-          # - name: "BTC/USDT"
-          #   depth_level: 10
-          #   record_tick: true
+          - name: "BTC_USDT"
+            depth_level: 10
+            record_tick: true
           - name: "ETH_USDT"
             depth_level: 10
             record_tick: true
-          # - name: "SOL/USDT"
-          #   depth_level: 10
-          #   record_tick: true
+          - name: "SOL_USDT"
+            depth_level: 10
+            record_tick: true
       - type: perpetual
         symbols:
-          # - name: "BTC_USDT"
-          #   enabled: true
-          #   depth_level: 10
-          #   record_tick: true
-          # - name: "ETH_USDT"
-          #   depth_level: 10
-          #   record_tick: true
-          # - name: "SOL_USDT"
-          #   depth_level: 10
-          #   record_tick: true
+          - name: "BTC_USDT"
+            enabled: true
+            depth_level: 10
+            record_tick: true
+          - name: "ETH_USDT"
+            depth_level: 10
+            record_tick: true
+          - name: "SOL_USDT"
+            depth_level: 10
+            record_tick: true
