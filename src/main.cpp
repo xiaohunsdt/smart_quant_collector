@@ -86,6 +86,7 @@ int main(int argc, char* argv[]) {
         uint32_t id = channel_registry.Register(info);
         orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
         orderbook_manager.SetChannelInfo(id, {rest_host, sym.name, sym.depth_level, adapter->fetch_snapshot});
+        if (!adapter->snapshot_mode) orderbook_manager.BootstrapChannel(id);
 
         auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
@@ -110,6 +111,8 @@ int main(int argc, char* argv[]) {
         }, 
         [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           orderbook_manager.OnDepthEvent(channel_id, event);
+          auto* fsm = orderbook_manager.GetFSM(channel_id);
+          if (fsm && fsm->state() == SyncState::SYNCING) return;
           auto* lob = orderbook_manager.GetLOB(channel_id);
           if (lob) {
             const auto* info = channel_registry.Lookup(channel_id);
@@ -123,9 +126,11 @@ int main(int argc, char* argv[]) {
         [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
           bool changed = orderbook_manager.OnBookTicker(channel_id, event);
           if (changed) {
+            auto* fsm = orderbook_manager.GetFSM(channel_id);
+            if (fsm && fsm->state() == SyncState::SYNCING) return changed;
             auto* lob = orderbook_manager.GetLOB(channel_id);
             if (lob) {
-              LOG_DEBUG(GetLogger(), "BookTicker: bid={}, ask={}, bid_volume={}, ask_volume={}", lob->BestBid(), lob->BestAsk(), lob->BestBidVolume(), lob->BestAskVolume());
+              // LOG_DEBUG(GetLogger(), "BookTicker: bid={}, ask={}, bid_volume={}, ask_volume={}", lob->BestBid(), lob->BestAsk(), lob->BestBidVolume(), lob->BestAskVolume());
               const auto* info = channel_registry.Lookup(channel_id);
               const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
               const ChannelType type = info ? info->type : ChannelType::Spot;

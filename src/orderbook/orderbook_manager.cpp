@@ -67,6 +67,12 @@ uint32_t OrderbookManager::GetDepthLevel(uint32_t channel_id) const {
   return it != depth_levels_.end() ? it->second : 10;
 }
 
+void OrderbookManager::BootstrapChannel(uint32_t channel_id) {
+  auto fsm_it = fsms_.find(channel_id);
+  if (fsm_it == fsms_.end()) return;
+  fsm_it->second->StartBootstrap();
+}
+
 void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
   auto info_it = channel_info_.find(channel_id);
   auto fsm_it = fsms_.find(channel_id);

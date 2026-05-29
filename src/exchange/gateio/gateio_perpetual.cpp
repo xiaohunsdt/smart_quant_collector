@@ -236,49 +236,42 @@ static bool ParseDepth(const std::string& json, OrderbookSnapshot& out) {
   }
   uint64_t last_id = 0;
   if (doc["id"].get_uint64().get(last_id) != simdjson::SUCCESS) {
-    (void)doc["current"].get_uint64().get(last_id);
+    double d = 0;
+    if (doc["current"].get_double().get(d) == simdjson::SUCCESS)
+      last_id = static_cast<uint64_t>(d);
   }
   out.lastUpdateId = last_id;
+
+  auto parse_levels = [](simdjson::dom::array arr, PriceLevel* levels, uint32_t& count) {
+    count = 0;
+    for (auto elem : arr) {
+      if (count >= kMaxOrderbookLevels) break;
+      simdjson::dom::object obj;
+      if (elem.get_object().get(obj) != simdjson::SUCCESS) continue;
+      std::string_view psv;
+      if (obj["p"].get_string().get(psv) != simdjson::SUCCESS) continue;
+      double qty = 0;
+      auto s_str = obj["s"].get_string();
+      if (s_str.error() == simdjson::SUCCESS) {
+        qty = SvToDouble(s_str.value_unsafe());
+      } else {
+        uint64_t q = 0;
+        if (obj["s"].get_uint64().get(q) == simdjson::SUCCESS) qty = static_cast<double>(q);
+      }
+      levels[count].price = SvToDouble(psv);
+      levels[count].quantity = qty;
+      ++count;
+    }
+  };
+
   simdjson::dom::array bids;
-  if (doc["bids"].get_array().get(bids) == simdjson::SUCCESS) {
-    uint32_t i = 0;
-    for (auto elem : bids) {
-      if (i >= kMaxOrderbookLevels) break;
-      simdjson::dom::array level;
-      if (elem.get_array().get(level) != simdjson::SUCCESS) continue;
-      auto price_it = level.begin();
-      auto qty_it = level.begin();
-      ++qty_it;
-      if (price_it == level.end() || qty_it == level.end()) continue;
-      std::string_view psv, qsv;
-      if ((*price_it).get_string().get(psv) != simdjson::SUCCESS) continue;
-      if ((*qty_it).get_string().get(qsv) != simdjson::SUCCESS) continue;
-      out.bids[i].price = SvToDouble(psv);
-      out.bids[i].quantity = SvToDouble(qsv);
-      ++i;
-    }
-    out.bid_count = i;
-  }
+  if (doc["bids"].get_array().get(bids) == simdjson::SUCCESS)
+    parse_levels(bids, out.bids, out.bid_count);
+
   simdjson::dom::array asks;
-  if (doc["asks"].get_array().get(asks) == simdjson::SUCCESS) {
-    uint32_t i = 0;
-    for (auto elem : asks) {
-      if (i >= kMaxOrderbookLevels) break;
-      simdjson::dom::array level;
-      if (elem.get_array().get(level) != simdjson::SUCCESS) continue;
-      auto price_it = level.begin();
-      auto qty_it = level.begin();
-      ++qty_it;
-      if (price_it == level.end() || qty_it == level.end()) continue;
-      std::string_view psv, qsv;
-      if ((*price_it).get_string().get(psv) != simdjson::SUCCESS) continue;
-      if ((*qty_it).get_string().get(qsv) != simdjson::SUCCESS) continue;
-      out.asks[i].price = SvToDouble(psv);
-      out.asks[i].quantity = SvToDouble(qsv);
-      ++i;
-    }
-    out.ask_count = i;
-  }
+  if (doc["asks"].get_array().get(asks) == simdjson::SUCCESS)
+    parse_levels(asks, out.asks, out.ask_count);
+
   return true;
 }
 
@@ -286,9 +279,9 @@ OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view sym
   OrderbookSnapshot snapshot{};
   std::string target = "/api/v4/futures/usdt/order_book?contract=";
   target += symbol;
-  target += "&limit=50";
+  target += "&limit=100";
   target += "&with_id=true";
-  LOG_INFO(GetLogger(), "GateioSnapshot: fetching futures order_book {} limit=50", symbol);
+  LOG_INFO(GetLogger(), "GateioSnapshot: fetching futures order_book {} limit=100", symbol);
   std::string body = HttpsGet(rest_host, target);
   if (body.empty()) {
     LOG_ERROR(GetLogger(), "GateioSnapshot: HTTP empty response");

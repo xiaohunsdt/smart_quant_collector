@@ -36,6 +36,8 @@ class OrderbookStateMachine {
 
   void SetSnapshotFetchCb(SnapshotFetchCb cb) { snapshot_fetch_cb_ = std::move(cb); }
 
+  void StartBootstrap();
+
   // For testing: inject custom time
   void set_now(std::chrono::steady_clock::time_point now) {
     now_ = now;

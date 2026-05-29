@@ -9,6 +9,12 @@ namespace sqc {
 OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode)
     : lob_(lob), snapshot_mode_(snapshot_mode) {}
 
+void OrderbookStateMachine::StartBootstrap() {
+  ring_buffer_.clear();
+  state_.store(SyncState::SYNCING, std::memory_order_relaxed);
+  RequestHTTPSnapshot();
+}
+
 void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) {
   // Check for pending snapshot from bg thread before processing
   if (pending_snapshot_ready_.load(std::memory_order_acquire)) {

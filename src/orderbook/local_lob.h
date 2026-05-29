@@ -36,6 +36,9 @@ class LocalLOB {
   uint32_t TopBids(PriceLevel* out, uint32_t max_levels) const;
   uint32_t TopAsks(PriceLevel* out, uint32_t max_levels) const;
 
+  uint32_t BidCount() const { return bid_count_; }
+  uint32_t AskCount() const { return ask_count_; }
+
  private:
   // Update side (bid/ask) maintaining sorted order.
   // Side == true for bids (descending), false for asks (ascending).
