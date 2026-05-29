@@ -46,28 +46,17 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     try { (void)doc["time_ms"].get_uint64(); } catch (...) {}
     std::string_view ev = doc["event"].get_string();
     if (ev == "subscribe") return false;
-    auto arr = doc["result"].get_array();
-    auto it = arr.begin();
-    if (it == arr.end()) return false;
-    auto item = *it;
-    out.trade_id = item["id"].get_uint64();
-    (void)item["create_time"].get_uint64();
-    out.exchange_timestamp = item["create_time_ms"].get_uint64() * 1000ULL;
-    out.price = SvToDouble(item["price"].get_string());
-    double size_val;
-    std::string_view size_sv;
-    auto size_err = item["size"].get_string().get(size_sv);
-    if (size_err == simdjson::SUCCESS) {
-      size_val = SvToDouble(size_sv);
-    } else {
-      size_val = static_cast<double>(item["size"].get_int64());
-    }
-    out.quantity = size_val < 0 ? -size_val : size_val;
-    out.is_buyer_maker = (size_val < 0);
+    auto result = doc["result"];
+    out.trade_id = result["id"].get_uint64();
+    (void)result["create_time"].get_uint64();
+    out.exchange_timestamp = static_cast<uint64_t>(SvToDouble(result["create_time_ms"].get_string()) * 1000.0);
+    out.price = SvToDouble(result["price"].get_string());
+    std::string_view side = result["side"].get_string();
+    double qty = SvToDouble(result["amount"].get_string());
+    out.quantity = qty < 0 ? -qty : qty;
+    out.is_buyer_maker = (side == "sell");
     out.channel_id = channel_id;
-    std::string_view sym;
-    auto sym_err = item["s"].get_string().get(sym);
-    if (sym_err) { sym = item["contract"].get_string(); }
+    std::string_view sym = result["currency_pair"].get_string();
     size_t sym_len = std::min(sym.size(), sizeof(out.symbol) - 1);
     std::memcpy(out.symbol, sym.data(), sym_len);
     out.symbol[sym_len] = '\0';
@@ -193,23 +182,20 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
     auto result = doc["result"];
     out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
     out.channel_id = channel_id;
-    std::string_view sym;
-    auto sym_err = result["s"].get_string().get(sym);
-    if (sym_err) { sym = result["contract"].get_string(); }
+    std::string_view sym = result["s"].get_string();
     size_t sym_len = std::min(sym.size(), sizeof(out.symbol) - 1);
     std::memcpy(out.symbol, sym.data(), sym_len);
     out.symbol[sym_len] = '\0';
-    auto book = result["book"];
-    out.best_bid_price = SvToDouble(book["b"].get_string());
-    auto bid_sz = book["bs"].get_string();
+    out.best_bid_price = SvToDouble(result["b"].get_string());
+    auto bid_sz = result["B"].get_string();
     out.best_bid_qty = bid_sz.error() == simdjson::SUCCESS
         ? SvToDouble(bid_sz.value_unsafe())
-        : static_cast<double>(book["bs"].get_int64());
-    out.best_ask_price = SvToDouble(book["a"].get_string());
-    auto ask_sz = book["as"].get_string();
+        : static_cast<double>(result["B"].get_int64());
+    out.best_ask_price = SvToDouble(result["a"].get_string());
+    auto ask_sz = result["A"].get_string();
     out.best_ask_qty = ask_sz.error() == simdjson::SUCCESS
         ? SvToDouble(ask_sz.value_unsafe())
-        : static_cast<double>(book["as"].get_int64());
+        : static_cast<double>(result["A"].get_int64());
     return true;
   } catch (const simdjson::simdjson_error& e) {
     if (auto* l = GetLogger()) LOG_ERROR(l, "Gate.io spot bookTicker parse: {}", e.what());

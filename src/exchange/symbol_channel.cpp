@@ -71,6 +71,7 @@ void SymbolChannel::Start() {
     ws_clients_[g] = std::move(ws);
 
     if (adapter_->name == "gateio") {
+      ws_raw->AddHeader("X-Gate-Aggregation", "0");
       ws_raw->AddHeader("X-Gate-Size-Decimal", "1");
     }
 

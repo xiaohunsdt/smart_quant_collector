@@ -90,8 +90,26 @@ bool LocalLOB::UpdateBestPrice(double best_bid_price, double best_bid_qty,
       bids_[0] = {best_bid_price, best_bid_qty};
       bid_count_ = 1;
     } else {
-      bids_[0].price = best_bid_price;
-      bids_[0].quantity = best_bid_qty;
+      // Remove new price if it exists deeper (avoid duplicates)
+      for (uint32_t i = 1; i < bid_count_; ++i) {
+        if (bids_[i].price == best_bid_price) {
+          for (uint32_t j = i; j + 1 < bid_count_; ++j)
+            bids_[j] = bids_[j + 1];
+          --bid_count_;
+          break;
+        }
+      }
+      bids_[0] = {best_bid_price, best_bid_qty};
+      // Fix descending order if broken (best bid moved down past deeper levels)
+      if (bid_count_ > 1 && bids_[0].price < bids_[1].price) {
+        PriceLevel temp = bids_[0];
+        uint32_t pos = 1;
+        while (pos < bid_count_ && bids_[pos].price > temp.price) {
+          bids_[pos - 1] = bids_[pos];
+          ++pos;
+        }
+        bids_[pos - 1] = temp;
+      }
     }
   }
 
@@ -102,8 +120,26 @@ bool LocalLOB::UpdateBestPrice(double best_bid_price, double best_bid_qty,
       asks_[0] = {best_ask_price, best_ask_qty};
       ask_count_ = 1;
     } else {
-      asks_[0].price = best_ask_price;
-      asks_[0].quantity = best_ask_qty;
+      // Remove new price if it exists deeper (avoid duplicates)
+      for (uint32_t i = 1; i < ask_count_; ++i) {
+        if (asks_[i].price == best_ask_price) {
+          for (uint32_t j = i; j + 1 < ask_count_; ++j)
+            asks_[j] = asks_[j + 1];
+          --ask_count_;
+          break;
+        }
+      }
+      asks_[0] = {best_ask_price, best_ask_qty};
+      // Fix ascending order if broken (best ask moved up past deeper levels)
+      if (ask_count_ > 1 && asks_[0].price > asks_[1].price) {
+        PriceLevel temp = asks_[0];
+        uint32_t pos = 1;
+        while (pos < ask_count_ && asks_[pos].price < temp.price) {
+          asks_[pos - 1] = asks_[pos];
+          ++pos;
+        }
+        asks_[pos - 1] = temp;
+      }
     }
   }
 

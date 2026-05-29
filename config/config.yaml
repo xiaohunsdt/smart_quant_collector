@@ -65,13 +65,13 @@ exchanges:
     channels:
       - type: spot
         symbols:
-          # - name: "BTCUSDT"
+          # - name: "BTC/USDT"
           #   depth_level: 10
           #   record_tick: true
-          - name: "ETHUSDT"
+          - name: "ETH_USDT"
             depth_level: 10
             record_tick: true
-          # - name: "SOLUSDT"
+          # - name: "SOL/USDT"
           #   depth_level: 10
           #   record_tick: true
       - type: perpetual
