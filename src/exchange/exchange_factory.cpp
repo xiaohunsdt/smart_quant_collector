@@ -6,7 +6,6 @@
 #include "exchange/binance/binance_common.h"
 #include "exchange/binance/binance_spot.h"
 #include "exchange/binance/binance_perpetual.h"
-#include "exchange/gateio/gateio_common.h"
 #include "exchange/gateio/gateio_spot.h"
 #include "exchange/gateio/gateio_perpetual.h"
 

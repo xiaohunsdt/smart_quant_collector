@@ -9,8 +9,13 @@
 
 namespace sqc {
 
-void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level,
-                                          bool snapshot_mode) {
+void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level, bool snapshot_mode) {
+  if (snapshot_mode) {
+    LOG_INFO(GetLogger(), "Registering channel {} with snapshot mode", channel_id);
+  } else {
+    LOG_INFO(GetLogger(), "Registering channel {} without snapshot mode", channel_id);
+  }
+  
   auto lob = std::make_unique<LocalLOB>(depth_level);
   auto fsm = std::make_unique<OrderbookStateMachine>(*lob, snapshot_mode);
   lobs_[channel_id] = std::move(lob);

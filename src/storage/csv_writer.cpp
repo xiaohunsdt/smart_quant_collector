@@ -138,7 +138,6 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                     << (i < bid_count ? bids[i].quantity : 0.0);
   }
   orderbook_file_ << "\n";
-  LOG_INFO(GetLogger(), "RouteOrderbook: bid={}, ask={}, bid_volume={}, ask_volume={}", lob.BestBid(), lob.BestAsk(), lob.BestBidVolume(), lob.BestAskVolume());
 }
 
 void CsvWriter::Close() {

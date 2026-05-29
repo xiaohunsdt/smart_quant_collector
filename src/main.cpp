@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
   for (size_t i = 0; i < num_parsers; ++i) {
     auto worker = std::make_unique<ShardParserWorker>(Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
       [&](TickData tick) -> void {
-          // LOG_DEBUG(GetLogger(), "Tick: symbol={}, price={}, quantity={}", tick.symbol, tick.price, tick.quantity);
+          LOG_DEBUG(GetLogger(), "Tick: symbol={}, price={}, quantity={}", tick.symbol, tick.price, tick.quantity);
           const auto* info = channel_registry.Lookup(tick.channel_id);
           const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
           const ChannelType type = info ? info->type : ChannelType::Spot;

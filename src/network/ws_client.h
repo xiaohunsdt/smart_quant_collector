@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -32,6 +34,10 @@ class WsClient {
   WsClient& operator=(const WsClient&) = delete;
 
   using ConnectHandler = std::function<void(bool success)>;
+
+  // Add a custom HTTP header sent during the WebSocket upgrade handshake.
+  // Must be called before Connect().
+  void AddHeader(std::string name, std::string value);
 
   // Connect to host:port at the given WebSocket path
   void Connect(std::string_view host, std::string_view port, std::string_view path,
@@ -65,6 +71,7 @@ class WsClient {
   std::string host_;
   std::string port_;
   std::string path_;
+  std::vector<std::pair<std::string, std::string>> extra_headers_;
   std::atomic<bool> is_open_{false};
   ConnectHandler on_connect_;
   DisconnectHandler on_disconnect_;

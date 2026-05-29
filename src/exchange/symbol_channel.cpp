@@ -70,6 +70,10 @@ void SymbolChannel::Start() {
     auto* ws_raw = ws.get();
     ws_clients_[g] = std::move(ws);
 
+    if (adapter_->name == "gateio") {
+      ws_raw->AddHeader("X-Gate-Size-Decimal", "1");
+    }
+
     auto self = shared_from_this();
     ws_raw->Connect(parsed.host, parsed.port, parsed.path,
                     [this, self, g](bool success) {

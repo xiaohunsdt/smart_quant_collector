@@ -14,6 +14,10 @@ WsClient::~WsClient() {
   Close();
 }
 
+void WsClient::AddHeader(std::string name, std::string value) {
+  extra_headers_.emplace_back(std::move(name), std::move(value));
+}
+
 void WsClient::Connect(std::string_view host, std::string_view port,
                        std::string_view path,
                        ConnectHandler on_connect) {
@@ -59,8 +63,11 @@ void WsClient::OnResolve(beast::error_code ec,
         ws_.set_option(
             websocket::stream_base::timeout::suggested(beast::role_type::client));
         ws_.set_option(websocket::stream_base::decorator(
-            [](websocket::request_type& req) {
+            [this](websocket::request_type& req) {
               req.set(beast::http::field::user_agent, "smart_quant_collector");
+              for (const auto& [name, value] : extra_headers_) {
+                req.set(name, value);
+              }
             }));
 
         ws_.next_layer().async_handshake(

@@ -14,7 +14,6 @@ add_library(collector_objects OBJECT
     exchange/binance/binance_common.cpp
     exchange/binance/binance_spot.cpp
     exchange/binance/binance_perpetual.cpp
-    exchange/gateio/gateio_common.cpp
     exchange/gateio/gateio_spot.cpp
     exchange/gateio/gateio_perpetual.cpp
     orderbook/local_lob.cpp
