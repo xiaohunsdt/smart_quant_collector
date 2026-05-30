@@ -17,10 +17,6 @@ class LocalLOB {
   void UpdateDepth(const DepthUpdateEvent& event);
   void ForceAlignWithEvent(const DepthUpdateEvent& event);
 
-  // Update best bid/ask from bookTicker. Returns true if best prices changed.
-  bool UpdateBestPrice(double best_bid_price, double best_bid_qty,
-                       double best_ask_price, double best_ask_qty);
-
   double BestBid() const;
   double BestAsk() const;
 
@@ -43,7 +39,8 @@ class LocalLOB {
   // Update side (bid/ask) maintaining sorted order.
   // Side == true for bids (descending), false for asks (ascending).
   static void UpdateSide(PriceLevel* levels, uint32_t& count, uint32_t capacity,
-                         double price, double qty, bool is_bid);
+                         double price, double qty, bool is_bid,
+                         uint32_t depth_level);
 
   PriceLevel bids_[kMaxOrderbookLevels];
   PriceLevel asks_[kMaxOrderbookLevels];

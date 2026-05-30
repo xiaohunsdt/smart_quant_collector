@@ -6,8 +6,7 @@
 
 namespace sqc {
 
-OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode)
-    : lob_(lob), snapshot_mode_(snapshot_mode) {}
+OrderbookStateMachine::OrderbookStateMachine(LocalLOB& lob, bool snapshot_mode) : lob_(lob), snapshot_mode_(snapshot_mode) {}
 
 void OrderbookStateMachine::StartBootstrap() {
   ring_buffer_.clear();
@@ -37,7 +36,7 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
   if (st == SyncState::SYNCING) {
     // Defensive check 1: 3-second timeout or ring buffer overflow → retry
     auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
-    bool timed_out = (now - snapshot_request_time_ > std::chrono::seconds(3));
+    bool timed_out = (now - snapshot_request_time_ > std::chrono::seconds(5));
     bool overflow = ring_buffer_.full();
 
     if (timed_out || overflow) {
@@ -60,8 +59,12 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
     ring_buffer_.push_back(event);  // buffer events while syncing
   } else {
     // ACTIVE: validate update_id continuity before applying
+    // When prev_last_update_id == last_update_id it is a sentinel meaning
+    // the exchange (e.g. Binance spot) does not provide 'pu'; skip the
+    // continuity check and rely on snapshot replay in OnSnapshotReturned.
+    bool pu_available = (event.prev_last_update_id != event.last_update_id);
     auto last_id = last_update_id_.load(std::memory_order_relaxed);
-    if (last_id != 0 && event.prev_last_update_id != last_id) {
+    if (last_id != 0 && pu_available && event.prev_last_update_id != last_id) {
       LOG_WARNING(GetLogger(),"LockStep FSM: gap detected (expected={}, got={}), entering SYNCING", last_id, event.prev_last_update_id);
       ResetSyncing();
       ring_buffer_.push_back(event);
@@ -97,8 +100,8 @@ void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id, const 
   state_.store(SyncState::ACTIVE, std::memory_order_relaxed);
   sync_retry_count_.store(0, std::memory_order_relaxed);
   ring_buffer_.clear();
-  LOG_INFO(GetLogger(),
-           "LockStep FSM: sync complete, last_update_id={}", current_id);
+
+  LOG_INFO(GetLogger(),"LockStep FSM: sync complete, last_update_id={}", current_id);
 }
 
 void OrderbookStateMachine::ApplyPendingSnapshot() {
@@ -106,8 +109,7 @@ void OrderbookStateMachine::ApplyPendingSnapshot() {
 }
 
 void OrderbookStateMachine::RequestHTTPSnapshot() {
-  snapshot_request_time_ =
-      use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
+  snapshot_request_time_ = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
   LOG_INFO(GetLogger(), "LockStep FSM: requesting HTTP snapshot");
   if (snapshot_fetch_cb_) {
     snapshot_fetch_cb_();

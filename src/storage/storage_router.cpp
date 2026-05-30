@@ -155,6 +155,16 @@ void StorageRouter::FlushActiveBuffer() {
   }
 }
 
+void StorageRouter::RouteBookTicker(const BookTickerEvent& event,
+                                     std::string_view exchange,
+                                     ChannelType channel_type) {
+  if (use_engine_ == "csv") {
+    auto key = MakeKey(exchange, channel_type, event.symbol);
+    auto it = csv_writers_.find(key);
+    if (it != csv_writers_.end()) it->second.AppendBookTicker(event);
+  }
+}
+
 void StorageRouter::FlushAndClose() {
   {
     std::lock_guard<std::mutex> lock(buffer_mtx_);

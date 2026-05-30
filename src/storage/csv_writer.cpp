@@ -93,30 +93,58 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     LOG_ERROR(GetLogger(), "CsvWriter: failed to open {}", ob_path);
     return false;
   }
-  if (ob_is_new) depth_level_ = 0;  // trigger header on first orderbook write
+  if (ob_is_new) header_written_ = false;  // trigger header on first orderbook write
+
+  // Open bookticker file
+  std::string bt_path = dir_ + "bookticker_" + current_date_ + ".csv";
+  bool bt_is_new = (access(bt_path.c_str(), F_OK) != 0);
+  bookticker_file_.open(bt_path, std::ios::out | std::ios::app);
+  if (!bookticker_file_.is_open()) {
+    LOG_ERROR(GetLogger(), "CsvWriter: failed to open {}", bt_path);
+    return false;
+  }
+  if (bt_is_new)
+    bookticker_file_ << "exchange_timestamp,local_timestamp,symbol,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty\n";
 
   return true;
 }
 
 void CsvWriter::AppendTick(const TickData& tick) {
   if (!RotateIfNeeded(tick.exchange_timestamp)) return;
-  trade_file_ << tick.exchange_timestamp << ","
-              << tick.local_timestamp << ","
-              << tick.price << ","
-              << tick.quantity << ","
-              << (tick.is_buyer_maker ? -1 : 1)
-              << "\n";
+  // Build full row string before writing — eliminates the 5-<<-call
+  // window where a SIGKILL would leave a truncated partial row.
+  std::string row;
+  row.reserve(128);
+  row += std::to_string(tick.exchange_timestamp) + ',';
+  row += std::to_string(tick.local_timestamp) + ',';
+  row += std::to_string(tick.price) + ',';
+  row += std::to_string(tick.quantity) + ',';
+  row += std::to_string(tick.is_buyer_maker ? -1 : 1) + '\n';
+  trade_file_ << row;
 }
 
 void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
                                 uint64_t local_ts,
                                 [[maybe_unused]] std::string_view symbol,
                                 uint32_t depth_level) {
+  // Reject clearly bogus timestamps (outside year range 2000-2100).
+  // Protects against corrupted data from upstream parser or reconnect
+  // boundary garbage being written into the CSV.
+  constexpr uint64_t kMinSaneTs = 946684800000000ULL;   // 2000-01-01
+  constexpr uint64_t kMaxSaneTs = 4102444800000000ULL;  // 2100-01-01
+  if (exchange_ts < kMinSaneTs || exchange_ts > kMaxSaneTs) {
+    LOG_ERROR(GetLogger(),
+              "CsvWriter: bogus exchange_ts={} for {}, skipping write",
+              exchange_ts, symbol);
+    return;
+  }
+
   if (!RotateIfNeeded(exchange_ts)) return;
   if (!orderbook_file_.is_open()) return;
 
-  if (depth_level_ == 0) {
+  if (!header_written_) {
     depth_level_ = depth_level;
+    header_written_ = true;
     orderbook_file_ << "exchange_timestamp,local_timestamp";
     for (uint32_t i = 0; i < depth_level_; ++i)
       orderbook_file_ << ",ask_price" << (i + 1) << ",ask_size" << (i + 1)
@@ -129,20 +157,55 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
   uint32_t bid_count = lob.TopBids(bids, depth_level_);
   uint32_t ask_count = lob.TopAsks(asks, depth_level_);
 
-  orderbook_file_ << exchange_ts << "," << local_ts;
+  // Build full row string before writing — eliminates the ~84-<<-call
+  // window where a SIGKILL would leave a truncated partial row.
+  std::string row;
+  row.reserve(512);  // ~400 bytes for depth_level=10
+  row += std::to_string(exchange_ts) + ',' + std::to_string(local_ts);
   for (uint32_t i = 0; i < depth_level_; ++i) {
-    orderbook_file_ << ","
-                    << (i < ask_count ? asks[i].price : 0.0) << ","
-                    << (i < ask_count ? asks[i].quantity : 0.0) << ","
-                    << (i < bid_count ? bids[i].price : 0.0) << ","
-                    << (i < bid_count ? bids[i].quantity : 0.0);
+    row += ',';
+    row += std::to_string(i < ask_count ? asks[i].price : 0.0);
+    row += ',';
+    row += std::to_string(i < ask_count ? asks[i].quantity : 0.0);
+    row += ',';
+    row += std::to_string(i < bid_count ? bids[i].price : 0.0);
+    row += ',';
+    row += std::to_string(i < bid_count ? bids[i].quantity : 0.0);
   }
-  orderbook_file_ << "\n";
+  row += '\n';
+  orderbook_file_ << row;
+}
+
+void CsvWriter::AppendBookTicker(const BookTickerEvent& event) {
+  constexpr uint64_t kMinSaneTs = 946684800000000ULL;   // 2000-01-01
+  constexpr uint64_t kMaxSaneTs = 4102444800000000ULL;  // 2100-01-01
+  if (event.exchange_timestamp < kMinSaneTs || event.exchange_timestamp > kMaxSaneTs) {
+    LOG_ERROR(GetLogger(),
+              "CsvWriter: bogus exchange_ts={} for {}, skipping bookTicker write",
+              event.exchange_timestamp, event.symbol);
+    return;
+  }
+
+  if (!RotateIfNeeded(event.exchange_timestamp)) return;
+  if (!bookticker_file_.is_open()) return;
+
+  std::string row;
+  row.reserve(128);
+  row += std::to_string(event.exchange_timestamp) + ',';
+  row += std::to_string(event.local_timestamp) + ',';
+  row += event.symbol;
+  row += ',';
+  row += std::to_string(event.best_bid_price) + ',';
+  row += std::to_string(event.best_bid_qty) + ',';
+  row += std::to_string(event.best_ask_price) + ',';
+  row += std::to_string(event.best_ask_qty) + '\n';
+  bookticker_file_ << row;
 }
 
 void CsvWriter::Close() {
   if (trade_file_.is_open()) { trade_file_.flush(); trade_file_.close(); }
   if (orderbook_file_.is_open()) { orderbook_file_.flush(); orderbook_file_.close(); }
+  if (bookticker_file_.is_open()) { bookticker_file_.flush(); bookticker_file_.close(); }
 }
 
 }  // namespace sqc

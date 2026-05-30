@@ -44,14 +44,6 @@ void OrderbookManager::OnDepthEvent(uint32_t channel_id, const DepthUpdateEvent&
   it->second->OnDepthEventReceived(event);
 }
 
-bool OrderbookManager::OnBookTicker(uint32_t channel_id, const BookTickerEvent& event) {
-  auto lob_it = lobs_.find(channel_id);
-  if (lob_it == lobs_.end()) return false;
-  return lob_it->second->UpdateBestPrice(
-      event.best_bid_price, event.best_bid_qty,
-      event.best_ask_price, event.best_ask_qty);
-}
-
 LocalLOB* OrderbookManager::GetLOB(uint32_t channel_id) {
   auto it = lobs_.find(channel_id);
   return it != lobs_.end() ? it->second.get() : nullptr;
@@ -83,13 +75,16 @@ void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
 
   std::thread([info, fsm, channel_id]() {
     OrderbookSnapshot snapshot;
+
     if (info.fetch_snapshot) {
       snapshot = info.fetch_snapshot(info.rest_host, info.symbol);
     }
+
     if (snapshot.lastUpdateId == 0) {
       LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);
       return;
     }
+    
     fsm->PostSnapshot(snapshot, snapshot.lastUpdateId);
   }).detach();
 }

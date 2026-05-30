@@ -87,6 +87,18 @@ static bool ParseDepth(const std::string& json, OrderbookSnapshot& out) {
       ++i;
     }
     out.bid_count = i;
+    // Aggregate adjacent same-price entries (Binance spot REST returns
+    // individual orders, not aggregated levels, for high-liquidity pairs).
+    if (out.bid_count > 1) {
+      uint32_t w = 0;
+      for (uint32_t r = 1; r < out.bid_count; ++r) {
+        if (out.bids[w].price == out.bids[r].price)
+          out.bids[w].quantity += out.bids[r].quantity;
+        else
+          out.bids[++w] = out.bids[r];
+      }
+      out.bid_count = w + 1;
+    }
   }
   simdjson::dom::array asks;
   if (doc["asks"].get_array().get(asks) == simdjson::SUCCESS) {
@@ -107,6 +119,17 @@ static bool ParseDepth(const std::string& json, OrderbookSnapshot& out) {
       ++i;
     }
     out.ask_count = i;
+    // Aggregate adjacent same-price entries (see bids comment above).
+    if (out.ask_count > 1) {
+      uint32_t w = 0;
+      for (uint32_t r = 1; r < out.ask_count; ++r) {
+        if (out.asks[w].price == out.asks[r].price)
+          out.asks[w].quantity += out.asks[r].quantity;
+        else
+          out.asks[++w] = out.asks[r];
+      }
+      out.ask_count = w + 1;
+    }
   }
   return true;
 }
@@ -121,14 +144,17 @@ OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view sym
   target += "&limit=";
   target += std::to_string(limit);
   LOG_INFO(GetLogger(), "BinanceSnapshot: fetching depth {} limit={}", rest_host, limit);
+ 
   std::string body = HttpsGet(rest_host, target);
   if (body.empty()) {
     LOG_ERROR(GetLogger(), "BinanceSnapshot: HTTP empty response");
     return snapshot;
   }
+
   if (!ParseDepth(body, snapshot)) {
     LOG_ERROR(GetLogger(), "BinanceSnapshot: depth parse failed");
   }
+
   return snapshot;
 }
 

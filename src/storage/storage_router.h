@@ -29,6 +29,9 @@ class StorageRouter {
                       uint32_t depth_level, std::string_view exchange,
                       ChannelType channel_type);
 
+  void RouteBookTicker(const BookTickerEvent& event, std::string_view exchange,
+                       ChannelType channel_type);
+
   void FlushAndClose();
 
  private:

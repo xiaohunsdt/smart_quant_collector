@@ -38,7 +38,11 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     std::string_view sym = doc["s"].get_string();
     out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    out.prev_last_update_id = out.first_update_id > 0 ? out.first_update_id - 1 : 0;
+    // Binance spot WebSocket does not provide 'pu' (previous lastUpdateId).
+    // Use last_update_id as a sentinel to signal "pu unavailable" so the
+    // lockstep FSM skips the continuity check and relies on snapshot replay
+    // logic (U <= current_id+1 <= u) in OnSnapshotReturned instead.
+    out.prev_last_update_id = out.last_update_id;
     out.channel_id = channel_id;
     std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
 

@@ -15,7 +15,7 @@ namespace sqc {
 // Single producer (parser worker), single consumer (pub thread).
 // Zero-allocation, lock-free, cache-line padded — same pattern as ShardQueue.
 struct TickSPSCQueue {
-  static constexpr size_t kCapacity = 256;
+  static constexpr size_t kCapacity = 1024;
   static constexpr size_t kMask = kCapacity - 1;
   static_assert((kCapacity & kMask) == 0, "capacity must be power of 2");
 

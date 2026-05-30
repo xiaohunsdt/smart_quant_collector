@@ -42,11 +42,6 @@ int main(int argc, char* argv[]) {
   ChannelRegistry channel_registry;
   OrderbookManager orderbook_manager;
 
-  // 2. Shard queues
-  auto num_parsers = Config::Instance().threading_matrix.parser_cores.size();
-  std::vector<std::shared_ptr<ShardQueue>> shard_queues;
-  for (size_t i = 0; i < num_parsers; ++i)
-    shard_queues.push_back(std::make_shared<ShardQueue>());
 
   // 3. Storage
   StorageRouter storage_router;
@@ -55,6 +50,9 @@ int main(int argc, char* argv[]) {
   PrometheusExposer prometheus;
   TelemetryAgent telemetry_agent(&prometheus);
   TelemetrySlot telemetry_slot;
+
+  auto num_parsers = Config::Instance().threading_matrix.parser_cores.size();
+
   PubWorker pub_worker;
   pub_worker.Init(num_parsers);
   GatewaySupervisor gateway_supervisor;
@@ -65,6 +63,10 @@ int main(int argc, char* argv[]) {
   ssl_ctx.set_verify_mode(net::ssl::verify_none);
 
   // 6. Symbol channels (one per symbol — register + create in single pass)
+  std::vector<std::shared_ptr<ShardQueue>> shard_queues;
+  for (size_t i = 0; i < num_parsers; ++i)
+    shard_queues.push_back(std::make_shared<ShardQueue>(10000));
+
   std::vector<std::shared_ptr<SymbolChannel>> channels;
   for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
@@ -123,23 +125,10 @@ int main(int argc, char* argv[]) {
             storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,event.symbol, lob->depth_level(), exchange, type);
           }
         }, 
-        [&](uint32_t channel_id, const BookTickerEvent& event) -> bool {
-          bool changed = orderbook_manager.OnBookTicker(channel_id, event);
-          if (changed) {
-            auto* fsm = orderbook_manager.GetFSM(channel_id);
-            if (fsm && fsm->state() == SyncState::SYNCING) return changed;
-            auto* lob = orderbook_manager.GetLOB(channel_id);
-            if (lob) {
-              // LOG_DEBUG(GetLogger(), "BookTicker: bid={}, ask={}, bid_volume={}, ask_volume={}", lob->BestBid(), lob->BestAsk(), lob->BestBidVolume(), lob->BestAskVolume());
-              const auto* info = channel_registry.Lookup(channel_id);
-              const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-              const ChannelType type = info ? info->type : ChannelType::Spot;
-              uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-              uint64_t latency_ns = now_ns - event.local_timestamp;
-              storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,event.symbol, lob->depth_level(), exchange, type);
-            }
-          }
-          return changed;
+        [&](uint32_t channel_id, const BookTickerEvent& event) {
+          const auto* info = channel_registry.Lookup(channel_id);
+          if (!info) return;
+          storage_router.RouteBookTicker(event, info->exchange, info->type);
         });
 
     parser_workers.push_back(std::move(worker));

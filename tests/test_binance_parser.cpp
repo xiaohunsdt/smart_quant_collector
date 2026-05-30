@@ -107,7 +107,9 @@ TEST(BinanceParserTest, ParseDepthEventSpotNoPuField) {
     EXPECT_STREQ(depth.symbol, "BTCUSDT");
     EXPECT_EQ(depth.first_update_id, 1001ULL);
     EXPECT_EQ(depth.last_update_id, 1005ULL);
-    EXPECT_EQ(depth.prev_last_update_id, 1000ULL);  // first_update_id - 1
+    // Binance spot has no 'pu'; sentinel value = last_update_id
+    // so the lockstep FSM can skip the continuity check.
+    EXPECT_EQ(depth.prev_last_update_id, depth.last_update_id);
     EXPECT_EQ(depth.channel_id, 1);
     EXPECT_EQ(depth.bid_count, 2);
     if (depth.bid_count >= 2) {
