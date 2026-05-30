@@ -10,7 +10,26 @@ namespace binance_spot {
 ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
   ParseResult result;
   auto e_field = doc.find_field("e");
-  if (e_field.error()) return result;
+  if (e_field.error()) {
+    // Binance spot @bookTicker omits the "e" field (unlike futures).
+    // Detect by "b" (best bid price, always a string in bookTicker,
+    // vs. an array in depthUpdate). Rewind before and after the probe
+    // so ParseSpotBookTickerEvent can iterate from the start.
+    doc.rewind();
+    auto b_field = doc.find_field("b");
+    if (!b_field.error()) {
+      try {
+        std::string_view b_val = b_field.get_string();
+        if (!b_val.empty()) {
+          doc.rewind();
+          result.type = ParsedType::BOOK_TICKER;
+          if (!binance::ParseSpotBookTickerEvent(doc, result.book_ticker, channel_id))
+            result.type = ParsedType::NONE;
+        }
+      } catch (...) {}
+    }
+    return result;
+  }
   try {
     std::string_view event_type = e_field.get_string();
     if (event_type == "trade" || event_type == "aggTrade") {

@@ -63,8 +63,7 @@ void SymbolChannel::Start() {
 
     auto parsed = ParseWsUrl(ws_url);
 
-    LOG_INFO(GetLogger(), "SymbolChannel {}:{} group {} connecting to {}:{} {}",
-             adapter_->name, symbol_, g, parsed.host, parsed.port, parsed.path);
+    LOG_INFO(GetLogger(), "SymbolChannel {}:{} group {} connecting to {}:{} {}", adapter_->name, symbol_, g, parsed.host, parsed.port, parsed.path);
 
     auto ws = std::make_unique<WsClient>(ioc_, ssl_ctx_);
     auto* ws_raw = ws.get();
@@ -80,23 +79,18 @@ void SymbolChannel::Start() {
                     [this, self, g](bool success) {
       if (success) {
         reconnect_attempts_ = 0;
-        ws_clients_[g]->SetDisconnectHandler(
-            [this, self]() { OnDisconnect(); });
+        ws_clients_[g]->SetDisconnectHandler([this, self]() { OnDisconnect(); });
         SendGroupSubscriptions(g);
-        ws_clients_[g]->StartRead(
-            [this](const char* data, size_t size) { OnMessage(data, size); });
-        LOG_INFO(GetLogger(), "Read loop started for {}:{} group {}",
-                 adapter_->name, symbol_, g);
+        ws_clients_[g]->StartRead([this](const char* data, size_t size) { OnMessage(data, size); });
+        LOG_INFO(GetLogger(), "Read loop started for {}:{} group {}", adapter_->name, symbol_, g);
       } else {
-        LOG_WARNING(GetLogger(), "{}:{} group {} connect failed",
-                    adapter_->name, symbol_, g);
+        LOG_WARNING(GetLogger(), "{}:{} group {} connect failed", adapter_->name, symbol_, g);
         if (!is_reconnecting_) {
           is_reconnecting_ = true;
           uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
           delay = std::min(delay, kMaxReconnectDelaySec);
           reconnect_attempts_++;
-          auto timer = std::make_shared<net::steady_timer>(
-              ioc_, std::chrono::seconds(delay));
+          auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
           timer->async_wait([this, self, timer](boost::system::error_code) {
             if (!SignalHandler::IsShutdownRequested()) {
               is_reconnecting_ = false;
@@ -117,8 +111,7 @@ void SymbolChannel::Stop() {
 
 void SymbolChannel::OnDisconnect() {
   if (is_reconnecting_) return;
-  LOG_WARNING(GetLogger(), "{}:{} disconnected, reconnecting...",
-              adapter_->name, symbol_);
+  LOG_WARNING(GetLogger(), "{}:{} disconnected, reconnecting...", adapter_->name, symbol_);
   if (SignalHandler::IsShutdownRequested()) return;
 
   is_reconnecting_ = true;
@@ -145,18 +138,15 @@ void SymbolChannel::SendGroupSubscriptions(size_t g) {
   for (size_t i = 0; i < group.messages.size(); ++i) {
     const auto& [msg, delay_ms] = group.messages[i];
     if (delay_ms == 0) {
-      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}",
-               adapter_->name, symbol_, msg);
+      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, msg);
       ws_clients_[g]->Write(msg);
     } else {
-      auto timer = std::make_shared<net::steady_timer>(
-          ioc_, std::chrono::milliseconds(delay_ms));
+      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(delay_ms));
       auto self = shared_from_this();
       timer->async_wait([this, self, g, i, timer](boost::system::error_code) {
         if (!SignalHandler::IsShutdownRequested()) {
           const auto& [m, _] = groups_[g].messages[i];
-          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}",
-                   adapter_->name, symbol_, m);
+          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, m);
           ws_clients_[g]->Write(m);
         }
       });

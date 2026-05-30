@@ -77,6 +77,30 @@ TEST(BinanceParserTest, ParseMessageHandlesBookTickerEvent) {
   }
 }
 
+TEST(BinanceParserTest, ParseSpotBookTickerWithoutEField) {
+  // Binance SPOT @bookTicker omits "e" and "E" fields.
+  // Spot format: {"u":...,"s":"...","b":"...","B":"...","a":"...","A":"..."}
+  std::string json = R"({"u":400900217,"s":"BTCUSDT","b":"71621.60","B":"19.310","a":"71621.70","A":"2.554"})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_spot::ParseMessage(doc, 1);
+
+  EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
+  if (result.type == ParsedType::BOOK_TICKER) {
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 71621.60);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_qty, 19.31);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_price, 71621.70);
+    EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_qty, 2.554);
+    EXPECT_EQ(result.book_ticker.channel_id, 1);
+    EXPECT_STREQ(result.book_ticker.symbol, "BTCUSDT");
+    // exchange_timestamp is computed from system_clock; just verify it's non-zero.
+    EXPECT_GT(result.book_ticker.exchange_timestamp, 0ULL);
+  }
+}
+
 TEST(BinanceParserTest, ParseMessageSkipsMessageWithUnknownEventType) {
   // A message with an "e" field but an event type we don't handle.
   std::string json = R"({"e":"unknownEvent","s":"BNBUSDT","x":1})";

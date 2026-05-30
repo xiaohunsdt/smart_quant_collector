@@ -17,7 +17,7 @@ void OrderbookManager::RegisterChannel(uint32_t channel_id, uint32_t depth_level
   }
   
   auto lob = std::make_unique<LocalLOB>(depth_level);
-  auto fsm = std::make_unique<OrderbookStateMachine>(*lob, snapshot_mode);
+  auto fsm = std::make_shared<OrderbookStateMachine>(*lob, snapshot_mode);
   lobs_[channel_id] = std::move(lob);
   fsms_[channel_id] = std::move(fsm);
   depth_levels_[channel_id] = depth_level;
@@ -33,9 +33,11 @@ void OrderbookManager::SetChannelInfo(uint32_t channel_id, ChannelSnapshotInfo i
       if (info_it == channel_info_.end() || fsm_it == fsms_.end()) return;
 
       auto info = info_it->second;
-      auto* fsm = fsm_it->second.get();
 
-      std::thread([info, fsm, channel_id]() {
+      std::thread([info, weak_fsm = std::weak_ptr(fsm_it->second), channel_id]() {
+        auto fsm = weak_fsm.lock();
+        if (!fsm) return;  // FSM was destroyed before snapshot completed
+
         OrderbookSnapshot snapshot;
 
         if (info.fetch_snapshot) {

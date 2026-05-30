@@ -1,4 +1,5 @@
 #include "binance_common.h"
+#include <chrono>
 #include <cstring>
 #include <string>
 #include "quill/LogMacros.h"
@@ -47,6 +48,32 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
     return false;
   } catch (...) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance bookTicker parse: unknown error");
+    return false;
+  }
+}
+
+bool ParseSpotBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id) {
+  try {
+    std::string_view sym = doc["s"].get_string();
+    out.best_bid_price = SvToDouble(doc["b"].get_string());
+    out.best_bid_qty = SvToDouble(doc["B"].get_string());
+    out.best_ask_price = SvToDouble(doc["a"].get_string());
+    out.best_ask_qty = SvToDouble(doc["A"].get_string());
+    // Binance spot @bookTicker omits the "E" (event time) field.
+    // Use system_clock as a best-effort approximation for the CSV timestamp.
+    out.exchange_timestamp = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    out.channel_id = channel_id;
+    std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
+    out.symbol[std::min(sym.size(), sizeof(out.symbol) - 1)] = '\0';
+    return true;
+  } catch (const simdjson::simdjson_error& e) {
+    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance spot bookTicker parse: {}", e.what());
+    return false;
+  } catch (...) {
+    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance spot bookTicker parse: unknown error");
     return false;
   }
 }

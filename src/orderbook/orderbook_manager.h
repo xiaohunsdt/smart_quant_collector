@@ -37,7 +37,7 @@ class OrderbookManager {
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<LocalLOB>> lobs_;
-  std::unordered_map<uint32_t, std::unique_ptr<OrderbookStateMachine>> fsms_;
+  std::unordered_map<uint32_t, std::shared_ptr<OrderbookStateMachine>> fsms_;
   std::unordered_map<uint32_t, uint32_t> depth_levels_;
   std::unordered_map<uint32_t, ChannelSnapshotInfo> channel_info_;
 };

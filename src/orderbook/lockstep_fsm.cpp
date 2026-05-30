@@ -36,7 +36,9 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
   if (st == SyncState::SYNCING) {
     // Defensive check 1: 3-second timeout or ring buffer overflow → retry
     auto now = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
-    bool timed_out = (now - snapshot_request_time_ > std::chrono::seconds(5));
+    auto req_ns = snapshot_request_time_ns_.load(std::memory_order_relaxed);
+    auto req_time = std::chrono::steady_clock::time_point(std::chrono::nanoseconds(req_ns));
+    bool timed_out = (now - req_time > std::chrono::seconds(5));
     bool overflow = ring_buffer_.full();
 
     if (timed_out || overflow) {
@@ -78,7 +80,14 @@ void OrderbookStateMachine::OnDepthEventReceived(const DepthUpdateEvent& event) 
 void OrderbookStateMachine::PostSnapshot(const OrderbookSnapshot& snapshot, uint64_t last_id) {
   pending_snapshot_ = snapshot;
   pending_snapshot_last_id_ = last_id;
-  pending_snapshot_ready_.store(true, std::memory_order_release);
+
+  // Use CAS to guard against multiple concurrent bg threads (e.g., retry
+  // spawns a new thread while the previous one is still in-flight). Only
+  // the first thread to flip the flag succeeds; later arrivals bail out.
+  bool expected = false;
+  if (!pending_snapshot_ready_.compare_exchange_strong(expected, true, std::memory_order_release)) {
+    return;
+  }
 }
 
 void OrderbookStateMachine::OnSnapshotReturned(uint64_t snapshot_last_id, const OrderbookSnapshot& snapshot) {
@@ -109,7 +118,9 @@ void OrderbookStateMachine::ApplyPendingSnapshot() {
 }
 
 void OrderbookStateMachine::RequestHTTPSnapshot() {
-  snapshot_request_time_ = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
+  auto tp = use_fake_clock_ ? now_ : std::chrono::steady_clock::now();
+  auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
+  snapshot_request_time_ns_.store(ns, std::memory_order_relaxed);
   LOG_INFO(GetLogger(), "LockStep FSM: requesting HTTP snapshot");
   if (snapshot_fetch_cb_) {
     snapshot_fetch_cb_();

@@ -53,7 +53,7 @@ class OrderbookStateMachine {
   LocalLOB& lob_;
   std::atomic<uint64_t> last_update_id_{0};
   std::atomic<uint32_t> sync_retry_count_{0};
-  std::chrono::steady_clock::time_point snapshot_request_time_;
+  std::atomic<uint64_t> snapshot_request_time_ns_{0};
   boost::circular_buffer<DepthUpdateEvent> ring_buffer_{10000};
   bool snapshot_mode_ = false;
   SnapshotFetchCb snapshot_fetch_cb_;
