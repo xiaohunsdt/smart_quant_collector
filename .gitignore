@@ -2,6 +2,8 @@
 build/
 build-*/
 build_*/
+bin/
+lib/
 
 # Coverage profiling data
 *.profraw

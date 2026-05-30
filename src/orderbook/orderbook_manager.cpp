@@ -28,7 +28,27 @@ void OrderbookManager::SetChannelInfo(uint32_t channel_id, ChannelSnapshotInfo i
   auto fsm_it = fsms_.find(channel_id);
   if (fsm_it != fsms_.end()) {
     fsm_it->second->SetSnapshotFetchCb([this, channel_id]() {
-      FetchSnapshotForChannel(channel_id);
+      auto info_it = channel_info_.find(channel_id);
+      auto fsm_it = fsms_.find(channel_id);
+      if (info_it == channel_info_.end() || fsm_it == fsms_.end()) return;
+
+      auto info = info_it->second;
+      auto* fsm = fsm_it->second.get();
+
+      std::thread([info, fsm, channel_id]() {
+        OrderbookSnapshot snapshot;
+
+        if (info.fetch_snapshot) {
+          snapshot = info.fetch_snapshot(info.rest_host, info.symbol);
+        }
+
+        if (snapshot.lastUpdateId == 0) {
+          LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);
+          return;
+        }
+        
+        fsm->PostSnapshot(snapshot, snapshot.lastUpdateId);
+      }).detach();
     });
   }
 }
@@ -63,30 +83,6 @@ void OrderbookManager::BootstrapChannel(uint32_t channel_id) {
   auto fsm_it = fsms_.find(channel_id);
   if (fsm_it == fsms_.end()) return;
   fsm_it->second->StartBootstrap();
-}
-
-void OrderbookManager::FetchSnapshotForChannel(uint32_t channel_id) {
-  auto info_it = channel_info_.find(channel_id);
-  auto fsm_it = fsms_.find(channel_id);
-  if (info_it == channel_info_.end() || fsm_it == fsms_.end()) return;
-
-  auto info = info_it->second;
-  auto* fsm = fsm_it->second.get();
-
-  std::thread([info, fsm, channel_id]() {
-    OrderbookSnapshot snapshot;
-
-    if (info.fetch_snapshot) {
-      snapshot = info.fetch_snapshot(info.rest_host, info.symbol);
-    }
-
-    if (snapshot.lastUpdateId == 0) {
-      LOG_WARNING(GetLogger(), "Snapshot fetch returned empty for channel {}, retrying",channel_id);
-      return;
-    }
-    
-    fsm->PostSnapshot(snapshot, snapshot.lastUpdateId);
-  }).detach();
 }
 
 }  // namespace sqc

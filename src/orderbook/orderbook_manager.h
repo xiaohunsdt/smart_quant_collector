@@ -36,8 +36,6 @@ class OrderbookManager {
   void BootstrapChannel(uint32_t channel_id);
 
  private:
-  void FetchSnapshotForChannel(uint32_t channel_id);
-
   std::unordered_map<uint32_t, std::unique_ptr<LocalLOB>> lobs_;
   std::unordered_map<uint32_t, std::unique_ptr<OrderbookStateMachine>> fsms_;
   std::unordered_map<uint32_t, uint32_t> depth_levels_;
