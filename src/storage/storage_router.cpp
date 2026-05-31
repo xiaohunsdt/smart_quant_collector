@@ -5,12 +5,10 @@
 #include "config/config_loader.h"
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
-#include "src/orderbook/local_lob.h"
 
 namespace sqc {
 
-std::string StorageRouter::MakeKey(std::string_view exchange, ChannelType type,
-                                   std::string_view symbol) {
+std::string StorageRouter::MakeKey(std::string_view exchange, ChannelType type, std::string_view symbol) {
   auto name = ChannelTypeName(type);
   size_t name_len = std::strlen(name);
   std::string key;
@@ -34,12 +32,8 @@ StorageRouter::StorageRouter()
   buffer_b_.reserve(buffer_size_);
 
   if (use_engine_ == "dolphindb")
-    dolphindb_.Connect(Config::Instance().storage.dolphindb.host,
-                       Config::Instance().storage.dolphindb.port,
-                       Config::Instance().storage.dolphindb.user,
-                       Config::Instance().storage.dolphindb.password);
+    dolphindb_.Connect(Config::Instance().storage.dolphindb.host, Config::Instance().storage.dolphindb.port, Config::Instance().storage.dolphindb.user, Config::Instance().storage.dolphindb.password);
 
-  // Pre-allocate all writers at startup — runtime maps are read-only, no lock needed
   for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
     for (const auto& ch : ex.channels) {
@@ -54,7 +48,6 @@ StorageRouter::StorageRouter()
             csv_writers_.emplace(key, std::move(w));
         }
 
-        // Always init mmap engines (used as fallback for dolphindb too)
         {
           auto mmap_dir = mmap_output_path_;
           if (!mmap_dir.empty() && mmap_dir.back() != '/') mmap_dir += '/';
@@ -73,14 +66,13 @@ StorageRouter::StorageRouter()
   }
 }
 
-void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
-                               ChannelType channel_type) {
+void StorageRouter::RouteTick(const TickData& tick, const ChannelInfo& info) {
   if (use_engine_ == "csv") {
-    auto key = MakeKey(exchange, channel_type, tick.symbol);
+    auto key = MakeKey(info.exchange, info.type, tick.symbol);
     auto it = csv_writers_.find(key);
     if (it != csv_writers_.end()) it->second.AppendTick(tick);
   } else if (use_engine_ == "mmap") {
-    auto key = MakeKey(exchange, channel_type, tick.symbol);
+    auto key = MakeKey(info.exchange, info.type, tick.symbol);
     auto it = tick_mmap_.find(key);
     if (it != tick_mmap_.end()) it->second->AppendRecord(tick, 0);
   } else if (use_engine_ == "dolphindb") {
@@ -95,24 +87,16 @@ void StorageRouter::RouteTick(const TickData& tick, std::string_view exchange,
   }
 }
 
-void StorageRouter::RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
-                                    uint64_t local_ts, std::string_view symbol,
-                                    uint32_t depth_level, std::string_view exchange,
-                                    ChannelType channel_type) {
-  auto key = MakeKey(exchange, channel_type, symbol);
+void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local_ts, const ChannelInfo& info) {
+  auto key = MakeKey(info.exchange, info.type, event.symbol);
 
   if (use_engine_ == "csv") {
     auto it = csv_writers_.find(key);
     if (it != csv_writers_.end())
-      it->second.AppendOrderbook(lob, exchange_ts, local_ts, symbol, depth_level);
+      it->second.AppendOrderbook(event, local_ts, info.depth_level);
   } else if (use_engine_ == "mmap") {
     auto it = ob_mmap_.find(key);
     if (it == ob_mmap_.end()) return;
-    // F20: serialize full orderbook snapshot
-    PriceLevel bids[kMaxOrderbookLevels];
-    PriceLevel asks[kMaxOrderbookLevels];
-    uint32_t bid_count = lob.TopBids(bids, depth_level);
-    uint32_t ask_count = lob.TopAsks(asks, depth_level);
 
     struct alignas(8) OrderbookRecordHeader {
       uint64_t exchange_timestamp;
@@ -122,15 +106,17 @@ void StorageRouter::RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
       uint32_t ask_count;
     };
     OrderbookRecordHeader hdr{};
-    hdr.exchange_timestamp = exchange_ts;
+    hdr.exchange_timestamp = event.exchange_timestamp;
     hdr.local_timestamp = local_ts;
-    std::strncpy(hdr.symbol, symbol.data(), sizeof(hdr.symbol) - 1);
-    hdr.bid_count = bid_count;
-    hdr.ask_count = ask_count;
+    std::strncpy(hdr.symbol, event.symbol, sizeof(hdr.symbol) - 1);
+    hdr.bid_count = event.bid_count;
+    hdr.ask_count = event.ask_count;
 
     it->second->AppendRaw(&hdr, sizeof(hdr));
-    if (bid_count > 0) it->second->AppendRaw(bids, bid_count * sizeof(PriceLevel));
-    if (ask_count > 0) it->second->AppendRaw(asks, ask_count * sizeof(PriceLevel));
+    if (event.bid_count > 0)
+      it->second->AppendRaw(event.bids, event.bid_count * sizeof(PriceLevel));
+    if (event.ask_count > 0)
+      it->second->AppendRaw(event.asks, event.ask_count * sizeof(PriceLevel));
   }
 }
 
@@ -148,18 +134,15 @@ void StorageRouter::FlushActiveBuffer() {
 
   if (degraded_) {
     for (const auto& tick : buf) {
-      // Degraded fallback: write to first available mmap engine
       if (!tick_mmap_.empty())
         tick_mmap_.begin()->second->AppendRecord(tick, 1);
     }
   }
 }
 
-void StorageRouter::RouteBookTicker(const BookTickerEvent& event,
-                                     std::string_view exchange,
-                                     ChannelType channel_type) {
+void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelInfo& info) {
   if (use_engine_ == "csv") {
-    auto key = MakeKey(exchange, channel_type, event.symbol);
+    auto key = MakeKey(info.exchange, info.type, event.symbol);
     auto it = csv_writers_.find(key);
     if (it != csv_writers_.end()) it->second.AppendBookTicker(event);
   }

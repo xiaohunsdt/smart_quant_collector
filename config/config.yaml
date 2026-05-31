@@ -46,15 +46,15 @@ exchanges:
     channels:
       - type: spot
         symbols:
-          - name: "BTCUSDT"
-            depth_level: 10
-            record_tick: true
-          - name: "ETHUSDT"
-            depth_level: 10
-            record_tick: true
-          - name: "SOLUSDT"
-            depth_level: 10
-            record_tick: true
+          # - name: "BTCUSDT"
+          #   depth_level: 10
+          #   record_tick: true
+          # - name: "ETHUSDT"
+          #   depth_level: 10
+          #   record_tick: true
+          # - name: "SOLUSDT"
+          #   depth_level: 10
+          #   record_tick: true
       - type: perpetual
         symbols:
           - name: "BTCUSDT"
@@ -67,7 +67,7 @@ exchanges:
             depth_level: 10
             record_tick: true
   - name: "gateio"
-    enabled: true
+    enabled: false
     channels:
       - type: spot
         symbols:

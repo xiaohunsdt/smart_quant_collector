@@ -42,7 +42,7 @@ TEST(GateioParserTest, ParseFuturesTrade) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   TickData tick{};
-  bool ok = gateio_perpetual::ParseTradeEvent(doc, tick, 2);
+  bool ok = gateio_perpetual::ParseTradeEvent(doc, tick, 2, "BTC_USDT");
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(tick.channel_id, 2u);
@@ -89,12 +89,11 @@ TEST(GateioParserTest, ParseFuturesOrderBookAll) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   DepthUpdateEvent event{};
-  bool ok = gateio_perpetual::ParseDepthEvent(doc, event, 7);
+  bool ok = gateio_perpetual::ParseDepthEvent(doc, event, 7, "BTC_USDT");
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(event.channel_id, 7u);
   EXPECT_STREQ(event.symbol, "BTC_USDT");
-  EXPECT_EQ(event.first_update_id, 113557080620u);
   EXPECT_EQ(event.last_update_id, 113557080620u);
   EXPECT_EQ(event.exchange_timestamp, 1779923753557000ULL);
 
@@ -115,65 +114,7 @@ TEST(GateioParserTest, ParseFuturesOrderBookAll) {
   EXPECT_DOUBLE_EQ(event.asks[2].quantity, 751.0);
 }
 
-// Real futures.order_book_update (incremental)
-// v4 format: U/u for update IDs, s for symbol, b/a with object entries {p, s}.
-constexpr const char* kFuturesOrderBookUpdateJson = R"({
-  "time": 1779923753,
-  "time_ms": 1779923753576,
-  "channel": "futures.order_book_update",
-  "event": "update",
-  "result": {
-    "t": 1779923753557,
-    "s": "BTC_USDT",
-    "U": 2517661101,
-    "u": 2517661113,
-    "b": [
-      {"p": "54672.1", "s": 0},
-      {"p": "54664.5", "s": 58794}
-    ],
-    "a": [
-      {"p": "54743.6", "s": 0},
-      {"p": "54742", "s": 95}
-    ]
-  }
-})";
-
-TEST(GateioParserTest, ParseFuturesOrderBookUpdate) {
-  size_t size = std::strlen(kFuturesOrderBookUpdateJson);
-  std::string padded(kFuturesOrderBookUpdateJson);
-  padded.resize(size + simdjson::SIMDJSON_PADDING, '\0');
-
-  simdjson::ondemand::parser parser;
-  simdjson::ondemand::document doc;
-  auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
-  ASSERT_FALSE(err) << simdjson::error_message(err);
-
-  DepthUpdateEvent event{};
-  bool ok = gateio_perpetual::ParseDepthUpdateEvent(doc, event, 7);
-
-  EXPECT_TRUE(ok);
-  EXPECT_EQ(event.channel_id, 7u);
-  EXPECT_STREQ(event.symbol, "BTC_USDT");
-  EXPECT_EQ(event.first_update_id, 2517661101u);
-  EXPECT_EQ(event.last_update_id, 2517661113u);
-  EXPECT_EQ(event.prev_last_update_id, 2517661100u);
-  EXPECT_EQ(event.exchange_timestamp, 1779923753557000ULL);
-
-  ASSERT_EQ(event.bid_count, 2u);
-  EXPECT_DOUBLE_EQ(event.bids[0].price, 54672.1);
-  EXPECT_DOUBLE_EQ(event.bids[0].quantity, 0.0);
-  EXPECT_DOUBLE_EQ(event.bids[1].price, 54664.5);
-  EXPECT_DOUBLE_EQ(event.bids[1].quantity, 58794.0);
-
-  ASSERT_EQ(event.ask_count, 2u);
-  EXPECT_DOUBLE_EQ(event.asks[0].price, 54743.6);
-  EXPECT_DOUBLE_EQ(event.asks[0].quantity, 0.0);
-  EXPECT_DOUBLE_EQ(event.asks[1].price, 54742.0);
-  EXPECT_DOUBLE_EQ(event.asks[1].quantity, 95.0);
-}
-
 // Real futures.book_ticker
-// v4 format: top-level b/B/a/A (no nested "book" object).
 constexpr const char* kFuturesBookTickerJson = R"({
   "time": 1615366379,
   "time_ms": 1615366379123,
@@ -201,7 +142,7 @@ TEST(GateioParserTest, ParseFuturesBookTicker) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   BookTickerEvent event{};
-  bool ok = gateio_perpetual::ParseBookTickerEvent(doc, event, 7);
+  bool ok = gateio_perpetual::ParseBookTickerEvent(doc, event, 7, "BTC_USDT");
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(event.channel_id, 7u);
@@ -215,21 +156,6 @@ TEST(GateioParserTest, ParseFuturesBookTicker) {
 
 // ---- ParseMessage dispatch tests ----
 
-TEST(GateioParserTest, ParseMessageDispatchesToDepthUpdate) {
-  size_t size = std::strlen(kFuturesOrderBookUpdateJson);
-  std::string padded(kFuturesOrderBookUpdateJson);
-  padded.resize(size + simdjson::SIMDJSON_PADDING, '\0');
-
-  simdjson::ondemand::parser parser;
-  simdjson::ondemand::document doc;
-  auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
-  ASSERT_FALSE(err) << simdjson::error_message(err);
-
-  auto result = gateio_perpetual::ParseMessage(doc, 7);
-  EXPECT_EQ(result.type, ParsedType::DEPTH);
-  EXPECT_EQ(result.depth.first_update_id, 2517661101u);
-}
-
 TEST(GateioParserTest, ParseMessageDispatchesToBookTicker) {
   size_t size = std::strlen(kFuturesBookTickerJson);
   std::string padded(kFuturesBookTickerJson);
@@ -240,33 +166,9 @@ TEST(GateioParserTest, ParseMessageDispatchesToBookTicker) {
   auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
-  auto result = gateio_perpetual::ParseMessage(doc, 7);
+  auto result = gateio_perpetual::Parse(doc, 7, "BTC_USDT", EventType::BOOK_TICKER);
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 54696.6);
-}
-
-// order_book_update skips "subscribe" event
-TEST(GateioParserTest, ParseDepthUpdateSkipsSubscribeEvent) {
-  constexpr const char* kSubscribeJson = R"({
-    "time": 1779923753,
-    "time_ms": 1779923753576,
-    "channel": "futures.order_book_update",
-    "event": "subscribe",
-    "result": null
-  })";
-
-  size_t size = std::strlen(kSubscribeJson);
-  std::string padded(kSubscribeJson);
-  padded.resize(size + simdjson::SIMDJSON_PADDING, '\0');
-
-  simdjson::ondemand::parser parser;
-  simdjson::ondemand::document doc;
-  auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
-  ASSERT_FALSE(err) << simdjson::error_message(err);
-
-  DepthUpdateEvent event{};
-  bool ok = gateio_perpetual::ParseDepthUpdateEvent(doc, event, 7);
-  EXPECT_FALSE(ok) << "subscribe event should be skipped";
 }
 
 }  // namespace

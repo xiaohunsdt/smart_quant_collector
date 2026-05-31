@@ -38,18 +38,8 @@ ParsedUrl ParseWsUrl(std::string_view ws_url) {
 
 }  // namespace
 
-SymbolChannel::SymbolChannel(
-    const ExchangeAdapter* adapter,
-    std::string symbol, uint32_t depth_level,
-    uint32_t channel_id,
-    net::io_context& ioc, net::ssl::context& ssl_ctx,
-    std::vector<std::shared_ptr<ShardQueue>> shard_queues)
-    : adapter_(adapter),
-      symbol_(std::move(symbol)),
-      depth_level_(depth_level),
-      channel_id_(channel_id),
-      ioc_(ioc), ssl_ctx_(ssl_ctx),
-      shard_queues_(std::move(shard_queues)) {}
+SymbolChannel::SymbolChannel(const ExchangeAdapter* adapter, std::string symbol, uint32_t depth_level, uint32_t channel_id, net::io_context& ioc, net::ssl::context& ssl_ctx, std::vector<std::shared_ptr<ShardQueue>> shard_queues)
+    : adapter_(adapter), symbol_(std::move(symbol)), depth_level_(depth_level), channel_id_(channel_id), ioc_(ioc), ssl_ctx_(ssl_ctx), shard_queues_(std::move(shard_queues)) {}
 
 SymbolChannel::~SymbolChannel() = default;
 
@@ -75,8 +65,7 @@ void SymbolChannel::Start() {
     }
 
     auto self = shared_from_this();
-    ws_raw->Connect(parsed.host, parsed.port, parsed.path,
-                    [this, self, g](bool success) {
+    ws_raw->Connect(parsed.host, parsed.port, parsed.path, [this, self, g](bool success) {
       if (success) {
         reconnect_attempts_ = 0;
         ws_clients_[g]->SetDisconnectHandler([this, self]() { OnDisconnect(); });
@@ -136,18 +125,17 @@ void SymbolChannel::SendGroupSubscriptions(size_t g) {
   if (g >= groups_.size()) return;
   const auto& group = groups_[g];
   for (size_t i = 0; i < group.messages.size(); ++i) {
-    const auto& [msg, delay_ms] = group.messages[i];
-    if (delay_ms == 0) {
-      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, msg);
-      ws_clients_[g]->Write(msg);
+    const auto& msg = group.messages[i];
+    if (msg.delay_ms == 0) {
+      LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, msg.payload);
+      ws_clients_[g]->Write(msg.payload);
     } else {
-      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(delay_ms));
+      auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::milliseconds(msg.delay_ms));
       auto self = shared_from_this();
       timer->async_wait([this, self, g, i, timer](boost::system::error_code) {
         if (!SignalHandler::IsShutdownRequested()) {
-          const auto& [m, _] = groups_[g].messages[i];
-          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, m);
-          ws_clients_[g]->Write(m);
+          LOG_INFO(GetLogger(), "{}:{} sending subscribe: {}", adapter_->name, symbol_, groups_[g].messages[i].payload);
+          ws_clients_[g]->Write(groups_[g].messages[i].payload);
         }
       });
     }
@@ -164,7 +152,14 @@ void SymbolChannel::OnMessage(const char* data, size_t size) {
   msg.size = size;
   msg.channel_id = channel_id_;
   msg.recv_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  std::memcpy(msg.symbol, symbol_.c_str(), std::min(symbol_.size(), sizeof(msg.symbol) - 1));
   msg.parse_fn = adapter_->parse;
+
+  simdjson::ondemand::parser p;
+  simdjson::ondemand::document doc;
+  if (p.iterate(data, size, size + kSimdjsonPadding).get(doc) == simdjson::SUCCESS) {
+    msg.event_type = adapter_->peek_event_type(doc);
+  }
 
   uint32_t shard = (channel_id_ ^ std::hash<std::string_view>{}(adapter_->name)) % shard_queues_.size();
   shard_queues_[shard]->Push(std::move(msg));

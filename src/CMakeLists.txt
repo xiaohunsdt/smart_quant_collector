@@ -16,9 +16,6 @@ add_library(collector_objects OBJECT
     exchange/binance/binance_perpetual.cpp
     exchange/gateio/gateio_spot.cpp
     exchange/gateio/gateio_perpetual.cpp
-    orderbook/local_lob.cpp
-    orderbook/lockstep_fsm.cpp
-    orderbook/orderbook_manager.cpp
     common/http_utils.cpp
     storage/dolphindb_client.cpp
     storage/mmap_engine.cpp

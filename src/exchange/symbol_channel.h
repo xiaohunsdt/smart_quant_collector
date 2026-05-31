@@ -20,11 +20,7 @@ class WsClient;
 
 class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
  public:
-  SymbolChannel(const ExchangeAdapter* adapter,
-                std::string symbol, uint32_t depth_level,
-                uint32_t channel_id,
-                net::io_context& ioc, net::ssl::context& ssl_ctx,
-                std::vector<std::shared_ptr<ShardQueue>> shard_queues);
+  SymbolChannel(const ExchangeAdapter* adapter, std::string symbol, uint32_t depth_level, uint32_t channel_id, net::io_context& ioc, net::ssl::context& ssl_ctx, std::vector<std::shared_ptr<ShardQueue>> shard_queues);
 
   ~SymbolChannel();
   SymbolChannel(const SymbolChannel&) = delete;

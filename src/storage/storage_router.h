@@ -10,34 +10,27 @@
 
 #include "src/common/tick_data.h"
 #include "src/config/config_struct.h"
+#include "src/exchange/channel_mapping.h"
 #include "src/exchange/exchange_adapter.h"
+#include "src/orderbook/orderbook_event.h"
 #include "csv_writer.h"
 #include "dolphindb_client.h"
 #include "mmap_engine.h"
 
 namespace sqc {
 
-class LocalLOB;
-
 class StorageRouter {
  public:
   explicit StorageRouter();
 
-  void RouteTick(const TickData& tick, std::string_view exchange, ChannelType channel_type);
-  void RouteOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
-                      uint64_t local_ts, std::string_view symbol,
-                      uint32_t depth_level, std::string_view exchange,
-                      ChannelType channel_type);
-
-  void RouteBookTicker(const BookTickerEvent& event, std::string_view exchange,
-                       ChannelType channel_type);
-
+  void RouteTick(const TickData& tick, const ChannelInfo& info);
+  void RouteOrderbook(const DepthUpdateEvent& event, uint64_t local_ts, const ChannelInfo& info);
+  void RouteBookTicker(const BookTickerEvent& event, const ChannelInfo& info);
   void FlushAndClose();
 
  private:
   void FlushActiveBuffer();
-  static std::string MakeKey(std::string_view exchange, ChannelType type,
-                             std::string_view symbol);
+  static std::string MakeKey(std::string_view exchange, ChannelType type, std::string_view symbol);
 
   std::string use_engine_;
   DolphinDBClient dolphindb_;

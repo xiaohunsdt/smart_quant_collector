@@ -12,9 +12,7 @@ struct PriceLevel {
 };
 
 struct DepthUpdateEvent {
-  uint64_t first_update_id = 0;       // first update ID in this event (Binance: U)
   uint64_t last_update_id = 0;        // last update ID in this event (Binance: u)
-  uint64_t prev_last_update_id = 0;   // previous event's last update ID (computed: first_update_id - 1)
   uint32_t channel_id;
   uint64_t exchange_timestamp = 0;
   uint64_t local_timestamp = 0;
@@ -35,15 +33,6 @@ struct BookTickerEvent {
   double best_bid_qty = 0.0;
   double best_ask_price = 0.0;
   double best_ask_qty = 0.0;
-};
-
-struct OrderbookSnapshot {
-  uint64_t lastUpdateId;
-
-  PriceLevel bids[kMaxOrderbookLevels];
-  PriceLevel asks[kMaxOrderbookLevels];
-  uint32_t bid_count = 0;
-  uint32_t ask_count = 0;
 };
 
 }  // namespace sqc

@@ -17,9 +17,7 @@
 #include "exchange/shard_parser_worker.h"
 #include "exchange/shard_queue.h"
 #include "exchange/symbol_channel.h"
-#include "orderbook/local_lob.h"
-#include "orderbook/lockstep_fsm.h"
-#include "orderbook/orderbook_manager.h"
+#include "orderbook/orderbook_event.h"
 #include "pubsub/gateway_supervisor.h"
 #include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"
@@ -40,13 +38,11 @@ int main(int argc, char* argv[]) {
 
   // 1. Channel registry
   ChannelRegistry channel_registry;
-  OrderbookManager orderbook_manager;
 
-
-  // 3. Storage
+  // 2. Storage
   StorageRouter storage_router;
 
-  // 4. Telemetry + Pub/Sub
+  // 3. Telemetry + Pub/Sub
   PrometheusExposer prometheus;
   TelemetryAgent telemetry_agent(&prometheus);
   TelemetrySlot telemetry_slot;
@@ -57,12 +53,12 @@ int main(int argc, char* argv[]) {
   pub_worker.Init(num_parsers);
   GatewaySupervisor gateway_supervisor;
 
-  // 5. Boost.Asio + SSL
+  // 4. Boost.Asio + SSL
   net::io_context io_ctx;
   net::ssl::context ssl_ctx(net::ssl::context::tlsv12_client);
   ssl_ctx.set_verify_mode(net::ssl::verify_none);
 
-  // 6. Symbol channels (one per symbol — register + create in single pass)
+  // 5. Symbol channels
   std::vector<std::shared_ptr<ShardQueue>> shard_queues;
   for (size_t i = 0; i < num_parsers; ++i)
     shard_queues.push_back(std::make_shared<ShardQueue>(10000));
@@ -76,7 +72,6 @@ int main(int argc, char* argv[]) {
         LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
         continue;
       }
-      std::string rest_host(adapter->rest_host);
 
       for (const auto& sym : ch.symbols) {
         if (!sym.enabled) continue;
@@ -85,10 +80,8 @@ int main(int argc, char* argv[]) {
         info.exchange = ex.name;
         info.type = adapter->channel_type;
         info.symbol = sym.name;
+        info.depth_level = sym.depth_level;
         uint32_t id = channel_registry.Register(info);
-        orderbook_manager.RegisterChannel(id, sym.depth_level, adapter->snapshot_mode);
-        orderbook_manager.SetChannelInfo(id, {rest_host, sym.name, sym.depth_level, adapter->fetch_snapshot});
-        if (!adapter->snapshot_mode) orderbook_manager.BootstrapChannel(id);
 
         auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
@@ -96,45 +89,36 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // 7. Parser workers
+  // 6. Parser workers
   std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
   for (size_t i = 0; i < num_parsers; ++i) {
     auto worker = std::make_unique<ShardParserWorker>(Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
       [&](TickData tick) -> void {
-          // LOG_DEBUG(GetLogger(), "Tick: symbol={}, price={}, quantity={}", tick.symbol, tick.price, tick.quantity);
           const auto* info = channel_registry.Lookup(tick.channel_id);
-          const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-          const ChannelType type = info ? info->type : ChannelType::Spot;
+          if (!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          tick.local_timestamp = now_ns - tick.local_timestamp;  // receive→disk latency
-          storage_router.RouteTick(tick, exchange, type);
+          tick.local_timestamp = now_ns - tick.local_timestamp;
+          storage_router.RouteTick(tick, *info);
           pub_worker.PublishTick(tick, i);
           WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
-        }, 
+        },
         [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
-          orderbook_manager.OnDepthEvent(channel_id, event);
-          auto* fsm = orderbook_manager.GetFSM(channel_id);
-          if (fsm && fsm->state() == SyncState::SYNCING) return;
-          auto* lob = orderbook_manager.GetLOB(channel_id);
-          if (lob) {
-            const auto* info = channel_registry.Lookup(channel_id);
-            const std::string_view exchange = info ? std::string_view{info->exchange} : std::string_view{};
-            const ChannelType type = info ? info->type : ChannelType::Spot;
-            uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-            uint64_t latency_ns = now_ns - event.local_timestamp;
-            storage_router.RouteOrderbook(*lob, event.exchange_timestamp, latency_ns,event.symbol, lob->depth_level(), exchange, type);
-          }
-        }, 
+          const auto* info = channel_registry.Lookup(channel_id);
+          if (!info) return;
+          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+          uint64_t latency_ns = now_ns - event.local_timestamp;
+          storage_router.RouteOrderbook(event, latency_ns, *info);
+        },
         [&](uint32_t channel_id, const BookTickerEvent& event) {
           const auto* info = channel_registry.Lookup(channel_id);
           if (!info) return;
-          storage_router.RouteBookTicker(event, info->exchange, info->type);
+          storage_router.RouteBookTicker(event, *info);
         });
 
     parser_workers.push_back(std::move(worker));
   }
 
-  // 8. Threads
+  // 7. Threads
   gateway_supervisor.Start();
 
   std::thread telemetry_thread([&]() {
@@ -169,7 +153,7 @@ int main(int argc, char* argv[]) {
 
   LOG_INFO(GetLogger(), "All threads started, waiting for shutdown");
 
-  // 9. Shutdown
+  // 8. Shutdown
   SignalHandler::WaitForShutdown();
   LOG_INFO(GetLogger(), "Shutdown signal received");
 

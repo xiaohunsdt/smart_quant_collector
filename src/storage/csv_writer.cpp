@@ -5,7 +5,6 @@
 
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
-#include "src/orderbook/local_lob.h"
 
 namespace sqc {
 
@@ -25,7 +24,7 @@ bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange,
     return false;
   }
 
-  current_date_day_ = UINT64_MAX;  // force rotation on first write
+  current_date_day_ = UINT64_MAX;
   LOG_INFO(GetLogger(), "CsvWriter ready: {}", dir_);
   return true;
 }
@@ -40,9 +39,7 @@ bool CsvWriter::EnsureDirExists(const std::string& path) {
 }
 
 std::string CsvWriter::TimestampToDate(uint64_t usec_since_epoch) {
-  // Howard Hinnant civil_from_days, zero-allocation
   uint64_t days = usec_since_epoch / kUsecsPerDay;
-
   uint64_t z = days + 719468;
   uint64_t era = z / 146097;
   uint64_t doe = z - era * 146097;
@@ -67,14 +64,13 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
 
   uint64_t day = exchange_ts / kUsecsPerDay;
   if (day == current_date_day_ && trade_file_.is_open())
-    return true;  // fast path: same day, no rotation
+    return true;
 
   Close();
 
   current_date_ = TimestampToDate(exchange_ts);
   current_date_day_ = day;
 
-  // Open trade file (append mode, write header if new)
   std::string trade_path = dir_ + "trades_" + current_date_ + ".csv";
   bool trade_is_new = (access(trade_path.c_str(), F_OK) != 0);
   trade_file_.open(trade_path, std::ios::out | std::ios::app);
@@ -85,7 +81,6 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
   if (trade_is_new)
     trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction\n";
 
-  // Open orderbook file
   std::string ob_path = dir_ + "orderbook_" + current_date_ + ".csv";
   bool ob_is_new = (access(ob_path.c_str(), F_OK) != 0);
   orderbook_file_.open(ob_path, std::ios::out | std::ios::app);
@@ -93,9 +88,8 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     LOG_ERROR(GetLogger(), "CsvWriter: failed to open {}", ob_path);
     return false;
   }
-  if (ob_is_new) header_written_ = false;  // trigger header on first orderbook write
+  if (ob_is_new) header_written_ = false;
 
-  // Open bookticker file
   std::string bt_path = dir_ + "bookticker_" + current_date_ + ".csv";
   bool bt_is_new = (access(bt_path.c_str(), F_OK) != 0);
   bookticker_file_.open(bt_path, std::ios::out | std::ios::app);
@@ -111,8 +105,6 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
 
 void CsvWriter::AppendTick(const TickData& tick) {
   if (!RotateIfNeeded(tick.exchange_timestamp)) return;
-  // Build full row string before writing — eliminates the 5-<<-call
-  // window where a SIGKILL would leave a truncated partial row.
   std::string row;
   row.reserve(128);
   row += std::to_string(tick.exchange_timestamp) + ',';
@@ -123,23 +115,10 @@ void CsvWriter::AppendTick(const TickData& tick) {
   trade_file_ << row;
 }
 
-void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
-                                uint64_t local_ts,
-                                [[maybe_unused]] std::string_view symbol,
+void CsvWriter::AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts,
                                 uint32_t depth_level) {
-  // Reject clearly bogus timestamps (outside year range 2000-2100).
-  // Protects against corrupted data from upstream parser or reconnect
-  // boundary garbage being written into the CSV.
-  constexpr uint64_t kMinSaneTs = 946684800000000ULL;   // 2000-01-01
-  constexpr uint64_t kMaxSaneTs = 4102444800000000ULL;  // 2100-01-01
-  if (exchange_ts < kMinSaneTs || exchange_ts > kMaxSaneTs) {
-    LOG_ERROR(GetLogger(),
-              "CsvWriter: bogus exchange_ts={} for {}, skipping write",
-              exchange_ts, symbol);
-    return;
-  }
 
-  if (!RotateIfNeeded(exchange_ts)) return;
+  if (!RotateIfNeeded(event.exchange_timestamp)) return;
   if (!orderbook_file_.is_open()) return;
 
   if (!header_written_) {
@@ -152,40 +131,24 @@ void CsvWriter::AppendOrderbook(const LocalLOB& lob, uint64_t exchange_ts,
     orderbook_file_ << "\n";
   }
 
-  PriceLevel bids[kMaxOrderbookLevels];
-  PriceLevel asks[kMaxOrderbookLevels];
-  uint32_t bid_count = lob.TopBids(bids, depth_level_);
-  uint32_t ask_count = lob.TopAsks(asks, depth_level_);
-
-  // Build full row string before writing — eliminates the ~84-<<-call
-  // window where a SIGKILL would leave a truncated partial row.
   std::string row;
-  row.reserve(512);  // ~400 bytes for depth_level=10
-  row += std::to_string(exchange_ts) + ',' + std::to_string(local_ts);
+  row.reserve(512);
+  row += std::to_string(event.exchange_timestamp) + ',' + std::to_string(local_ts);
   for (uint32_t i = 0; i < depth_level_; ++i) {
     row += ',';
-    row += std::to_string(i < ask_count ? asks[i].price : 0.0);
+    row += std::to_string(i < event.ask_count ? event.asks[i].price : 0.0);
     row += ',';
-    row += std::to_string(i < ask_count ? asks[i].quantity : 0.0);
+    row += std::to_string(i < event.ask_count ? event.asks[i].quantity : 0.0);
     row += ',';
-    row += std::to_string(i < bid_count ? bids[i].price : 0.0);
+    row += std::to_string(i < event.bid_count ? event.bids[i].price : 0.0);
     row += ',';
-    row += std::to_string(i < bid_count ? bids[i].quantity : 0.0);
+    row += std::to_string(i < event.bid_count ? event.bids[i].quantity : 0.0);
   }
   row += '\n';
   orderbook_file_ << row;
 }
 
 void CsvWriter::AppendBookTicker(const BookTickerEvent& event) {
-  constexpr uint64_t kMinSaneTs = 946684800000000ULL;   // 2000-01-01
-  constexpr uint64_t kMaxSaneTs = 4102444800000000ULL;  // 2100-01-01
-  if (event.exchange_timestamp < kMinSaneTs || event.exchange_timestamp > kMaxSaneTs) {
-    LOG_ERROR(GetLogger(),
-              "CsvWriter: bogus exchange_ts={} for {}, skipping bookTicker write",
-              event.exchange_timestamp, event.symbol);
-    return;
-  }
-
   if (!RotateIfNeeded(event.exchange_timestamp)) return;
   if (!bookticker_file_.is_open()) return;
 

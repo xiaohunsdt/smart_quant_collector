@@ -11,11 +11,9 @@
 namespace sqc {
 namespace binance_perpetual {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id);
-bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id);
+ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type);
 
-// Adapter-compatible wrapper (matches ExchangeAdapter::fetch_snapshot signature).
-OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol);
+bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view symbol);
 
 }  // namespace binance_perpetual
 }  // namespace sqc

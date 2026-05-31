@@ -7,40 +7,39 @@
 namespace sqc {
 namespace binance_perpetual {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id) {
+ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type) {
   ParseResult result;
-  auto e_field = doc.find_field("e");
-  if (e_field.error()) return result;
   try {
-    std::string_view event_type = e_field.get_string();
-    if (event_type == "trade" || event_type == "aggTrade") {
-      result.type = ParsedType::TICK;
-      if (!binance::ParseTradeEvent(doc, result.tick, channel_id))
-        result.type = ParsedType::NONE;
-    } else if (event_type == "depthUpdate") {
-      result.type = ParsedType::DEPTH;
-      if (!ParseDepthEvent(doc, result.depth, channel_id))
-        result.type = ParsedType::NONE;
-    } else if (event_type == "bookTicker") {
-      result.type = ParsedType::BOOK_TICKER;
-      if (!binance::ParseBookTickerEvent(doc, result.book_ticker, channel_id))
-        result.type = ParsedType::NONE;
+    switch (event_type) {
+      case EventType::TICK:
+        result.type = ParsedType::TICK;
+        if (!binance::ParseTradeEvent(doc, result.tick, channel_id, symbol))
+          result.type = ParsedType::NONE;
+        break;
+      case EventType::DEPTH:
+        // Futures partial depth uses same "depthUpdate" format
+        result.type = ParsedType::DEPTH;
+        if (!ParseDepthEvent(doc, result.depth, channel_id, symbol))
+          result.type = ParsedType::NONE;
+        break;
+      case EventType::BOOK_TICKER:
+        result.type = ParsedType::BOOK_TICKER;
+        if (!binance::ParseBookTickerEvent(doc, result.book_ticker, channel_id, symbol))
+          result.type = ParsedType::NONE;
+        break;
     }
   } catch (const simdjson::simdjson_error& e) {
-    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual ParseMessage: {}", e.what());
+    if (auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual parse: {}", e.what());
   }
   return result;
 }
 
-bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
+bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view symbol) {
   try {
-    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64() * 1000);
-    std::string_view sym = doc["s"].get_string();
-    out.first_update_id = static_cast<uint64_t>(doc["U"].get_int64());
+    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64());
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
-    out.prev_last_update_id = static_cast<uint64_t>(doc["pu"].get_int64());
     out.channel_id = channel_id;
-    std::memcpy(out.symbol, sym.data(), std::min(sym.size(), sizeof(out.symbol) - 1));
+    std::memcpy(out.symbol, symbol.data(), std::min(symbol.size(), sizeof(out.symbol) - 1));
 
     out.bid_count = 0;
     for (auto bid_level : doc["b"]) {
@@ -70,10 +69,6 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual depth parse: unknown error");
     return false;
   }
-}
-
-OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol) {
-  return binance::FetchSnapshot(rest_host, symbol);
 }
 
 }  // namespace binance_perpetual

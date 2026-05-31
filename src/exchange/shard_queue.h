@@ -41,8 +41,11 @@ struct RawMessage {
   uint32_t channel_id = 0;
   uint64_t recv_timestamp = 0;
   char exchange[16] = {};
+  char symbol[12] = {};
+  EventType event_type = EventType::TICK;
 
-  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id) = nullptr;
+  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id,
+                          std::string_view symbol, EventType event_type) = nullptr;
 };
 
 class ShardQueue {

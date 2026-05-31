@@ -13,6 +13,7 @@ struct ChannelInfo {
   std::string exchange;
   ChannelType type = ChannelType::Spot;
   std::string symbol;
+  uint32_t depth_level = 10;
 };
 
 class ChannelRegistry {

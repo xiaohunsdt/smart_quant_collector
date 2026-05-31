@@ -11,13 +11,14 @@
 namespace sqc {
 namespace gateio_perpetual {
 
-ParseResult ParseMessage(simdjson::ondemand::document& doc, uint32_t channel_id);
-bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id);
-bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id);
-bool ParseDepthUpdateEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id);
-bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id);
+ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type);
 
-OrderbookSnapshot FetchSnapshot(std::string_view rest_host, std::string_view symbol);
+EventType PeekEventType(simdjson::ondemand::document& doc);
+
+// Exposed for tests
+bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view symbol);
+bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id, std::string_view symbol);
+bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id, std::string_view symbol);
 
 }  // namespace gateio_perpetual
 }  // namespace sqc

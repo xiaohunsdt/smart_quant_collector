@@ -39,7 +39,7 @@ static void BM_BinanceParseTrade(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = binance_spot::ParseMessage(doc, 1);
+    auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::TICK);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }
@@ -57,7 +57,7 @@ static void BM_GateioParseTicker(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if (err) state.SkipWithError("iterate failed");
-    auto result = gateio_spot::ParseMessage(doc, 2);
+    auto result = gateio_spot::Parse(doc, 2, "BTC_USDT", EventType::BOOK_TICKER);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }
