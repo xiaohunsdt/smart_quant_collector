@@ -3,7 +3,6 @@
 #include <chrono>
 #include <string>
 
-#include "exchange/binance/binance_common.h"
 #include "exchange/binance/binance_spot.h"
 #include "exchange/binance/binance_perpetual.h"
 #include "exchange/gateio/gateio_spot.h"
@@ -14,51 +13,54 @@ namespace {
 
 // ---- Binance subscribe builders ----
 
-static std::vector<SubscriptionGroup> BinanceSpotBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
+static std::vector<SubscriptionGroup> BinanceSpotBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
   std::string name(symbol);
   for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  return {{"wss://stream.binance.com/ws", {
-    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@aggTrade"],"id":1})", 0},
-    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth@100ms"],"id":2})", 500},
-    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", 700},
+  return {{"wss://stream.binance.com/ws?timeUnit=MICROSECOND", {
+    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@aggTrade"],"id":1})", 0, EventType::TICK},
+    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth)" + std::to_string(depth_level) + R"(@100ms"],"id":2})", 500, EventType::DEPTH},
+    {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", 700, EventType::BOOK_TICKER},
   }}};
 }
 
-static std::vector<SubscriptionGroup> BinancePerpetualBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
+static std::vector<SubscriptionGroup> BinancePerpetualBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
   std::string name(symbol);
   for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  std::string dl = std::to_string(depth_level);
+  // Perpetual: @bookTicker + @depth on /public, @aggTrade on /market.
+  // Perpetual timestamps are in milliseconds (futures API does not support timeUnit=MICROSECOND).
   return {
     {"wss://fstream.binance.com/market/ws", {
-      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@aggTrade"],"id":1})", 0},
+      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@aggTrade"],"id":1})", 0, EventType::TICK},
     }},
     {"wss://fstream.binance.com/public/ws", {
-      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth@100ms"],"id":2})", 500},
-      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", 700},
+      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", 700, EventType::BOOK_TICKER},
+      {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth)" + dl + R"(@100ms"],"id":2})", 500, EventType::DEPTH},
     }},
   };
-}
+};
 
 // ---- Gate.io subscribe builders ----
 
-static std::vector<SubscriptionGroup> GateioSpotBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
-  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+static std::vector<SubscriptionGroup> GateioSpotBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
+  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
+  std::string dl = std::to_string(depth_level);
   return {{"wss://api.gateio.ws/ws/v4/", {
-    {R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0},
-    {R"({"time":)" + ts + R"(,"channel":"spot.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\"]}", 500},
-    {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700},
+    {R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
+    {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"" + dl + "\"]}", 500, EventType::DEPTH},
+    {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
   }}};
 }
 
-static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string_view symbol, uint32_t /*depth_level*/) {
-  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
+  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
+  std::string dl = std::to_string(depth_level);
   return {{"wss://fx-ws.gateio.ws/v4/ws/usdt", {
-    {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0},
-    {R"({"time":)" + ts + R"(,"channel":"futures.order_book_update","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"100\"]}", 500},
-    {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700},
+    {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
+    {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"" + dl + "\"]}", 500, EventType::DEPTH},
+    {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
   }}};
 }
 
@@ -69,8 +71,8 @@ const ExchangeAdapter kBinanceSpotAdapter = {
     .channel_type = ChannelType::Spot,
     .rest_host = "api.binance.com",
     .build_subscribes = BinanceSpotBuildSubscribes,
-    .parse = binance_spot::ParseMessage,
-    .fetch_snapshot = binance_spot::FetchSnapshot,
+    .peek_event_type = binance::PeekEventType,
+    .parse = binance_spot::Parse,
 };
 
 const ExchangeAdapter kBinancePerpetualAdapter = {
@@ -78,8 +80,8 @@ const ExchangeAdapter kBinancePerpetualAdapter = {
     .channel_type = ChannelType::Perpetual,
     .rest_host = "fapi.binance.com",
     .build_subscribes = BinancePerpetualBuildSubscribes,
-    .parse = binance_perpetual::ParseMessage,
-    .fetch_snapshot = binance_perpetual::FetchSnapshot,
+    .peek_event_type = binance::PeekEventType,
+    .parse = binance_perpetual::Parse,
 };
 
 const ExchangeAdapter kGateioSpotAdapter = {
@@ -87,8 +89,8 @@ const ExchangeAdapter kGateioSpotAdapter = {
     .channel_type = ChannelType::Spot,
     .rest_host = "api.gateio.ws",
     .build_subscribes = GateioSpotBuildSubscribes,
-    .parse = gateio_spot::ParseMessage,
-    .fetch_snapshot = gateio_spot::FetchSnapshot,
+    .peek_event_type = gateio_spot::PeekEventType,
+    .parse = gateio_spot::Parse,
 };
 
 const ExchangeAdapter kGateioPerpetualAdapter = {
@@ -96,8 +98,8 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
     .channel_type = ChannelType::Perpetual,
     .rest_host = "api.gateio.ws",
     .build_subscribes = GateioPerpetualBuildSubscribes,
-    .parse = gateio_perpetual::ParseMessage,
-    .fetch_snapshot = gateio_perpetual::FetchSnapshot,
+    .peek_event_type = gateio_perpetual::PeekEventType,
+    .parse = gateio_perpetual::Parse,
 };
 
 }  // namespace
