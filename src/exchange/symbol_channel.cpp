@@ -161,6 +161,11 @@ void SymbolChannel::OnMessage(const char* data, size_t size) {
     msg.event_type = adapter_->peek_event_type(doc);
   }
 
+  if (msg.event_type == EventType::UNKNOWN) {
+    LOG_WARNING(GetLogger(), "{}:{} unknown event type for message: {}", adapter_->name, symbol_, std::string_view(data, size));
+    return;
+  }
+
   uint32_t shard = (channel_id_ ^ std::hash<std::string_view>{}(adapter_->name)) % shard_queues_.size();
   shard_queues_[shard]->Push(std::move(msg));
 }

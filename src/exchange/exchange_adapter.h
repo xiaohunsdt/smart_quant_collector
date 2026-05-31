@@ -15,7 +15,7 @@ namespace sqc {
 
 enum class ParsedType { NONE, TICK, DEPTH, BOOK_TICKER };
 
-enum class EventType : uint8_t { TICK, DEPTH, BOOK_TICKER };
+enum class EventType : uint8_t { UNKNOWN, TICK, DEPTH, BOOK_TICKER };
 
 struct ParseResult {
   ParsedType type = ParsedType::NONE;

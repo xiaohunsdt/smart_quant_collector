@@ -48,7 +48,7 @@ static std::vector<SubscriptionGroup> GateioSpotBuildSubscribes(std::string_view
   std::string dl = std::to_string(depth_level);
   return {{"wss://api.gateio.ws/ws/v4/", {
     {R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
-    {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"" + dl + "\"]}", 500, EventType::DEPTH},
+    {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl + "\",\"100ms\"]}", 500, EventType::DEPTH},
     {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
   }}};
 }
@@ -59,7 +59,7 @@ static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string
   std::string dl = std::to_string(depth_level);
   return {{"wss://fx-ws.gateio.ws/v4/ws/usdt", {
     {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
-    {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"100ms\",\"" + dl + "\"]}", 500, EventType::DEPTH},
+    {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl + "\",\"0\"]}", 500, EventType::DEPTH},
     {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
   }}};
 }

@@ -8,8 +8,7 @@
 namespace sqc {
 namespace binance_spot {
 
-ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id,
-                 std::string_view symbol, EventType event_type) {
+ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type) {
   ParseResult result;
   try {
     switch (event_type) {
@@ -30,6 +29,9 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id,
         result.type = ParsedType::BOOK_TICKER;
         if (!binance::ParseSpotBookTickerEvent(doc, result.book_ticker, channel_id, symbol))
           result.type = ParsedType::NONE;
+        break;
+      default:
+        result.type = ParsedType::NONE;
         break;
     }
   } catch (const simdjson::simdjson_error& e) {

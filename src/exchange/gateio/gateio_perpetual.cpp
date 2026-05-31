@@ -10,11 +10,13 @@ namespace sqc {
 namespace gateio_perpetual {
 
 EventType PeekEventType(simdjson::ondemand::document& doc) {
-  std::string_view channel = doc["channel"].get_string().value_unsafe();
+  auto ch = doc["channel"].get_string();
+  if (ch.error()) return EventType::UNKNOWN;
+  std::string_view channel = ch.value_unsafe();
   if (channel == "futures.trades") return EventType::TICK;
   if (channel == "futures.order_book") return EventType::DEPTH;
   if (channel == "futures.book_ticker") return EventType::BOOK_TICKER;
-  return EventType::TICK;
+  return EventType::UNKNOWN;
 }
 
 ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type) {
@@ -35,6 +37,9 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::s
         result.type = ParsedType::BOOK_TICKER;
         if (!ParseBookTickerEvent(doc, result.book_ticker, channel_id, symbol))
           result.type = ParsedType::NONE;
+        break;
+      default:
+        result.type = ParsedType::NONE;
         break;
     }
   } catch (const simdjson::simdjson_error& e) {
