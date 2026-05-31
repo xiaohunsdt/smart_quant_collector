@@ -112,8 +112,7 @@ int main(int argc, char* argv[]) {
         [&](uint32_t channel_id, BookTickerEvent event) {
           const auto* info = channel_registry.Lookup(channel_id);
           if (!info) return;
-          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-              std::chrono::steady_clock::now().time_since_epoch()).count();
+          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           event.local_diff = now_ns - event.local_diff;
           storage_router.RouteBookTicker(event, *info);
         });
