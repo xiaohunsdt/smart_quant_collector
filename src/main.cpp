@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
           const auto* info = channel_registry.Lookup(tick.channel_id);
           if (!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          tick.local_timestamp = now_ns - tick.local_timestamp;
+          tick.local_diff = now_ns - tick.local_diff;
           storage_router.RouteTick(tick, *info);
           pub_worker.PublishTick(tick, i);
           WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
@@ -106,12 +106,15 @@ int main(int argc, char* argv[]) {
           const auto* info = channel_registry.Lookup(channel_id);
           if (!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          uint64_t latency_ns = now_ns - event.local_timestamp;
+          uint64_t latency_ns = now_ns - event.local_diff;
           storage_router.RouteOrderbook(event, latency_ns, *info);
         },
-        [&](uint32_t channel_id, const BookTickerEvent& event) {
+        [&](uint32_t channel_id, BookTickerEvent event) {
           const auto* info = channel_registry.Lookup(channel_id);
           if (!info) return;
+          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::steady_clock::now().time_since_epoch()).count();
+          event.local_diff = now_ns - event.local_diff;
           storage_router.RouteBookTicker(event, *info);
         });
 

@@ -132,10 +132,30 @@ TEST(BinanceParserTest, ParseFuturesDepthEvent) {
 
   EXPECT_EQ(result.type, ParsedType::DEPTH);
   if (result.type == ParsedType::DEPTH) {
+    EXPECT_EQ(result.depth.exchange_timestamp, 1716844800000000ULL);  // ms → μs
     EXPECT_EQ(result.depth.last_update_id, 1005ULL);
     EXPECT_EQ(result.depth.bid_count, 1);
     EXPECT_EQ(result.depth.ask_count, 1);
     EXPECT_STREQ(result.depth.symbol, "BTCUSDT");
+  }
+}
+
+TEST(BinanceParserTest, ParseFuturesTradeMsToUs) {
+  // Perpetual trade "E" is in ms; parser must convert to μs.
+  std::string json = R"({"e":"aggTrade","E":1716844800000,"s":"BTCUSDT","a":123456789,"p":"50000.00","q":"1.50000000","m":true})";
+
+  simdjson::ondemand::parser parser;
+  simdjson::ondemand::document doc;
+  ParseDoc(parser, json, doc);
+
+  auto result = binance_perpetual::Parse(doc, 4, "BTCUSDT", EventType::TICK);
+
+  EXPECT_EQ(result.type, ParsedType::TICK);
+  if (result.type == ParsedType::TICK) {
+    EXPECT_EQ(result.tick.exchange_timestamp, 1716844800000000ULL);  // ms → μs
+    EXPECT_DOUBLE_EQ(result.tick.price, 50000.00);
+    EXPECT_DOUBLE_EQ(result.tick.quantity, 1.5);
+    EXPECT_STREQ(result.tick.symbol, "BTCUSDT");
   }
 }
 

@@ -79,7 +79,7 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     return false;
   }
   if (trade_is_new)
-    trade_file_ << "exchange_timestamp,local_timestamp,price,quantity,direction\n";
+    trade_file_ << "exchange_timestamp,local_diff,price,quantity,direction\n";
 
   std::string ob_path = dir_ + "orderbook_" + current_date_ + ".csv";
   bool ob_is_new = (access(ob_path.c_str(), F_OK) != 0);
@@ -98,7 +98,7 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     return false;
   }
   if (bt_is_new)
-    bookticker_file_ << "exchange_timestamp,local_timestamp,symbol,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty\n";
+    bookticker_file_ << "exchange_timestamp,local_diff,symbol,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty\n";
 
   return true;
 }
@@ -108,7 +108,7 @@ void CsvWriter::AppendTick(const TickData& tick) {
   std::string row;
   row.reserve(128);
   row += std::to_string(tick.exchange_timestamp) + ',';
-  row += std::to_string(tick.local_timestamp) + ',';
+  row += std::to_string(tick.local_diff) + ',';
   row += std::to_string(tick.price) + ',';
   row += std::to_string(tick.quantity) + ',';
   row += std::to_string(tick.is_buyer_maker ? -1 : 1) + '\n';
@@ -124,7 +124,7 @@ void CsvWriter::AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts
   if (!header_written_) {
     depth_level_ = depth_level;
     header_written_ = true;
-    orderbook_file_ << "exchange_timestamp,local_timestamp";
+    orderbook_file_ << "exchange_timestamp,local_diff";
     for (uint32_t i = 0; i < depth_level_; ++i)
       orderbook_file_ << ",ask_price" << (i + 1) << ",ask_size" << (i + 1)
                       << ",bid_price" << (i + 1) << ",bid_size" << (i + 1);
@@ -155,7 +155,7 @@ void CsvWriter::AppendBookTicker(const BookTickerEvent& event) {
   std::string row;
   row.reserve(128);
   row += std::to_string(event.exchange_timestamp) + ',';
-  row += std::to_string(event.local_timestamp) + ',';
+  row += std::to_string(event.local_diff) + ',';
   row += event.symbol;
   row += ',';
   row += std::to_string(event.best_bid_price) + ',';

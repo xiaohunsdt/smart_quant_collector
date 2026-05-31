@@ -15,7 +15,7 @@ struct DepthUpdateEvent {
   uint64_t last_update_id = 0;        // last update ID in this event (Binance: u)
   uint32_t channel_id;
   uint64_t exchange_timestamp = 0;
-  uint64_t local_timestamp = 0;
+  uint64_t local_diff = 0;
   char symbol[12] = {};
 
   PriceLevel bids[kMaxOrderbookLevels];
@@ -27,7 +27,7 @@ struct DepthUpdateEvent {
 struct BookTickerEvent {
   uint32_t channel_id;
   uint64_t exchange_timestamp = 0;
-  uint64_t local_timestamp = 0;
+  uint64_t local_diff = 0;
   char symbol[12] = {};
   double best_bid_price = 0.0;
   double best_bid_qty = 0.0;

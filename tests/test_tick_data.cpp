@@ -17,7 +17,7 @@ TEST(TickDataTest, AlignmentIs64) {
 TEST(TickDataTest, FieldsAreAccessible) {
   TickData tick{};
   tick.exchange_timestamp = 1716844800000000;
-  tick.local_timestamp = 1716844800000000000;
+  tick.local_diff = 1716844800000000000;
   tick.trade_id = 12345;
   tick.price = 50000.0;
   tick.quantity = 1.5;

@@ -15,6 +15,8 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::s
         result.type = ParsedType::TICK;
         if (!binance::ParseTradeEvent(doc, result.tick, channel_id, symbol))
           result.type = ParsedType::NONE;
+        else
+          result.tick.exchange_timestamp *= 1000ULL;  // perpetual: ms → μs
         break;
       case EventType::DEPTH:
         // Futures partial depth uses same "depthUpdate" format
@@ -27,6 +29,9 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::s
         if (!binance::ParseBookTickerEvent(doc, result.book_ticker, channel_id, symbol))
           result.type = ParsedType::NONE;
         break;
+      default:
+        result.type = ParsedType::NONE;
+        break;
     }
   } catch (const simdjson::simdjson_error& e) {
     if (auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual parse: {}", e.what());
@@ -36,7 +41,7 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::s
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view symbol) {
   try {
-    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64());
+    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64()) * 1000ULL;
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
     out.channel_id = channel_id;
     std::memcpy(out.symbol, symbol.data(), std::min(symbol.size(), sizeof(out.symbol) - 1));

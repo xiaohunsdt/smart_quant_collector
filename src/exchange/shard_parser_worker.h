@@ -15,7 +15,7 @@ class ShardParserWorker {
  public:
   using TickHandler = std::function<void(TickData)>;
   using DepthHandler = std::function<void(uint32_t channel_id, const DepthUpdateEvent&)>;
-  using BookTickerHandler = std::function<void(uint32_t channel_id, const BookTickerEvent&)>;
+  using BookTickerHandler = std::function<void(uint32_t channel_id, BookTickerEvent)>;
 
   ShardParserWorker(uint32_t core_id, ShardQueue& input_queue,
                     TickHandler tick_handler = {},

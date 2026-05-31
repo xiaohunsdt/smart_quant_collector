@@ -46,19 +46,19 @@ void ShardParserWorker::ParseAndDispatch(const RawMessage& msg) {
     switch (result.type) {
       case ParsedType::TICK:
         if (tick_handler_) {
-          result.tick.local_timestamp = msg.recv_timestamp;
+          result.tick.local_diff = msg.recv_timestamp;
           tick_handler_(std::move(result.tick));
         }
         break;
       case ParsedType::DEPTH:
         if (depth_handler_) {
-          result.depth.local_timestamp = msg.recv_timestamp;
+          result.depth.local_diff = msg.recv_timestamp;
           depth_handler_(msg.channel_id, result.depth);
         }
         break;
       case ParsedType::BOOK_TICKER:
         if (book_ticker_handler_) {
-          result.book_ticker.local_timestamp = msg.recv_timestamp;
+          result.book_ticker.local_diff = msg.recv_timestamp;
           book_ticker_handler_(msg.channel_id, result.book_ticker);
         }
         break;

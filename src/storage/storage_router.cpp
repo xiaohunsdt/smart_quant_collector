@@ -100,14 +100,14 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
 
     struct alignas(8) OrderbookRecordHeader {
       uint64_t exchange_timestamp;
-      uint64_t local_timestamp;
+      uint64_t local_diff;
       char symbol[12];
       uint32_t bid_count;
       uint32_t ask_count;
     };
     OrderbookRecordHeader hdr{};
     hdr.exchange_timestamp = event.exchange_timestamp;
-    hdr.local_timestamp = local_ts;
+    hdr.local_diff = local_ts;
     std::strncpy(hdr.symbol, event.symbol, sizeof(hdr.symbol) - 1);
     hdr.bid_count = event.bid_count;
     hdr.ask_count = event.ask_count;
