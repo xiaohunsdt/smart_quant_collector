@@ -75,13 +75,10 @@ RootConfig LoadConfig(const std::string& path) {
     if (t["report_interval_ms"]) config.telemetry.report_interval_ms = t["report_interval_ms"].as<uint32_t>();
   }
 
-  if (root["gateway"]) {
-    auto gw = root["gateway"];
-    if (gw["unified_pub_endpoint"]) config.gateway.unified_pub_endpoint = gw["unified_pub_endpoint"].as<std::string>();
-    if (gw["internal_router"]) config.gateway.internal_router = gw["internal_router"].as<std::string>();
-    if (gw["registered_channels"] && gw["registered_channels"].IsSequence())
-      for (const auto& ch : gw["registered_channels"])
-        config.gateway.registered_channels.push_back(ch.as<std::string>());
+  if (root["pub"]) {
+    auto p = root["pub"];
+    if (p["tcp_endpoint"]) config.pub.tcp_endpoint = p["tcp_endpoint"].as<std::string>();
+    if (p["ipc_endpoint"]) config.pub.ipc_endpoint = p["ipc_endpoint"].as<std::string>();
   }
 
   if (root["storage"]) {

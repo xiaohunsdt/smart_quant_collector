@@ -4,74 +4,104 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include <zmq.hpp>
 
+#include "pub_message.h"
+#include "zmq_buffer_pool.h"
+#include "src/common/spsc_queue.h"
 #include "src/common/tick_data.h"
+#include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
 
-// SPSC ring buffer for TickData.
-// Single producer (parser worker), single consumer (pub thread).
-// Zero-allocation, lock-free, cache-line padded — same pattern as ShardQueue.
-struct TickSPSCQueue {
-  static constexpr size_t kCapacity = 1024;
-  static constexpr size_t kMask = kCapacity - 1;
-  static_assert((kCapacity & kMask) == 0, "capacity must be power of 2");
-
-  bool try_push(const TickData& tick) {
-    size_t w = write_pos_.load(std::memory_order_relaxed);
-    size_t next = (w + 1) & kMask;
-    if (next == read_pos_.load(std::memory_order_acquire)) return false;  // full
-    slots_[w] = tick;
-    write_pos_.store(next, std::memory_order_release);
-    return true;
-  }
-
-  bool try_pop(TickData& out) {
-    size_t r = read_pos_.load(std::memory_order_relaxed);
-    if (r == write_pos_.load(std::memory_order_acquire)) return false;  // empty
-    out = slots_[r];
-    read_pos_.store((r + 1) & kMask, std::memory_order_release);
-    return true;
-  }
-
-  TickData slots_[kCapacity];
-  alignas(64) std::atomic<size_t> write_pos_{0};
-  alignas(64) std::atomic<size_t> read_pos_{0};
+// ── Per-shard queues ──────────────────────────────────────────────
+struct ShardQueues {
+  SPSCQueue<TickData, 4096> tick;
+  SPSCQueue<DepthUpdateEvent, 2048> depth;
+  SPSCQueue<BookTickerEvent, 4096> book_ticker;
 };
 
-// ZeroMQ publisher worker.
-// Multiple parser threads push ticks into per-parser SPSC queues (lock-free).
-// Dedicated pub thread (single-threaded) reads from all queues and sends via ZMQ.
+// ── PubWorker (Facade) ─────────────────────────────────────────────
+//
+// Facade pattern: exposes a simple PublishTick / PublishDepth /
+// PublishBookTicker API to parser threads while internally managing
+// per-shard SPSC queues, a zero-allocation ZMQ buffer pool, and a
+// fair round-robin dispatch loop on the dedicated pub thread.
+//
+// Dependencies injected via constructor (DI):
+//   - zmq::context_t& — shared with GatewayRouter for XSUB/XPUB proxy
+//   - topic_prefixes   — channel_id → topic prefix ("exchange:type:symbol")
+//   - num_shards       — number of parser threads
+
 class PubWorker {
  public:
-  explicit PubWorker();
+  PubWorker(zmq::context_t& ctx,
+            std::vector<std::string> topic_prefixes,
+            size_t num_shards,
+            std::string tcp_endpoint,
+            std::string ipc_endpoint);
 
   PubWorker(const PubWorker&) = delete;
   PubWorker& operator=(const PubWorker&) = delete;
 
-  // Pre-allocate SPSC queues (one per parser worker).
-  void Init(size_t num_queues);
+  // ── Publish API (parser threads) ───────────────────────────────
+  // Lock-free push into per-shard SPSC queue.  Bounds-checks shard_id;
+  // increments dropped_count_ when the queue is full.
 
-  // Lock-free push from parser thread (shard_id = parser index).
-  void PublishTick(const TickData& tick, size_t shard_id);
+  void PublishTick(const TickData& tick, size_t shard);
+  void PublishDepth(const DepthUpdateEvent& depth, size_t shard);
+  void PublishBookTicker(const BookTickerEvent& bt, size_t shard);
 
-  // Run the publish loop on the dedicated pub thread. Returns on Stop().
-  void Run();
+  // ── Lifecycle (pub thread) ─────────────────────────────────────
+  void Run();   // connect → dispatch loop → drain → return
+  void Stop();  // signal dispatch loop to exit
 
-  // Signal Run() to exit after draining queues.
-  void Stop();
-
-  uint64_t dropped_count() const { return dropped_count_.load(std::memory_order_relaxed); }
+  // ── Telemetry ──────────────────────────────────────────────────
+  uint64_t dropped_count() const {
+    return dropped_queue_count_.load(std::memory_order_relaxed) +
+           dropped_buffer_count_.load(std::memory_order_relaxed) +
+           dropped_hwm_count_.load(std::memory_order_relaxed);
+  }
+  uint64_t dropped_hwm_count() const {
+    return dropped_hwm_count_.load(std::memory_order_relaxed);
+  }
+  uint64_t dropped_buffer_count() const {
+    return dropped_buffer_count_.load(std::memory_order_relaxed);
+  }
 
  private:
-  zmq::context_t ctx_;
+  // Serialize + buffer-pool acquire + ZMQ multi-part send.
+  template <typename Serializer>
+  bool SendTyped(uint32_t channel_id, std::string_view event_suffix,
+                 const typename Serializer::value_type& data);
+
+  // Pop and send exactly one item from the queue at position idx.
+  bool TrySendOne(size_t shard, size_t queue_type);
+
+  // One round-robin cycle: 1 item per queue, cursor rotates.
+  void DispatchCycle(size_t& cursor, bool& any_work);
+
+  // Drain all remaining items after Stop().
+  void DrainAll();
+
+  // ── Members ────────────────────────────────────────────────────
   zmq::socket_t pub_socket_;
-  std::atomic<uint64_t> dropped_count_{0};
+  std::string tcp_endpoint_;
+  std::string ipc_endpoint_;
+  ZmqBufferPool buffer_pool_;
+  std::unique_ptr<ShardQueues[]> shard_queues_;
+  std::vector<std::string> topic_prefixes_;
+  size_t num_shards_;
+
+  char topic_buf_[kMaxTopicLen];  // pre-allocated, zero heap in hot path
+
+  std::atomic<uint64_t> dropped_queue_count_{0};
+  std::atomic<uint64_t> dropped_buffer_count_{0};
+  std::atomic<uint64_t> dropped_hwm_count_{0};
   std::atomic<bool> running_{false};
-  std::unique_ptr<TickSPSCQueue[]> queues_;
-  size_t num_queues_ = 0;
 };
 
 }  // namespace sqc

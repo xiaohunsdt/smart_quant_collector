@@ -16,13 +16,9 @@ telemetry:
   listen_port: 8080
   report_interval_ms: 1000
 
-gateway:
-  unified_pub_endpoint: "tcp://*:5555"
-  internal_router: "ipc:///tmp/gateway_router.ipc"
-  registered_channels:
-    - "ipc:///tmp/binance_spot.ipc"
-    - "ipc:///tmp/binance_perpetual.ipc"
-    - "ipc:///tmp/gateio_perpetual.ipc"
+pub:
+  tcp_endpoint: "tcp://*:5555"
+  ipc_endpoint: "ipc:///tmp/collector_pub.ipc"
 
 storage:
   persist_to_disk: true

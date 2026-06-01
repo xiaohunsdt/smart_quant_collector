@@ -21,9 +21,9 @@ add_library(collector_objects OBJECT
     storage/mmap_engine.cpp
     storage/storage_router.cpp
     storage/csv_writer.cpp
+    pubsub/pub_message.cpp
+    pubsub/zmq_buffer_pool.cpp
     pubsub/pub_worker.cpp
-    pubsub/gateway_router.cpp
-    pubsub/gateway_supervisor.cpp
     telemetry/prometheus_exposer.cpp
     telemetry/telemetry_agent.cpp
 )

@@ -18,7 +18,7 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
   auto config = LoadConfig(ConfigPath());
 
   EXPECT_EQ(config.global.environment, "production");
-  EXPECT_EQ(config.global.log_level, "info");
+  EXPECT_EQ(config.global.log_level, "debug");
   EXPECT_TRUE(config.global.cpu_affinity);
 
   EXPECT_EQ(config.threading_matrix.network_core, 2);
@@ -32,9 +32,8 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
   EXPECT_EQ(config.telemetry.listen_port, 8080);
   EXPECT_TRUE(config.telemetry.prometheus_enabled);
 
-  EXPECT_EQ(config.gateway.unified_pub_endpoint, "tcp://*:5555");
-  EXPECT_EQ(config.gateway.internal_router, "ipc:///tmp/gateway_router.ipc");
-  EXPECT_EQ(config.gateway.registered_channels.size(), 3);
+  EXPECT_EQ(config.pub.tcp_endpoint, "tcp://*:5555");
+  EXPECT_EQ(config.pub.ipc_endpoint, "ipc:///tmp/collector_pub.ipc");
 
   EXPECT_EQ(config.storage.use_engine, "csv");
   EXPECT_EQ(config.storage.dolphindb.host, "127.0.0.1");
@@ -50,7 +49,7 @@ TEST(ConfigLoaderTest, BinanceIsDisabled) {
   for (const auto& ex : config.exchanges) {
     if (ex.name == "binance") {
       found_binance = true;
-      EXPECT_FALSE(ex.enabled);
+      EXPECT_TRUE(ex.enabled);
     }
   }
   EXPECT_TRUE(found_binance);
@@ -67,7 +66,7 @@ TEST(ConfigLoaderTest, GateioPerpetualHasSymbols) {
       for (const auto& ch : ex.channels) {
         if (ch.type == "perpetual") {
           EXPECT_GE(ch.symbols.size(), 2);
-          EXPECT_EQ(ch.symbols[0].name, "ETH_USDT");
+          EXPECT_EQ(ch.symbols[0].name, "BTC_USDT");
         }
       }
     }

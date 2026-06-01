@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
@@ -18,7 +19,6 @@
 #include "exchange/shard_queue.h"
 #include "exchange/symbol_channel.h"
 #include "orderbook/orderbook_event.h"
-#include "pubsub/gateway_supervisor.h"
 #include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"
 #include "storage/storage_router.h"
@@ -36,22 +36,21 @@ int main(int argc, char* argv[]) {
 
   SignalHandler::Install();
 
+  // 0. Shared ZMQ context
+  zmq::context_t zmq_ctx(1);
+
   // 1. Channel registry
   ChannelRegistry channel_registry;
 
   // 2. Storage
   StorageRouter storage_router;
 
-  // 3. Telemetry + Pub/Sub
+  // 3. Telemetry
   PrometheusExposer prometheus;
   TelemetryAgent telemetry_agent(&prometheus);
   TelemetrySlot telemetry_slot;
 
   auto num_parsers = Config::Instance().threading_matrix.parser_cores.size();
-
-  PubWorker pub_worker;
-  pub_worker.Init(num_parsers);
-  GatewaySupervisor gateway_supervisor;
 
   // 4. Boost.Asio + SSL
   net::io_context io_ctx;
@@ -61,9 +60,11 @@ int main(int argc, char* argv[]) {
   // 5. Symbol channels
   std::vector<std::shared_ptr<ShardQueue>> shard_queues;
   for (size_t i = 0; i < num_parsers; ++i)
-    shard_queues.push_back(std::make_shared<ShardQueue>(10000));
+    shard_queues.push_back(std::make_shared<ShardQueue>(1024));
 
   std::vector<std::shared_ptr<SymbolChannel>> channels;
+  std::vector<std::string> channel_topics;  // channel_id → topic prefix
+
   for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
     for (const auto& ch : ex.channels) {
@@ -83,11 +84,38 @@ int main(int argc, char* argv[]) {
         info.depth_level = sym.depth_level;
         uint32_t id = channel_registry.Register(info);
 
+        // Build topic prefix: "exchange:type:symbol"
+        if (id >= channel_topics.size()) {
+          channel_topics.resize(id + 1);
+        }
+        channel_topics[id] = std::string(ex.name) + ":" + ChannelTypeName(adapter->channel_type) + ":" + sym.name;
+
         auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);
       }
     }
   }
+
+  // Pub/Sub
+  const auto& pub_cfg = Config::Instance().pub;
+  PubWorker pub_worker(zmq_ctx, channel_topics, num_parsers,
+                       pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
+
+  // Log subscription summary
+  LOG_INFO(GetLogger(), "=== Subscription Summary ===");
+  LOG_INFO(GetLogger(), "Channels: {}, Parser shards: {}", channels.size(), num_parsers);
+  for (const auto& ex : Config::Instance().exchanges) {
+    if (!ex.enabled) continue;
+    for (const auto& ch : ex.channels) {
+      for (const auto& sym : ch.symbols) {
+        if (!sym.enabled) continue;
+        LOG_INFO(GetLogger(), "  {}:{}:{}:tick", ex.name, ch.type, sym.name);
+        LOG_INFO(GetLogger(), "  {}:{}:{}:depth", ex.name, ch.type, sym.name);
+        LOG_INFO(GetLogger(), "  {}:{}:{}:book_ticker", ex.name, ch.type, sym.name);
+      }
+    }
+  }
+  LOG_INFO(GetLogger(), "ZMQ PUB: tcp={} ipc={}", pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
 
   // 6. Parser workers
   std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
@@ -98,6 +126,7 @@ int main(int argc, char* argv[]) {
           if (!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           tick.local_diff = now_ns - tick.local_diff;
+          std::memset(tick.padding, 0, sizeof(tick.padding));
           storage_router.RouteTick(tick, *info);
           pub_worker.PublishTick(tick, i);
           WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
@@ -108,6 +137,7 @@ int main(int argc, char* argv[]) {
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           uint64_t latency_ns = now_ns - event.local_diff;
           storage_router.RouteOrderbook(event, latency_ns, *info);
+          pub_worker.PublishDepth(event, i);
         },
         [&](uint32_t channel_id, BookTickerEvent event) {
           const auto* info = channel_registry.Lookup(channel_id);
@@ -115,14 +145,13 @@ int main(int argc, char* argv[]) {
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           event.local_diff = now_ns - event.local_diff;
           storage_router.RouteBookTicker(event, *info);
+          pub_worker.PublishBookTicker(event, i);
         });
 
     parser_workers.push_back(std::move(worker));
   }
 
   // 7. Threads
-  gateway_supervisor.Start();
-
   std::thread telemetry_thread([&]() {
     if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.telemetry_core);
     telemetry_agent.Run();
@@ -173,8 +202,8 @@ int main(int argc, char* argv[]) {
   if (telemetry_thread.joinable()) telemetry_thread.join();
   pub_worker.Stop();
   if (pub_thread.joinable()) pub_thread.join();
+  zmq_ctx.shutdown();
   if (storage_thread.joinable()) storage_thread.join();
-  gateway_supervisor.Stop();
 
   LOG_INFO(GetLogger(), "smart_quant_collector shutdown complete");
   return 0;

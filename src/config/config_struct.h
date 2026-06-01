@@ -27,10 +27,9 @@ struct TelemetryConfig {
   uint32_t report_interval_ms = 1000;
 };
 
-struct GatewayConfig {
-  std::string unified_pub_endpoint = "tcp://*:5555";
-  std::string internal_router = "ipc:///tmp/gateway_router.ipc";
-  std::vector<std::string> registered_channels;
+struct PubConfig {
+  std::string tcp_endpoint = "tcp://*:5555";
+  std::string ipc_endpoint = "ipc:///tmp/collector_pub.ipc";
 };
 
 struct DolphinDBConfig {
@@ -82,7 +81,7 @@ struct RootConfig {
   GlobalConfig global;
   ThreadingConfig threading_matrix;
   TelemetryConfig telemetry;
-  GatewayConfig gateway;
+  PubConfig pub;
   StorageConfig storage;
   std::vector<ExchangeConfig> exchanges;
 };
