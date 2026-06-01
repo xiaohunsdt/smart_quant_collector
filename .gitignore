@@ -4,6 +4,12 @@ build-*/
 build_*/
 bin/
 lib/
+cmake-build-*/
+.idea/
+.vscode/
+.clangd/
+.cursor/
+.claude/
 
 # Coverage profiling data
 *.profraw
