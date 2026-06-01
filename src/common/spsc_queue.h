@@ -34,21 +34,25 @@ class SPSCQueue {
   SPSCQueue& operator=(const SPSCQueue&) = delete;
 
   // Non-blocking push. Returns false if the queue is full.
+  // Both counters are monotonic (never wrap) — the mask is applied only
+  // for array indexing.  This guarantees correct full/empty detection
+  // after any number of push/pop cycles.
   [[nodiscard]] bool try_push(const T& item) noexcept {
     const size_t w = write_pos_.load(std::memory_order_relaxed);
-    const size_t next = (w + 1) & kMask;
-    if (next == read_pos_.load(std::memory_order_acquire)) {
+    const size_t r = read_pos_.load(std::memory_order_acquire);
+    if ((w - r) >= kCapacity) {
       return false;  // full
     }
     slots_[w & kMask] = item;
-    write_pos_.store(next, std::memory_order_release);
+    write_pos_.store(w + 1, std::memory_order_release);
     return true;
   }
 
   // Non-blocking pop. Returns false if the queue is empty.
   [[nodiscard]] bool try_pop(T& out) noexcept {
     const size_t r = read_pos_.load(std::memory_order_relaxed);
-    if (r == write_pos_.load(std::memory_order_acquire)) {
+    const size_t w = write_pos_.load(std::memory_order_acquire);
+    if (r == w) {
       return false;  // empty
     }
     out = slots_[r & kMask];

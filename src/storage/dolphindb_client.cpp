@@ -42,7 +42,7 @@ bool DolphinDBClient::Connect(const std::string& host, uint16_t port, const std:
   host_ = host;
   port_ = port;
   user_ = user;
-  password_ = password;
+  password_ = SecureString::FromPlain(password);
 
   try {
     if (!conn_->connect(host, port, user, password)) {
@@ -89,11 +89,12 @@ bool DolphinDBClient::Reconnect() {
   conn_ = std::make_unique<dolphindb::DBConnection>(false, false);
 
   try {
-    if (!conn_->connect(host_, port_, user_, password_)) {
+    const auto& pw = password_.get();
+    if (!conn_->connect(host_, port_, user_, pw)) {
       LOG_WARNING(GetLogger(), "DolphinDB: reconnect({}:{}) returned false", host_, port_);
       return false;
     }
-    conn_->login(user_, password_, false);
+    conn_->login(user_, pw, false);
     connected_ = true;
     last_health_check_ = std::chrono::steady_clock::now();
     LOG_INFO(GetLogger(), "DolphinDB: reconnected to {}:{}", host_, port_);

@@ -90,7 +90,8 @@ RootConfig LoadConfig(const std::string& path) {
       if (d["host"]) config.storage.dolphindb.host = d["host"].as<std::string>();
       if (d["port"]) config.storage.dolphindb.port = d["port"].as<uint16_t>();
       if (d["user"]) config.storage.dolphindb.user = d["user"].as<std::string>();
-      if (d["password"]) config.storage.dolphindb.password = d["password"].as<std::string>();
+      if (d["password"])
+        config.storage.dolphindb.password = SecureString::FromPlain(d["password"].as<std::string>());
       if (d["buffer_size"]) config.storage.dolphindb.buffer_size = d["buffer_size"].as<uint32_t>();
       if (d["flush_interval_ms"]) config.storage.dolphindb.flush_interval_ms = d["flush_interval_ms"].as<uint32_t>();
     }

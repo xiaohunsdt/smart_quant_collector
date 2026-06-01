@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "src/common/tick_data.h"
+#include "src/config/secure_string.h"
 
 // Forward declaration — full type in dolphindb::DBConnection (<DolphinDB.h>).
 // Destructor must be defined in the .cpp where the full type is visible.
@@ -61,7 +62,7 @@ class DolphinDBClient {
   std::string host_;
   uint16_t port_ = 0;
   std::string user_;
-  std::string password_;
+  SecureString password_;
   bool connected_ = false;
   std::chrono::steady_clock::time_point last_health_check_;
 

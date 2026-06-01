@@ -3,7 +3,11 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
+
+#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "quill/LogMacros.h"
 #include "common/logger_init.h"
@@ -35,7 +39,13 @@ bool CsvWriter::EnsureDirExists(const std::string& path) {
   std::string cur;
   for (char ch : path) {
     cur += ch;
-    if (ch == '/') mkdir(cur.c_str(), 0755);
+    if (ch == '/') {
+      if (mkdir(cur.c_str(), 0755) != 0 && errno != EEXIST) {
+        LOG_ERROR(GetLogger(),
+                  "CsvWriter: mkdir({}) failed: {}", cur, std::strerror(errno));
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -108,14 +118,13 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
 
 void CsvWriter::AppendTick(const TickData& tick) {
   if (!RotateIfNeeded(tick.exchange_timestamp)) return;
-  std::string row;
-  row.reserve(128);
-  row += std::to_string(tick.exchange_timestamp) + ',';
-  row += std::to_string(tick.local_diff) + ',';
-  row += std::to_string(tick.price) + ',';
-  row += std::to_string(tick.quantity) + ',';
-  row += std::to_string(tick.is_buyer_maker ? -1 : 1) + '\n';
-  trade_file_ << row;
+  // fmt::memory_buffer uses SSO — zero heap allocation for CSV rows.
+  fmt::memory_buffer buf;
+  fmt::format_to(std::back_inserter(buf), "{},{},{},{},{}\n",
+                 tick.exchange_timestamp, tick.local_diff,
+                 tick.price, tick.quantity,
+                 tick.is_buyer_maker ? -1 : 1);
+  trade_file_ << std::string_view(buf.data(), buf.size());
 }
 
 void CsvWriter::AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts,
@@ -134,38 +143,31 @@ void CsvWriter::AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts
     orderbook_file_ << "\n";
   }
 
-  std::string row;
-  row.reserve(512);
-  row += std::to_string(event.exchange_timestamp) + ',' + std::to_string(local_ts);
+  fmt::memory_buffer row;
+  fmt::format_to(std::back_inserter(row), "{},{}",
+                 event.exchange_timestamp, local_ts);
   for (uint32_t i = 0; i < depth_level_; ++i) {
-    row += ',';
-    row += std::to_string(i < event.ask_count ? event.asks[i].price : 0.0);
-    row += ',';
-    row += std::to_string(i < event.ask_count ? event.asks[i].quantity : 0.0);
-    row += ',';
-    row += std::to_string(i < event.bid_count ? event.bids[i].price : 0.0);
-    row += ',';
-    row += std::to_string(i < event.bid_count ? event.bids[i].quantity : 0.0);
+    fmt::format_to(std::back_inserter(row), ",{},{},{},{}",
+                   i < event.ask_count ? event.asks[i].price : 0.0,
+                   i < event.ask_count ? event.asks[i].quantity : 0.0,
+                   i < event.bid_count ? event.bids[i].price : 0.0,
+                   i < event.bid_count ? event.bids[i].quantity : 0.0);
   }
-  row += '\n';
-  orderbook_file_ << row;
+  row.push_back('\n');
+  orderbook_file_ << std::string_view(row.data(), row.size());
 }
 
 void CsvWriter::AppendBookTicker(const BookTickerEvent& event) {
   if (!RotateIfNeeded(event.exchange_timestamp)) return;
   if (!bookticker_file_.is_open()) return;
 
-  std::string row;
-  row.reserve(128);
-  row += std::to_string(event.exchange_timestamp) + ',';
-  row += std::to_string(event.local_diff) + ',';
-  row += event.symbol;
-  row += ',';
-  row += std::to_string(event.best_bid_price) + ',';
-  row += std::to_string(event.best_bid_qty) + ',';
-  row += std::to_string(event.best_ask_price) + ',';
-  row += std::to_string(event.best_ask_qty) + '\n';
-  bookticker_file_ << row;
+  fmt::memory_buffer buf;
+  fmt::format_to(std::back_inserter(buf), "{},{},{},{},{},{},{}\n",
+                 event.exchange_timestamp, event.local_diff,
+                 event.symbol,
+                 event.best_bid_price, event.best_bid_qty,
+                 event.best_ask_price, event.best_ask_qty);
+  bookticker_file_ << std::string_view(buf.data(), buf.size());
 }
 
 void CsvWriter::Close() {

@@ -35,11 +35,11 @@ constexpr size_t kMaxTopicLen = 64;
 // Example:      "binance:spot:BTCUSDT:tick"
 //
 // Returns the number of bytes written (excluding null terminator).
-// Returns 0 if the buffer is too small (truncation would occur).
-size_t BuildTopic(char* buf, size_t buf_size,
-                  std::string_view exchange,
-                  std::string_view channel_type,
-                  std::string_view symbol,
-                  std::string_view event_type);
+// Returns -1 if the buffer is too small (truncation would occur).
+int64_t BuildTopic(char* buf, size_t buf_size,
+                   std::string_view exchange,
+                   std::string_view channel_type,
+                   std::string_view symbol,
+                   std::string_view event_type);
 
 }  // namespace sqc

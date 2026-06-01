@@ -25,31 +25,48 @@ class StorageRouter {
  public:
   explicit StorageRouter();
 
+  /// Register a channel for storage. Must be called during initialization
+  /// (before parser threads start) for each channel that has persist_to_disk
+  /// enabled.  Uses uint32_t channel_id as the map key — zero heap allocation
+  /// on the hot path.
+  void RegisterChannel(uint32_t channel_id, const ChannelInfo& info,
+                       bool persist_to_disk);
+
   void RouteTick(const TickData& tick, const ChannelInfo& info);
-  void RouteOrderbook(const DepthUpdateEvent& event, uint64_t local_ts, const ChannelInfo& info);
+  void RouteOrderbook(const DepthUpdateEvent& event, uint64_t local_ts,
+                      const ChannelInfo& info);
   void RouteBookTicker(const BookTickerEvent& event, const ChannelInfo& info);
   void FlushAndClose();
 
  private:
+  // Flush the active double-buffer to DolphinDB (or fallback mmap).
+  // Called from FlushAndClose during shutdown only — hot path uses
+  // FlushBuffer to perform I/O outside the buffer mutex.
   void FlushActiveBuffer();
-  static std::string MakeKey(std::string_view exchange, ChannelType type, std::string_view symbol);
+
+  // Flush a batch to DolphinDB (or fallback mmap). I/O is performed
+  // in the calling thread outside any lock.
+  void FlushBuffer(std::vector<TickData>&& batch);
 
   std::string use_engine_;
 #ifdef SQC_WITH_DOLPHINDB
   DolphinDBClient dolphindb_;
 #endif
   uint32_t buffer_size_;
-  bool degraded_ = false;
+  std::atomic<bool> degraded_{false};
 
   std::string csv_output_path_;
   std::string mmap_output_path_;
 
-  std::unordered_map<std::string, CsvWriter> csv_writers_;
-  std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
-  std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
+  std::unordered_map<uint32_t, CsvWriter> csv_writers_;
+  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
+  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
+
+  // Mutex protecting csv_writers_, tick_mmap_, ob_mmap_ and
+  // lazy creation of fallback_mmap_.
+  mutable std::mutex storage_mtx_;
 
   // Lazy-created fallback mmap engine for DolphinDB degradation.
-  // Created on first FlushActiveBuffer call after degraded_ is set.
   std::unique_ptr<MmapStorageEngine> fallback_mmap_;
 
   std::vector<TickData> buffer_a_;

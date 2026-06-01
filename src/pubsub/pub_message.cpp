@@ -4,11 +4,11 @@
 
 namespace sqc {
 
-size_t BuildTopic(char* buf, size_t buf_size,
-                  std::string_view exchange,
-                  std::string_view channel_type,
-                  std::string_view symbol,
-                  std::string_view event_type) {
+int64_t BuildTopic(char* buf, size_t buf_size,
+                   std::string_view exchange,
+                   std::string_view channel_type,
+                   std::string_view symbol,
+                   std::string_view event_type) {
   const int written = std::snprintf(
       buf, buf_size, "%.*s:%.*s:%.*s:%.*s",
       static_cast<int>(exchange.size()), exchange.data(),
@@ -20,9 +20,9 @@ size_t BuildTopic(char* buf, size_t buf_size,
   // if the buffer were large enough. A return value >= buf_size means
   // truncation. A negative value means an encoding error.
   if (written < 0 || static_cast<size_t>(written) >= buf_size) {
-    return 0;
+    return -1;
   }
-  return static_cast<size_t>(written);
+  return static_cast<int64_t>(written);
 }
 
 }  // namespace sqc

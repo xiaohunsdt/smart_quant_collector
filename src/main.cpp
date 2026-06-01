@@ -27,7 +27,7 @@
 
 int main(int argc, char* argv[]) {
   using namespace sqc;
-  std::string config_path = "config/Config::Instance().yaml";
+  std::string config_path = "config/config.yaml";
   if (argc > 1) config_path = argv[1];
 
   Config::Load(config_path);
@@ -89,6 +89,10 @@ int main(int argc, char* argv[]) {
           channel_topics.resize(id + 1);
         }
         channel_topics[id] = std::string(ex.name) + ":" + ChannelTypeName(adapter->channel_type) + ":" + sym.name;
+
+        // Register channel for storage — creates CSV writer / mmap engine
+        // keyed by uint32_t channel_id for zero-allocation hot-path lookup.
+        storage_router.RegisterChannel(id, info, sym.persist_to_disk);
 
         auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
         channels.push_back(chan);

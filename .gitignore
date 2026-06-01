@@ -34,3 +34,4 @@ _deps/
 log/
 trade_data/
 mmap_cache/
+CMakeUserPresets.json

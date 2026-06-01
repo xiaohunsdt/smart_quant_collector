@@ -14,6 +14,10 @@ namespace sqc {
 class CsvWriter {
  public:
   CsvWriter() = default;
+  CsvWriter(const CsvWriter&) = delete;
+  CsvWriter& operator=(const CsvWriter&) = delete;
+  CsvWriter(CsvWriter&&) = default;
+  CsvWriter& operator=(CsvWriter&&) = default;
 
   bool Open(const std::string& trade_root, std::string_view exchange,
             std::string_view type, std::string_view symbol);

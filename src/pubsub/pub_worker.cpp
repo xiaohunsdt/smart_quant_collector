@@ -32,13 +32,13 @@ PubWorker::PubWorker(zmq::context_t& ctx,
 
 // ── Publish API (parser threads) ──────────────────────────────────
 
+// Padding must be zeroed by the caller before calling PublishTick.
+// The parser callbacks in main.cpp already handle this so we avoid
+// a redundant copy + memset on the hot path.
 void PubWorker::PublishTick(const TickData& tick, size_t shard) {
   if (shard >= num_shards_) return;
 
-  TickData clean = tick;
-  std::memset(clean.padding, 0, sizeof(clean.padding));
-
-  if (!shard_queues_[shard].tick.try_push(clean)) {
+  if (!shard_queues_[shard].tick.try_push(tick)) {
     dropped_queue_count_.fetch_add(1, std::memory_order_relaxed);
   }
 }
@@ -182,11 +182,22 @@ void PubWorker::Run() {
   LOG_INFO(GetLogger(), "PubWorker bound to {} and {}", tcp_endpoint_, ipc_endpoint_);
 
   size_t cursor = 0;
-  while (running_.load(std::memory_order_relaxed)) {
+  size_t idle_cycles = 0;
+  while (running_.load(std::memory_order_acquire)) {
     bool any_work = false;
     DispatchCycle(cursor, any_work);
     if (!any_work) {
-      std::this_thread::sleep_for(std::chrono::microseconds(50));
+      ++idle_cycles;
+      // Yield for the first few idle cycles (sub-µs wakeup latency);
+      // fall back to a short sleep after sustained idleness to avoid
+      // burning 100 % CPU on the pub core.
+      if (idle_cycles > 10) {
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
+      } else {
+        std::this_thread::yield();
+      }
+    } else {
+      idle_cycles = 0;
     }
   }
 
@@ -197,7 +208,7 @@ void PubWorker::Run() {
 // ── Stop ──────────────────────────────────────────────────────────
 
 void PubWorker::Stop() {
-  running_.store(false, std::memory_order_relaxed);
+  running_.store(false, std::memory_order_release);
 }
 
 }  // namespace sqc

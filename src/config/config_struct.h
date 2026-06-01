@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "secure_string.h"
+
 namespace sqc {
 
 struct GlobalConfig {
@@ -36,7 +38,7 @@ struct DolphinDBConfig {
   std::string host = "127.0.0.1";
   uint16_t port = 8848;
   std::string user = "admin";
-  std::string password = "123";
+  SecureString password;
   uint32_t buffer_size = 2000;
   uint32_t flush_interval_ms = 10;
 };

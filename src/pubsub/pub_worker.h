@@ -32,7 +32,7 @@ struct ShardQueues {
 // fair round-robin dispatch loop on the dedicated pub thread.
 //
 // Dependencies injected via constructor (DI):
-//   - zmq::context_t& — shared with GatewayRouter for XSUB/XPUB proxy
+//   - zmq::context_t& — shared ZMQ context for PUB socket
 //   - topic_prefixes   — channel_id → topic prefix ("exchange:type:symbol")
 //   - num_shards       — number of parser threads
 
