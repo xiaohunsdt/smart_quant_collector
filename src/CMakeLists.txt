@@ -44,6 +44,7 @@ target_link_libraries(collector_objects PUBLIC
     quill::quill
     prometheus-cpp::core
     prometheus-cpp::pull
+    DolphinDBAPI
 )
 
 # Main executable

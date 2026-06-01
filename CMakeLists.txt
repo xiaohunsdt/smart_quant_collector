@@ -9,7 +9,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-include(dependencies.cmake)
+include(cmake/dependencies.cmake)
 
 find_package(Boost CONFIG REQUIRED COMPONENTS thread)
 find_package(OpenSSL REQUIRED)
@@ -21,6 +21,12 @@ find_package(fmt REQUIRED)
 find_package(quill CONFIG REQUIRED)
 find_package(prometheus-cpp CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
+find_package(libuuid REQUIRED CONFIG)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(aeron CONFIG REQUIRED)
+    add_subdirectory(third_party/dolphindb)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options(

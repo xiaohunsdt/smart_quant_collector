@@ -159,8 +159,13 @@ int main(int argc, char* argv[]) {
 
   std::thread storage_thread([&]() {
     if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.storage_core);
+    // Use DolphinDB flush interval only when that engine is active;
+    // otherwise a coarser poll is sufficient.
+    auto sleep_ms = (Config::Instance().storage.use_engine == "dolphindb")
+                        ? Config::Instance().storage.dolphindb.flush_interval_ms
+                        : 100u;
     while (!SignalHandler::IsShutdownRequested())
-      std::this_thread::sleep_for(std::chrono::milliseconds(Config::Instance().storage.dolphindb.flush_interval_ms));
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
   });
 
   std::vector<std::thread> parser_threads;

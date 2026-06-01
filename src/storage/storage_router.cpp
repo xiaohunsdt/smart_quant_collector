@@ -48,7 +48,7 @@ StorageRouter::StorageRouter()
             csv_writers_.emplace(key, std::move(w));
         }
 
-        {
+        if (use_engine_ == "mmap") {
           auto mmap_dir = mmap_output_path_;
           if (!mmap_dir.empty() && mmap_dir.back() != '/') mmap_dir += '/';
           mmap_dir += key + '/';
@@ -124,6 +124,15 @@ void StorageRouter::FlushActiveBuffer() {
   auto& buf = ActiveBuffer();
   if (buf.empty()) return;
 
+  // If degraded, try to recover before flushing.
+  if (degraded_) {
+    if (dolphindb_.Reconnect()) {
+      LOG_INFO(GetLogger(),
+               "StorageRouter: DolphinDB recovered, switching back from mmap degradation");
+      degraded_ = false;
+    }
+  }
+
   if (!degraded_ && dolphindb_.IsHealthy()) {
     bool ok = dolphindb_.TableInsert("trades", buf);
     if (!ok) {
@@ -133,9 +142,22 @@ void StorageRouter::FlushActiveBuffer() {
   }
 
   if (degraded_) {
-    for (const auto& tick : buf) {
-      if (!tick_mmap_.empty())
-        tick_mmap_.begin()->second->AppendRecord(tick, 1);
+    if (!fallback_mmap_) {
+      auto fb = std::make_unique<MmapStorageEngine>();
+      std::string fallback_path = mmap_output_path_;
+      if (!fallback_path.empty() && fallback_path.back() != '/')
+        fallback_path += '/';
+      fallback_path += "degraded/";
+      if (!fb->OpenOrCreate(fallback_path, "tick")) {
+        LOG_ERROR(GetLogger(),
+                  "StorageRouter: failed to create fallback mmap for degradation");
+      } else {
+        fallback_mmap_ = std::move(fb);
+      }
+    }
+    if (fallback_mmap_) {
+      for (const auto& tick : buf)
+        fallback_mmap_->AppendRecord(tick, 1);
     }
   }
 }
@@ -157,6 +179,10 @@ void StorageRouter::FlushAndClose() {
   for (auto& [k, w] : csv_writers_) w.Close();
   for (auto& [k, e] : tick_mmap_) { e->Sync(); e->Close(); }
   for (auto& [k, e] : ob_mmap_) { e->Sync(); e->Close(); }
+  if (fallback_mmap_) {
+    fallback_mmap_->Sync();
+    fallback_mmap_->Close();
+  }
 
   dolphindb_.Disconnect();
 }

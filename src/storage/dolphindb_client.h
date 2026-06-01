@@ -1,34 +1,75 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "src/common/tick_data.h"
 
+// Forward declaration — full type defined in <DolphinDB.h> (DolphinDB API).
+// unique_ptr with a forward-declared type is valid as long as the destructor
+// is defined in the .cpp file where the full type is visible.
+class DBConnection;
+
 namespace sqc {
 
-// DolphinDB storage client, per spec §4.1
-// Uses TCP protocol for tableInsert and upsert operations.
+/// DolphinDB storage client using the official DolphinDB C++ API.
+///
+/// Batch insert uses tableInsert / upsert! via conn->run(sql).
+/// The composite key for upsert is [channel_id, exchange_timestamp, trade_id].
 class DolphinDBClient {
  public:
-  DolphinDBClient() = default;
+  DolphinDBClient();
+  ~DolphinDBClient();
 
-  bool Connect(const std::string& host, uint16_t port, const std::string& user,
-               const std::string& password);
+  // Non-copyable, non-movable (owns DBConnection handle)
+  DolphinDBClient(const DolphinDBClient&) = delete;
+  DolphinDBClient& operator=(const DolphinDBClient&) = delete;
+  DolphinDBClient(DolphinDBClient&&) = delete;
+  DolphinDBClient& operator=(DolphinDBClient&&) = delete;
+
+  /// Connect to a DolphinDB server. Returns true on success.
+  bool Connect(const std::string& host, uint16_t port,
+               const std::string& user, const std::string& password);
+
+  /// Disconnect from the server.
   void Disconnect();
+
+  /// Check if the connection is alive.
   bool IsHealthy() const;
 
-  // Batch insert via tableInsert
-  bool TableInsert(const std::string& table_name, const std::vector<TickData>& batch);
+  /// Attempt to reconnect using the last-known connection parameters.
+  bool Reconnect();
 
-  // Upsert for offline recovery with composite key [channel_id, exchange_timestamp, trade_id]
-  bool Upsert(const std::string& table_name, const std::vector<TickData>& batch);
+  /// Batch insert via tableInsert.
+  /// Returns false on failure (triggers degradation in StorageRouter).
+  bool TableInsert(const std::string& table_name,
+                   const std::vector<TickData>& batch);
+
+  /// Upsert for offline recovery.
+  /// Composite key: [channel_id, exchange_timestamp, trade_id].
+  bool Upsert(const std::string& table_name,
+              const std::vector<TickData>& batch);
+
+  /// Build a SQL VALUES clause from a tick batch (public for testing).
+  static std::string BuildInsertValues(const std::string& table_name,
+                                       const std::vector<TickData>& batch);
+
+  /// Build a DolphinDB upsert! function call (public for testing).
+  static std::string BuildUpsertCall(const std::string& table_name,
+                                     const std::vector<TickData>& batch);
 
  private:
   std::string host_;
   uint16_t port_ = 0;
+  std::string user_;
+  std::string password_;
   bool connected_ = false;
+  std::chrono::steady_clock::time_point last_health_check_;
+
+  std::unique_ptr<DBConnection> conn_;
 };
 
 }  // namespace sqc

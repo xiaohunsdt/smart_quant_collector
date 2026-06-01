@@ -44,6 +44,10 @@ class StorageRouter {
   std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
   std::unordered_map<std::string, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
 
+  // Lazy-created fallback mmap engine for DolphinDB degradation.
+  // Created on first FlushActiveBuffer call after degraded_ is set.
+  std::unique_ptr<MmapStorageEngine> fallback_mmap_;
+
   std::vector<TickData> buffer_a_;
   std::vector<TickData> buffer_b_;
   std::atomic<size_t> active_index_{0};

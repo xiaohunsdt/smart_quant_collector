@@ -13,6 +13,8 @@ class SmartQuantCollector(ConanFile):
         self.requires("simdjson/4.6.3")
         self.requires("yaml-cpp/0.8.0")
         self.requires("zeromq/4.3.5")
+        self.requires("aeron/1.41.4")
+        self.requires("libuuid/1.0.3")
         self.requires("cppzmq/4.11.0")
         self.requires("fmt/11.1.4")
         self.requires("gtest/1.17.0")
