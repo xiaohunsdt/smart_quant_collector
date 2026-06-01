@@ -1,3 +1,5 @@
+#include <cstring>
+
 #include <gtest/gtest.h>
 
 #include "src/common/tick_data.h"

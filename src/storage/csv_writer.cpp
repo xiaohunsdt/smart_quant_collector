@@ -1,6 +1,8 @@
 #include "csv_writer.h"
 
 #include <sys/stat.h>
+
+#include <algorithm>
 #include <cstdio>
 
 #include "quill/LogMacros.h"
@@ -51,11 +53,12 @@ std::string CsvWriter::TimestampToDate(uint64_t usec_since_epoch) {
   uint64_t m = mp + (mp < 10 ? 3 : -9);
   y += (m <= 2);
 
-  char buf[11];
-  std::snprintf(buf, sizeof(buf), "%04llu-%02llu-%02llu",
-                static_cast<unsigned long long>(y),
-                static_cast<unsigned long long>(m),
-                static_cast<unsigned long long>(d));
+  const unsigned year = static_cast<unsigned>(std::min<uint64_t>(y, 9999));
+  const unsigned month = static_cast<unsigned>(std::clamp(m, uint64_t{1}, uint64_t{12}));
+  const unsigned day = static_cast<unsigned>(std::clamp(d, uint64_t{1}, uint64_t{31}));
+
+  char buf[11];  // "YYYY-MM-DD" + '\0'
+  std::snprintf(buf, sizeof(buf), "%04u-%02u-%02u", year, month, day);
   return buf;
 }
 

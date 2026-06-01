@@ -8,10 +8,11 @@
 
 #include "src/common/tick_data.h"
 
-// Forward declaration — full type defined in <DolphinDB.h> (DolphinDB API).
-// unique_ptr with a forward-declared type is valid as long as the destructor
-// is defined in the .cpp file where the full type is visible.
+// Forward declaration — full type in dolphindb::DBConnection (<DolphinDB.h>).
+// Destructor must be defined in the .cpp where the full type is visible.
+namespace dolphindb {
 class DBConnection;
+}
 
 namespace sqc {
 
@@ -31,8 +32,7 @@ class DolphinDBClient {
   DolphinDBClient& operator=(DolphinDBClient&&) = delete;
 
   /// Connect to a DolphinDB server. Returns true on success.
-  bool Connect(const std::string& host, uint16_t port,
-               const std::string& user, const std::string& password);
+  bool Connect(const std::string& host, uint16_t port, const std::string& user, const std::string& password);
 
   /// Disconnect from the server.
   void Disconnect();
@@ -45,21 +45,17 @@ class DolphinDBClient {
 
   /// Batch insert via tableInsert.
   /// Returns false on failure (triggers degradation in StorageRouter).
-  bool TableInsert(const std::string& table_name,
-                   const std::vector<TickData>& batch);
+  bool TableInsert(const std::string& table_name, const std::vector<TickData>& batch);
 
   /// Upsert for offline recovery.
   /// Composite key: [channel_id, exchange_timestamp, trade_id].
-  bool Upsert(const std::string& table_name,
-              const std::vector<TickData>& batch);
+  bool Upsert(const std::string& table_name, const std::vector<TickData>& batch);
 
   /// Build a SQL VALUES clause from a tick batch (public for testing).
-  static std::string BuildInsertValues(const std::string& table_name,
-                                       const std::vector<TickData>& batch);
+  static std::string BuildInsertValues(const std::string& table_name, const std::vector<TickData>& batch);
 
   /// Build a DolphinDB upsert! function call (public for testing).
-  static std::string BuildUpsertCall(const std::string& table_name,
-                                     const std::vector<TickData>& batch);
+  static std::string BuildUpsertCall(const std::string& table_name, const std::vector<TickData>& batch);
 
  private:
   std::string host_;
@@ -69,7 +65,7 @@ class DolphinDBClient {
   bool connected_ = false;
   std::chrono::steady_clock::time_point last_health_check_;
 
-  std::unique_ptr<DBConnection> conn_;
+  std::unique_ptr<dolphindb::DBConnection> conn_;
 };
 
 }  // namespace sqc

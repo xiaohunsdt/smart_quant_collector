@@ -39,54 +39,58 @@ include(CheckIncludeFileCXX)
 include(CheckCXXSourceCompiles)
 
 if (USE_AERON)
-    if (NOT DEFINED AERON_INSTALL_DIR)
-        set(AERON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX})
-    endif()
-    set(AERON_INCLUDE_DIR
-        "${AERON_INSTALL_DIR}/include/wrapper"
-        "${AERON_INSTALL_DIR}/include/aeron"
-        "${AERON_INSTALL_DIR}/include"
-    )
-    set(AERON_LIBRARY_DIR ${AERON_INSTALL_DIR}/lib)
-    set(AERON_LIBRARY_STATIC
-        aeron_static
-        aeron_driver_static
-        aeron_client
-    )
-    set(AERON_LIBRARY_SHARED
-        aeron
-        aeron_driver
-        aeron_client_shared
-    )
-    if (LINK_SHARED_LIBS)
-        set(AERON_LIBRARY ${AERON_LIBRARY_SHARED})
-    else()
-        set(AERON_LIBRARY ${AERON_LIBRARY_STATIC})
-    endif()
-    set(CMAKE_REQUIRED_INCLUDES ${AERON_INCLUDE_DIR})
-    check_include_file_cxx("FragmentAssembler.h" HAS_AERON_HEADER)
-    if(CMAKE_VERSION VERSION_GREATER "3.31.0")
-        if (HAS_AERON_HEADER)
-            set(CMAKE_REQUIRED_LINK_DIRECTORIES ${AERON_LIBRARY_DIR})
-            set(CMAKE_REQUIRED_LIBRARIES ${AERON_LIBRARY})
-            check_cxx_source_compiles("int main() {return 0;}" HAS_AERON)
-        endif()
-    else()
-        set(HAS_AERON ${HAS_AERON_HEADER})
-    endif()
-    unset(CMAKE_REQUIRED_INCLUDES)
-    unset(CMAKE_REQUIRED_LIBRARIES)
-    unset(CMAKE_REQUIRED_LINK_DIRECTORIES)
-    if (HAS_AERON)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE USE_AERON)
-        target_include_directories(${PROJECT_NAME} PRIVATE ${AERON_INCLUDE_DIR})
-        target_link_directories(${PROJECT_NAME} PRIVATE ${AERON_LIBRARY_DIR})
-        target_link_libraries(${PROJECT_NAME} PRIVATE ${AERON_LIBRARY})
-    else()
-        message(WARNING
-        "Failed to compile ${PROJECT_NAME} with Aeron. UDP features are unavailable.\n"
-        "To suppress this warning, set -DUSE_AERON=OFF in cmake command.")
-    endif()
+    find_package(aeron CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE aeron::aeron)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${aeron_INCLUDE_DIRS})
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_AERON)
+    # if (NOT DEFINED AERON_INSTALL_DIR)
+    #     set(AERON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX})
+    # endif()
+    # set(AERON_INCLUDE_DIR
+    #     "${AERON_INSTALL_DIR}/include/wrapper"
+    #     "${AERON_INSTALL_DIR}/include/aeron"
+    #     "${AERON_INSTALL_DIR}/include"
+    # )
+    # set(AERON_LIBRARY_DIR ${AERON_INSTALL_DIR}/lib)
+    # set(AERON_LIBRARY_STATIC
+    #     aeron_static
+    #     aeron_driver_static
+    #     aeron_client
+    # )
+    # set(AERON_LIBRARY_SHARED
+    #     aeron
+    #     aeron_driver
+    #     aeron_client_shared
+    # )
+    # if (LINK_SHARED_LIBS)
+    #     set(AERON_LIBRARY ${AERON_LIBRARY_SHARED})
+    # else()
+    #     set(AERON_LIBRARY ${AERON_LIBRARY_STATIC})
+    # endif()
+    # set(CMAKE_REQUIRED_INCLUDES ${AERON_INCLUDE_DIR})
+    # check_include_file_cxx("FragmentAssembler.h" HAS_AERON_HEADER)
+    # if(CMAKE_VERSION VERSION_GREATER "3.31.0")
+    #     if (HAS_AERON_HEADER)
+    #         set(CMAKE_REQUIRED_LINK_DIRECTORIES ${AERON_LIBRARY_DIR})
+    #         set(CMAKE_REQUIRED_LIBRARIES ${AERON_LIBRARY})
+    #         check_cxx_source_compiles("int main() {return 0;}" HAS_AERON)
+    #     endif()
+    # else()
+    #     set(HAS_AERON ${HAS_AERON_HEADER})
+    # endif()
+    # unset(CMAKE_REQUIRED_INCLUDES)
+    # unset(CMAKE_REQUIRED_LIBRARIES)
+    # unset(CMAKE_REQUIRED_LINK_DIRECTORIES)
+    # if (HAS_AERON)
+    #     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_AERON)
+    #     target_include_directories(${PROJECT_NAME} PRIVATE ${AERON_INCLUDE_DIR})
+    #     target_link_directories(${PROJECT_NAME} PRIVATE ${AERON_LIBRARY_DIR})
+    #     target_link_libraries(${PROJECT_NAME} PRIVATE ${AERON_LIBRARY})
+    # else()
+    #     message(WARNING
+    #     "Failed to compile ${PROJECT_NAME} with Aeron. UDP features are unavailable.\n"
+    #     "To suppress this warning, set -DUSE_AERON=OFF in cmake command.")
+    # endif()
 endif()
 
 find_package(Threads REQUIRED)

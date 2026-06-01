@@ -14,8 +14,10 @@
 #include "src/exchange/exchange_adapter.h"
 #include "src/orderbook/orderbook_event.h"
 #include "csv_writer.h"
-#include "dolphindb_client.h"
 #include "mmap_engine.h"
+#ifdef SQC_WITH_DOLPHINDB
+#include "dolphindb_client.h"
+#endif
 
 namespace sqc {
 
@@ -33,7 +35,9 @@ class StorageRouter {
   static std::string MakeKey(std::string_view exchange, ChannelType type, std::string_view symbol);
 
   std::string use_engine_;
+#ifdef SQC_WITH_DOLPHINDB
   DolphinDBClient dolphindb_;
+#endif
   uint32_t buffer_size_;
   bool degraded_ = false;
 

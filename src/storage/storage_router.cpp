@@ -31,8 +31,19 @@ StorageRouter::StorageRouter()
   buffer_a_.reserve(buffer_size_);
   buffer_b_.reserve(buffer_size_);
 
-  if (use_engine_ == "dolphindb")
-    dolphindb_.Connect(Config::Instance().storage.dolphindb.host, Config::Instance().storage.dolphindb.port, Config::Instance().storage.dolphindb.user, Config::Instance().storage.dolphindb.password);
+  if (use_engine_ == "dolphindb") {
+#ifdef SQC_WITH_DOLPHINDB
+    dolphindb_.Connect(Config::Instance().storage.dolphindb.host,
+                       Config::Instance().storage.dolphindb.port,
+                       Config::Instance().storage.dolphindb.user,
+                       Config::Instance().storage.dolphindb.password);
+#else
+    LOG_ERROR(GetLogger(),
+              "StorageRouter: storage.use_engine=dolphindb requires a Linux build "
+              "(SQC_WITH_DOLPHINDB); use csv or mmap on this platform");
+    degraded_ = true;
+#endif
+  }
 
   for (const auto& ex : Config::Instance().exchanges) {
     if (!ex.enabled) continue;
@@ -124,6 +135,7 @@ void StorageRouter::FlushActiveBuffer() {
   auto& buf = ActiveBuffer();
   if (buf.empty()) return;
 
+#ifdef SQC_WITH_DOLPHINDB
   // If degraded, try to recover before flushing.
   if (degraded_) {
     if (dolphindb_.Reconnect()) {
@@ -140,6 +152,7 @@ void StorageRouter::FlushActiveBuffer() {
       degraded_ = true;
     }
   }
+#endif
 
   if (degraded_) {
     if (!fallback_mmap_) {
@@ -184,7 +197,9 @@ void StorageRouter::FlushAndClose() {
     fallback_mmap_->Close();
   }
 
+#ifdef SQC_WITH_DOLPHINDB
   dolphindb_.Disconnect();
+#endif
 }
 
 std::vector<TickData>& StorageRouter::ActiveBuffer() {

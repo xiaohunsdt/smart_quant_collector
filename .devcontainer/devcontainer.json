@@ -1,0 +1,31 @@
+{
+  "name": "smart_quant_collector",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/smart_quant_collector",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/smart_quant_collector,type=bind",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "conan-io.conan-vscode"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": false,
+        "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
+      }
+    }
+  },
+  "postCreateCommand": "conan profile detect --force && chmod +x build.sh && ./build.sh configure",
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} || true",
+  "forwardPorts": [8080, 8848, 5555],
+  "portsAttributes": {
+    "8080": { "label": "Prometheus" },
+    "8848": { "label": "DolphinDB" },
+    "5555": { "label": "ZMQ pub" }
+  }
+}

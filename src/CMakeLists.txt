@@ -17,7 +17,6 @@ add_library(collector_objects OBJECT
     exchange/gateio/gateio_spot.cpp
     exchange/gateio/gateio_perpetual.cpp
     common/http_utils.cpp
-    storage/dolphindb_client.cpp
     storage/mmap_engine.cpp
     storage/storage_router.cpp
     storage/csv_writer.cpp
@@ -44,8 +43,13 @@ target_link_libraries(collector_objects PUBLIC
     quill::quill
     prometheus-cpp::core
     prometheus-cpp::pull
-    DolphinDBAPI
 )
+
+if(SQC_WITH_DOLPHINDB)
+    target_sources(collector_objects PRIVATE storage/dolphindb_client.cpp)
+    target_compile_definitions(collector_objects PUBLIC SQC_WITH_DOLPHINDB)
+    target_link_libraries(collector_objects PUBLIC DolphinDBAPI)
+endif()
 
 # Main executable
 add_executable(smart_quant_collector main.cpp)

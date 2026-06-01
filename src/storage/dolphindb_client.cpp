@@ -32,16 +32,13 @@ std::string EscapeSymbol(const char* sym, size_t max_len) {
 
 }  // namespace
 
-DolphinDBClient::DolphinDBClient()
-    : conn_(std::make_unique<DBConnection>(false, false)) {}
+DolphinDBClient::DolphinDBClient() : conn_(std::make_unique<dolphindb::DBConnection>(false, false)) {}
 
 DolphinDBClient::~DolphinDBClient() {
   Disconnect();
 }
 
-bool DolphinDBClient::Connect(const std::string& host, uint16_t port,
-                              const std::string& user,
-                              const std::string& password) {
+bool DolphinDBClient::Connect(const std::string& host, uint16_t port, const std::string& user, const std::string& password) {
   host_ = host;
   port_ = port;
   user_ = user;
@@ -49,19 +46,16 @@ bool DolphinDBClient::Connect(const std::string& host, uint16_t port,
 
   try {
     if (!conn_->connect(host, port, user, password)) {
-      LOG_ERROR(GetLogger(),
-                "DolphinDB: connect({}:{}) returned false", host, port);
+      LOG_ERROR(GetLogger(), "DolphinDB: connect({}:{}) returned false", host, port);
       return false;
     }
     conn_->login(user, password, false);
     connected_ = true;
     last_health_check_ = std::chrono::steady_clock::now();
-    LOG_INFO(GetLogger(), "DolphinDB: connected to {}:{} as {}", host, port,
-             user);
+    LOG_INFO(GetLogger(), "DolphinDB: connected to {}:{} as {}", host, port, user);
     return true;
   } catch (const std::exception& e) {
-    LOG_ERROR(GetLogger(), "DolphinDB: connect({}:{}) exception: {}", host,
-              port, e.what());
+    LOG_ERROR(GetLogger(), "DolphinDB: connect({}:{}) exception: {}", host, port, e.what());
     return false;
   }
 }
@@ -83,8 +77,7 @@ bool DolphinDBClient::IsHealthy() const {
 }
 
 bool DolphinDBClient::Reconnect() {
-  LOG_INFO(GetLogger(), "DolphinDB: attempting reconnect to {}:{}", host_,
-           port_);
+  LOG_INFO(GetLogger(), "DolphinDB: attempting reconnect to {}:{}", host_, port_);
 
   // Tear down old connection and create a fresh one.
   try {
@@ -93,12 +86,11 @@ bool DolphinDBClient::Reconnect() {
     // Ignore close errors during reconnect.
   }
   connected_ = false;
-  conn_ = std::make_unique<DBConnection>(false, false);
+  conn_ = std::make_unique<dolphindb::DBConnection>(false, false);
 
   try {
     if (!conn_->connect(host_, port_, user_, password_)) {
-      LOG_WARNING(GetLogger(), "DolphinDB: reconnect({}:{}) returned false",
-                  host_, port_);
+      LOG_WARNING(GetLogger(), "DolphinDB: reconnect({}:{}) returned false", host_, port_);
       return false;
     }
     conn_->login(user_, password_, false);
@@ -107,14 +99,12 @@ bool DolphinDBClient::Reconnect() {
     LOG_INFO(GetLogger(), "DolphinDB: reconnected to {}:{}", host_, port_);
     return true;
   } catch (const std::exception& e) {
-    LOG_WARNING(GetLogger(), "DolphinDB: reconnect({}:{}) exception: {}",
-                host_, port_, e.what());
+    LOG_WARNING(GetLogger(), "DolphinDB: reconnect({}:{}) exception: {}", host_, port_, e.what());
     return false;
   }
 }
 
-std::string DolphinDBClient::BuildInsertValues(
-    const std::string& table_name, const std::vector<TickData>& batch) {
+std::string DolphinDBClient::BuildInsertValues(const std::string& table_name, const std::vector<TickData>& batch) {
   // Columns: exchange_timestamp, local_diff, trade_id, price, quantity,
   //           channel_id, symbol, is_buyer_maker
   std::ostringstream sql;
@@ -133,8 +123,7 @@ std::string DolphinDBClient::BuildInsertValues(
   return sql.str();
 }
 
-std::string DolphinDBClient::BuildUpsertCall(
-    const std::string& table_name, const std::vector<TickData>& batch) {
+std::string DolphinDBClient::BuildUpsertCall(const std::string& table_name, const std::vector<TickData>& batch) {
   // upsert!(table, newData, keyCols)
   // Builds: upsert!(table_name, table(...batch data...,
   //            [`col_names`]), [`key_cols`])
@@ -158,8 +147,7 @@ std::string DolphinDBClient::BuildUpsertCall(
   return sql.str();
 }
 
-bool DolphinDBClient::TableInsert(const std::string& table_name,
-                                  const std::vector<TickData>& batch) {
+bool DolphinDBClient::TableInsert(const std::string& table_name, const std::vector<TickData>& batch) {
   if (!connected_) return false;
   if (batch.empty()) return true;
 
@@ -167,19 +155,16 @@ bool DolphinDBClient::TableInsert(const std::string& table_name,
     std::string sql = BuildInsertValues(table_name, batch);
     conn_->run(sql);
     last_health_check_ = std::chrono::steady_clock::now();
-    LOG_DEBUG(GetLogger(), "DolphinDB: tableInsert {} ({} rows)", table_name,
-              batch.size());
+    LOG_DEBUG(GetLogger(), "DolphinDB: tableInsert {} ({} rows)", table_name, batch.size());
     return true;
   } catch (const std::exception& e) {
-    LOG_ERROR(GetLogger(), "DolphinDB: tableInsert({}) failed: {}", table_name,
-              e.what());
+    LOG_ERROR(GetLogger(), "DolphinDB: tableInsert({}) failed: {}", table_name, e.what());
     connected_ = false;
     return false;
   }
 }
 
-bool DolphinDBClient::Upsert(const std::string& table_name,
-                             const std::vector<TickData>& batch) {
+bool DolphinDBClient::Upsert(const std::string& table_name, const std::vector<TickData>& batch) {
   if (!connected_) return false;
   if (batch.empty()) return true;
 
@@ -187,12 +172,10 @@ bool DolphinDBClient::Upsert(const std::string& table_name,
     std::string sql = BuildUpsertCall(table_name, batch);
     conn_->run(sql);
     last_health_check_ = std::chrono::steady_clock::now();
-    LOG_DEBUG(GetLogger(), "DolphinDB: upsert {} ({} rows)", table_name,
-              batch.size());
+    LOG_DEBUG(GetLogger(), "DolphinDB: upsert {} ({} rows)", table_name, batch.size());
     return true;
   } catch (const std::exception& e) {
-    LOG_ERROR(GetLogger(), "DolphinDB: upsert({}) failed: {}", table_name,
-              e.what());
+    LOG_ERROR(GetLogger(), "DolphinDB: upsert({}) failed: {}", table_name, e.what());
     connected_ = false;
     return false;
   }
