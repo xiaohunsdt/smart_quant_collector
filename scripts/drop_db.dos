@@ -1,0 +1,42 @@
+// ============================================================
+// Drop DolphinDB Database — smart_quant_collector
+//
+// Usage:
+//   dolphindb> run("scripts/drop_db.dos")
+//   Or execute content directly in DolphinDB GUI / Web console.
+//
+// This script drops the entire dfs://trade_db database including
+// all DFS tables, stream tables, and subscriptions.
+//
+// ⚠️  IRREVERSIBLE — all stored trade data will be permanently deleted.
+// ============================================================
+
+// --- Database path (must match config: storage.dolphindb.dfs_db_path) ---
+dbPath = "dfs://trade_db"
+
+// --- Drop database if it exists ---
+if (existsDatabase(dbPath)) {
+    // Unsubscribe all stream tables before dropping to release handlers
+    unsubscribeTable(tableName="trades_stream", actionName="persist_trades")
+    unsubscribeTable(tableName="orderbook_stream", actionName="persist_orderbook")
+    unsubscribeTable(tableName="bookticker_stream", actionName="persist_bookticker")
+
+    // Drop the database (cascades to all tables within)
+    dropDatabase(dbPath)
+    print("✓ Database '" + dbPath + "' dropped successfully.")
+} else {
+    print("Database '" + dbPath + "' does not exist — nothing to drop.")
+}
+
+// --- Drop shared stream tables (clean up in-memory state) ---
+try {
+    dropStreamTable("trades_stream")
+} catch(ex) { print("trades_stream: " + ex) }
+try {
+    dropStreamTable("orderbook_stream")
+} catch(ex) { print("orderbook_stream: " + ex) }
+try {
+    dropStreamTable("bookticker_stream")
+} catch(ex) { print("bookticker_stream: " + ex) }
+
+print("Cleanup complete.")

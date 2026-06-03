@@ -1,6 +1,13 @@
-#include "dolphindb_client.h"
-
+// IMPORTANT: <fmt/format.h> (Conan fmt 11.1.4) MUST be included BEFORE
+// "dolphindb_client.h" to prevent an ODR violation.  ScalarImp.h (a
+// transitive public header of the DolphinDB SDK) includes the SDK's
+// bundled spdlog/fmt 11.0.2, which shares the same include guard
+// (FMT_FORMAT_H_) as the Conan library.  If the bundled header loads
+// first, its template instantiations mix with Conan fmt 11.1.4's
+// compiled symbols and trigger FMT_ASSERT(false) in write_int().
 #include <fmt/format.h>
+
+#include "dolphindb_client.h"
 
 #include <algorithm>
 #include <ctime>
@@ -63,40 +70,47 @@ bool DolphinDBClient::Connect(const std::string& host, uint16_t port, const std:
 // ============================================================
 
 std::string DolphinDBClient::BuildRangeSpec(int start_year, int end_year, const std::string& granularity) {
-  // Build DolphinDB RANGE boundary specification from start_year to end_year.
+  // Build DolphinDB RANGE boundary specification as a date vector.
+  //
+  // CRITICAL: We use date(["YYYY.MM.DD",...]) vector syntax (single function call,
+  // comma-separated array) to avoid DolphinDB's 1024-operator-per-expression limit.
+  // Chaining 1460+ individual date()..date() calls for daily granularity would hit
+  // "The number of operators in an expression is larger than the supported maximum
+  //  value: 1024" — the vector form has exactly 1 operator regardless of element count.
+  //
   // Granularity controls boundary density:
-  //   "day"   → every day:     date("2025.01.01")date("2025.01.02")...
-  //   "month" → 1st of month:  date("2025.01.01")date("2025.02.01")...
-  //   "year"  → 1st of year:   date("2025.01.01")date("2026.01.01")...
-  // Returns the boundaries concatenated without separators (DolphinDB RANGE syntax).
-  std::string spec;
+  //   "day"   → every day:     date(["2025.01.01","2025.01.02",...])
+  //   "month" → 1st of month:  date(["2025.01.01","2025.02.01",...])
+  //   "year"  → 1st of year:   date(["2025.01.01","2026.01.01",...])
+  std::string dates;  // inner comma-separated quoted date strings
+
   if(granularity == "day") {
-    // Generate daily boundaries
     for(int y = start_year; y <= end_year; ++y) {
       for(int m = 1; m <= 12; ++m) {
         int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
         // Leap year adjustment
         if(m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) days_in_month[1] = 29;
         for(int d = 1; d <= days_in_month[m - 1]; ++d) {
-          spec += fmt::format("date(\"{:04d}.{:02d}.{:02d}\")", y, m, d);
+          if(!dates.empty()) dates += ',';
+          dates += '"' + fmt::format("{:04d}.{:02d}.{:02d}", y, m, d) + '"';
         }
       }
     }
   } else if(granularity == "month") {
-    // Generate monthly boundaries
     for(int y = start_year; y <= end_year; ++y) {
       for(int m = 1; m <= 12; ++m) {
-        spec += fmt::format("date(\"{:04d}.{:02d}.01\")", y, m);
+        if(!dates.empty()) dates += ',';
+        dates += '"' + fmt::format("{:04d}.{:02d}.01", y, m) + '"';
       }
     }
   } else {  // "year" (also default)
-    // Year boundaries (legacy behavior)
     for(int y = start_year; y <= end_year; ++y) {
-      spec += fmt::format("{}.01.01", y);
-      if(y < end_year) spec += "..";
+      if(!dates.empty()) dates += ',';
+      dates += '"' + fmt::format("{:04d}.01.01", y) + '"';
     }
   }
-  return spec;
+
+  return "date([" + dates + "])";
 }
 
 bool DolphinDBClient::TryExtendPartitionRange(int start_year, int end_year, const std::string& granularity) {
@@ -105,14 +119,18 @@ bool DolphinDBClient::TryExtendPartitionRange(int start_year, int end_year, cons
 
   try {
     // Query the current max partition boundary from the first-level RANGE domain.
-    // schema(db).domain->getChildren()[0] retrieves the RANGE sub-domain.
-    // getRange()->getString() returns the boundary specification string.
+    // DolphinDB COMPO database: schema(db).domain is a tuple of sub-domains.
+    // We access it via exec and index into sub-domains.
+    // NOTE: DolphinDB uses '.' for member access; avoid 'domain' as a variable
+    // name since it can conflict with the domain keyword in some contexts.
     auto result = conn_->run(fmt::format(
-        "domain = schema(database(\"{0}\")).domain->getChildren()[0]; "
-        "str = domain->getString(); "
-        "boundaries = domain->getRange()->getString(); "
-        "dict(STRING, ANY, `type`str`boundaries, "
-        "[domain->getType(), str, boundaries])",
+        "db = database(\"{0}\");"
+        "compDom = exec domain from schema(db);"
+        "firstDom = compDom[0].getChildren()[0];"
+        "str = firstDom.getString();"
+        "boundaries = firstDom.getRange().getString();"
+        "dict(`type`str`boundaries, "
+        "[firstDom.getType(), str, boundaries])",
         db_path));
 
     auto type_key = dolphindb::Util::createString("type");
@@ -252,7 +270,7 @@ bool DolphinDBClient::InitSchema() {
       if(!result->getBool()) {
         conn_->run(
             fmt::format("db = database(\"{0}\"); "
-                        "createPartitionedTable(table(1:0, {1}, {2}), \"{3}\", "
+                        "createPartitionedTable(db, table(1:0, {1}, {2}), \"{3}\", "
                         "`trade_date`symbol, , `symbol`exchange_timestamp)",
                         db_path, cols, types, name));
         LOG_INFO(GetLogger(), "DolphinDB: created DFS table '{}'", name);
@@ -272,8 +290,18 @@ bool DolphinDBClient::InitSchema() {
       }
 
       if(!exists) {
-        conn_->run(fmt::format("share streamTable(1:0, {}, {}) as {}", cols, types, name));
-        LOG_INFO(GetLogger(), "DolphinDB: created stream table '{}'", name);
+        try {
+          conn_->run(fmt::format("share streamTable(1:0, {}, {}) as {}", cols, types, name));
+          LOG_INFO(GetLogger(), "DolphinDB: created stream table '{}'", name);
+        } catch(const std::exception& e) {
+          std::string err = e.what();
+          // Race: another instance (or prior connection) already registered this stream.
+          if(err.find("already") != std::string::npos || err.find("registered") != std::string::npos) {
+            LOG_DEBUG(GetLogger(), "DolphinDB: stream table '{}' already registered (benign)", name);
+          } else {
+            throw;
+          }
+        }
       }
     };
     create_stream("trades_stream", trade_cols, trade_types);
@@ -340,13 +368,13 @@ bool DolphinDBClient::InitWriters() {
     // password_.get() returns const std::string&; MTW copies it into internal pswd_ member.
     const auto& pw = password_.get();
     trades_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "trades_stream", false, false, nullptr,
-                                                                           cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "",
+                                                                           cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date",
                                                                            nullptr, dolphindb::MultithreadedTableWriter::M_Append);
     ob_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "orderbook_stream", false, false, nullptr,
-                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "", nullptr,
+                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date", nullptr,
                                                                        dolphindb::MultithreadedTableWriter::M_Append);
     bt_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "bookticker_stream", false, false, nullptr,
-                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "", nullptr,
+                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date", nullptr,
                                                                        dolphindb::MultithreadedTableWriter::M_Append);
     return true;
   } catch(const std::exception& e) {

@@ -22,7 +22,7 @@ pub:
 
 storage:
   persist_to_disk: true
-  use_engine: "csv"
+  use_engine: "dolphindb"
   dolphindb:
     host: "192.168.11.139"
     port: 8848
