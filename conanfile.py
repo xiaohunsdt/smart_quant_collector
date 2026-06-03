@@ -18,7 +18,7 @@ class SmartQuantCollector(ConanFile):
             self.requires("aeron/1.41.4")
         self.requires("libuuid/1.0.3")
         self.requires("cppzmq/4.11.0")
-        self.requires("fmt/11.1.4")
+        self.requires("fmt/11.0.2")
         self.requires("gtest/1.17.0")
         self.requires("quill/11.1.0")
         self.requires("prometheus-cpp/1.3.0")

@@ -7,13 +7,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(USE_OPENSSL "Use OpenSSL for encrypted communication." ON)
 option(USE_AERON "Use Aeron for UDP connections. ${PROJECT_NAME} will search for Aeron in $\{CMAKE_INSTALL_PREFIX\} by default, you can specify a different location with AERON_INSTALL_DIR" ON)
-option(BUILD_SHARED_LIBS "Build shared library" ON)
+option(BUILD_SHARED_LIBS "Build shared library" OFF)
 option(LINK_SHARED_LIBS "Link shared libraries" ON)
 option(WITH_UNITTEST "Compile testcases." OFF)
 
 add_library(${PROJECT_NAME})
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_11)
 target_compile_features(${PROJECT_NAME} PRIVATE c_std_99)
+
+find_package(fmt REQUIRED)  
+target_include_directories(${PROJECT_NAME} PUBLIC ${fmt_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PUBLIC fmt::fmt)
+target_compile_definitions(${PROJECT_NAME} PUBLIC SPDLOG_FMT_EXTERNAL)
 
 if (API_TEST)
     add_subdirectory(test)

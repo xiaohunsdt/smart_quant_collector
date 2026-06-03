@@ -1,16 +1,9 @@
-// IMPORTANT: <fmt/format.h> (Conan fmt 11.1.4) MUST be included BEFORE
-// "dolphindb_client.h" to prevent an ODR violation.  ScalarImp.h (a
-// transitive public header of the DolphinDB SDK) includes the SDK's
-// bundled spdlog/fmt 11.0.2, which shares the same include guard
-// (FMT_FORMAT_H_) as the Conan library.  If the bundled header loads
-// first, its template instantiations mix with Conan fmt 11.1.4's
-// compiled symbols and trigger FMT_ASSERT(false) in write_int().
-#include <fmt/format.h>
-
 #include "dolphindb_client.h"
 
 #include <algorithm>
 #include <ctime>
+
+#include <fmt/format.h>
 
 #include "common/logger_init.h"
 #include "config/config_loader.h"
