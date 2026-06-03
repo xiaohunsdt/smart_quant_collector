@@ -19,7 +19,7 @@ namespace sqc {
 // ── Per-shard queues ──────────────────────────────────────────────
 struct ShardQueues {
   SPSCQueue<TickData, 4096> tick;
-  SPSCQueue<DepthUpdateEvent, 2048> depth;
+  SPSCQueue<DepthUpdateEvent, 4096> depth;
   SPSCQueue<BookTickerEvent, 4096> book_ticker;
 };
 

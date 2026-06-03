@@ -11,6 +11,22 @@
 
 namespace sqc {
 
+namespace {
+
+/// Compute days since 1970-01-01 in UTC using pure Gregorian calendar arithmetic.
+/// This matches the DolphinDB DATE int format (days since Unix epoch) and is
+/// timezone-independent, unlike mktime/localtime.
+int64_t UtcDaysFromEpoch(int year, int month, int day) {
+  int64_t y = year - 1;
+  int64_t days = y * 365 + y / 4 - y / 100 + y / 400 - 719162;
+  static constexpr int kMonthDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
+  bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+  days += kMonthDays[month - 1] + (day - 1) + (leap && month > 2 ? 1 : 0);
+  return days;
+}
+
+}  // namespace
+
 DolphinDBClient::DolphinDBClient() : conn_(std::make_unique<dolphindb::DBConnection>(false, false)) {}
 
 DolphinDBClient::~DolphinDBClient() { Disconnect(); }
@@ -377,9 +393,8 @@ bool DolphinDBClient::InitWriters() {
   }
 }
 
-void DolphinDBClient::DestroyWriters() {
-  const auto& cfg = Config::Instance().storage.dolphindb;
-  auto drain = [&cfg](auto& writer, const char* name) {
+void DolphinDBClient::DestroyWriters(bool skip_drain) {
+  auto drain = [skip_drain](auto& writer, const char* name) {
     if(!writer) return;
     try {
       dolphindb::MultithreadedTableWriter::Status status;
@@ -388,7 +403,11 @@ void DolphinDBClient::DestroyWriters() {
         LOG_INFO(GetLogger(), "DolphinDB: draining {} — sent={}, unsent={}, failed={}", name, status.sentRows, status.unsentRows,
                  status.sendFailedRows);
       }
-      writer->waitForThreadCompletion();
+      if(!skip_drain) {
+        writer->waitForThreadCompletion();
+      } else {
+        LOG_WARNING(GetLogger(), "DolphinDB: skipping drain for {} (shutdown)", name);
+      }
       // Read status again after drain
       dolphindb::MultithreadedTableWriter::Status finalStatus;
       writer->getStatus(finalStatus);
@@ -407,13 +426,14 @@ void DolphinDBClient::DestroyWriters() {
 }
 
 void DolphinDBClient::Disconnect() {
-  DestroyWriters();
+  DestroyWriters(/*skip_drain=*/true);
   if(conn_) {
     try {
       conn_->close();
     } catch(const std::exception& e) {
       LOG_WARNING(GetLogger(), "DolphinDB: close() exception: {}", e.what());
     }
+    conn_.reset();
   }
   connected_.store(false, std::memory_order_relaxed);
   LOG_INFO(GetLogger(), "DolphinDB: disconnected");
@@ -523,28 +543,24 @@ bool DolphinDBClient::IsValidTradeDate(int trade_date) {
   // Hard bound: before Unix epoch is clearly invalid
   if(trade_date < 0) return false;
 
-  // Soft bound: compute valid range from current year
+  // Soft bound: compute valid range from current year (UTC).
+  // Use gmtime_r + UtcDaysFromEpoch instead of localtime_r + mktime
+  // to stay consistent with UsecToDateInt's timezone-independent
+  // arithmetic (usec / kUsecsPerDay).
   auto now = std::time(nullptr);
   struct tm tm_buf {};
 #if defined(__linux__) || defined(__APPLE__)
-  localtime_r(&now, &tm_buf);
+  gmtime_r(&now, &tm_buf);
 #elif defined(_WIN32)
-  localtime_s(&tm_buf, &now);
+  gmtime_s(&tm_buf, &now);
 #endif
   int cur_year = tm_buf.tm_year + 1900;
 
   // Earliest valid: 2000-01-01 (day 10957)
-  // Latest valid: cur_year + 5 years
+  // Latest valid: Dec 31 of (cur_year + 4), i.e. trade_date <=
+  // UtcDaysFromEpoch(cur_year+5, 1, 1) - 1.
   constexpr int kMinValidDate = 10957;  // 2000-01-01
-  struct tm end_tm {};
-  end_tm.tm_year = (cur_year + 5) - 1900;
-  end_tm.tm_mon = 0;
-  end_tm.tm_mday = 1;
-  // Zero-initialize remaining fields for deterministic mktime
-  end_tm.tm_hour = 0;
-  end_tm.tm_min = 0;
-  end_tm.tm_sec = 0;
-  int max_valid_date = static_cast<int>(std::mktime(&end_tm) / 86400);
+  int max_valid_date = static_cast<int>(UtcDaysFromEpoch(cur_year + 5, 1, 1)) - 1;
 
   return trade_date >= kMinValidDate && trade_date <= max_valid_date;
 }
@@ -638,11 +654,16 @@ bool DolphinDBClient::TableInsertTrades(const std::vector<TickData>& batch) {
     }
     int direction = t.is_buyer_maker ? -1 : 1;
 
-    bool ok = trades_writer_->insert(errorInfo, static_cast<long long>(t.exchange_timestamp), static_cast<long long>(t.local_diff),
-                                     static_cast<long long>(t.trade_id), t.price, t.quantity, direction, t.is_buyer_maker, symbol, exchange,
-                                     market_type, trade_date);
-    if(!ok) {
-      LOG_ERROR(GetLogger(), "DolphinDB: MTW trades insert failed: {}", errorInfo.errorInfo);
+    try {
+      bool ok = trades_writer_->insert(errorInfo, static_cast<long long>(t.exchange_timestamp), static_cast<long long>(t.local_diff),
+                                       static_cast<long long>(t.trade_id), t.price, t.quantity, direction, t.is_buyer_maker, symbol, exchange,
+                                       market_type, trade_date);
+      if(!ok) {
+        LOG_ERROR(GetLogger(), "DolphinDB: MTW trades insert failed: {}", errorInfo.errorInfo);
+        return false;
+      }
+    } catch(const std::exception& e) {
+      LOG_ERROR(GetLogger(), "DolphinDB: MTW trades insert threw: {}", e.what());
       return false;
     }
   }
@@ -721,10 +742,15 @@ bool DolphinDBClient::TableInsertOrderbook(const DepthUpdateEvent& event, uint64
   t_ask_sizes->appendDouble(ask_sizes_data, static_cast<int>(depth_level));
 
   dolphindb::ErrorCodeInfo errorInfo;
-  bool ok = ob_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(local_ts), symbol, exchange,
-                               market_type, trade_date, t_bid_prices, t_bid_sizes, t_ask_prices, t_ask_sizes);
-  if(!ok) {
-    LOG_ERROR(GetLogger(), "DolphinDB: MTW orderbook insert failed: {}", errorInfo.errorInfo);
+  try {
+    bool ok = ob_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(local_ts), symbol, exchange,
+                                 market_type, trade_date, t_bid_prices, t_bid_sizes, t_ask_prices, t_ask_sizes);
+    if(!ok) {
+      LOG_ERROR(GetLogger(), "DolphinDB: MTW orderbook insert failed: {}", errorInfo.errorInfo);
+      return false;
+    }
+  } catch(const std::exception& e) {
+    LOG_ERROR(GetLogger(), "DolphinDB: MTW orderbook insert threw: {}", e.what());
     return false;
   }
   last_health_check_ = std::chrono::steady_clock::now();
@@ -758,11 +784,16 @@ bool DolphinDBClient::TableInsertBookTicker(const BookTickerEvent& event) {
   }
 
   dolphindb::ErrorCodeInfo errorInfo;
-  bool ok =
-      bt_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(event.local_diff), event.best_bid_price,
-                         event.best_bid_qty, event.best_ask_price, event.best_ask_qty, symbol, exchange, market_type, trade_date);
-  if(!ok) {
-    LOG_ERROR(GetLogger(), "DolphinDB: MTW bookticker insert failed: {}", errorInfo.errorInfo);
+  try {
+    bool ok =
+        bt_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(event.local_diff), event.best_bid_price,
+                           event.best_bid_qty, event.best_ask_price, event.best_ask_qty, symbol, exchange, market_type, trade_date);
+    if(!ok) {
+      LOG_ERROR(GetLogger(), "DolphinDB: MTW bookticker insert failed: {}", errorInfo.errorInfo);
+      return false;
+    }
+  } catch(const std::exception& e) {
+    LOG_ERROR(GetLogger(), "DolphinDB: MTW bookticker insert threw: {}", e.what());
     return false;
   }
   last_health_check_ = std::chrono::steady_clock::now();

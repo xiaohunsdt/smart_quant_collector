@@ -84,6 +84,9 @@ void StorageRouter::RegisterChannel(uint32_t channel_id, const ChannelInfo& info
 
     auto ob_eng = std::make_unique<MmapStorageEngine>();
     if(ob_eng->OpenOrCreate(mmap_dir, "ob")) ob_mmap_.emplace(channel_id, std::move(ob_eng));
+
+    auto bt_eng = std::make_unique<MmapStorageEngine>();
+    if(bt_eng->OpenOrCreate(mmap_dir, "bt")) bt_mmap_.emplace(channel_id, std::move(bt_eng));
   }
 }
 
@@ -138,7 +141,11 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
     {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
-        if(dolphindb_.TableInsertOrderbook(event, local_ts)) return;
+        try {
+          if(dolphindb_.TableInsertOrderbook(event, local_ts)) return;
+        } catch(const std::exception& e) {
+          LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB orderbook insert threw: {}", e.what());
+        }
         LOG_WARNING(GetLogger(), "StorageRouter: DolphinDB orderbook insert failed, degrading");
         degraded_.store(true, std::memory_order_relaxed);
       }
@@ -147,8 +154,13 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
     if(TryReconnect()) {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
-        (void)dolphindb_.TableInsertOrderbook(event, local_ts);
-        return;
+        try {
+          if(dolphindb_.TableInsertOrderbook(event, local_ts)) return;
+        } catch(const std::exception& e) {
+          LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB orderbook insert threw in retry: {}", e.what());
+        }
+        LOG_WARNING(GetLogger(), "StorageRouter: DolphinDB orderbook retry insert failed, re-degrading to mmap");
+        degraded_.store(true, std::memory_order_relaxed);
       }
     }
     WriteOrderbookToMmap(event, local_ts);
@@ -182,12 +194,40 @@ void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelI
       std::lock_guard<std::mutex> lock(storage_mtx_);
       it->second.AppendBookTicker(event);
     }
+  } else if(use_engine_ == "mmap") {
+    auto it = bt_mmap_.find(event.channel_id);
+    if(it == bt_mmap_.end()) return;
+
+    struct alignas(8) BookTickerRecord {
+      uint64_t exchange_timestamp;
+      uint64_t local_diff;
+      char symbol[32];
+      double best_bid_price;
+      double best_bid_qty;
+      double best_ask_price;
+      double best_ask_qty;
+    };
+    BookTickerRecord rec{};
+    rec.exchange_timestamp = event.exchange_timestamp;
+    rec.local_diff = event.local_diff;
+    std::memcpy(rec.symbol, event.symbol, sizeof(event.symbol));
+    rec.best_bid_price = event.best_bid_price;
+    rec.best_bid_qty = event.best_bid_qty;
+    rec.best_ask_price = event.best_ask_price;
+    rec.best_ask_qty = event.best_ask_qty;
+
+    std::lock_guard<std::mutex> lock(storage_mtx_);
+    it->second->AppendRaw(&rec, sizeof(rec));
   } else if(use_engine_ == "dolphindb") {
 #ifdef SQC_WITH_DOLPHINDB
     {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
-        if(dolphindb_.TableInsertBookTicker(event)) return;
+        try {
+          if(dolphindb_.TableInsertBookTicker(event)) return;
+        } catch(const std::exception& e) {
+          LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB bookticker insert threw: {}", e.what());
+        }
         LOG_WARNING(GetLogger(), "StorageRouter: DolphinDB bookticker insert failed, degrading");
         degraded_.store(true, std::memory_order_relaxed);
       }
@@ -195,8 +235,13 @@ void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelI
     if(TryReconnect()) {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
-        (void)dolphindb_.TableInsertBookTicker(event);
-        return;
+        try {
+          if(dolphindb_.TableInsertBookTicker(event)) return;
+        } catch(const std::exception& e) {
+          LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB bookticker insert threw in retry: {}", e.what());
+        }
+        LOG_WARNING(GetLogger(), "StorageRouter: DolphinDB bookticker retry insert failed, re-degrading to mmap");
+        degraded_.store(true, std::memory_order_relaxed);
       }
     }
     WriteBookTickerToMmap(event);
@@ -341,17 +386,27 @@ void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
   {
     std::shared_lock lock(dolphindb_mtx_);
     if(!degraded_.load(std::memory_order_relaxed)) {
-      if(dolphindb_.TableInsertTrades(batch)) return;
+      try {
+        if(dolphindb_.TableInsertTrades(batch)) return;
+      } catch(const std::exception& e) {
+        LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB trade insert threw: {}", e.what());
+      }
       LOG_WARNING(GetLogger(), "StorageRouter: DolphinDB trade insert failed, degrading to mmap");
       degraded_.store(true, std::memory_order_relaxed);
     }
   }
   if(TryReconnect()) {
-    std::shared_lock lock(dolphindb_mtx_);
-    if(!degraded_.load(std::memory_order_relaxed)) {
-      (void)dolphindb_.TableInsertTrades(batch);
-      return;
+    // Don't retry the batch through MTW: DestroyWriters (called in
+    // TryReconnect -> Reconnect) may have already flushed partially-
+    // committed rows via waitForThreadCompletion().  Retrying the full
+    // batch would duplicate rows 0..N-1.  Write to mmap fallback instead.
+    LOG_INFO(GetLogger(), "StorageRouter: DolphinDB reconnect succeeded — writing trade batch to mmap fallback to avoid partial-batch duplication");
+    EnsureFallbackMmap();
+    if(fallback_mmap_) {
+      std::lock_guard<std::mutex> lock(storage_mtx_);
+      for(const auto& tick : batch) fallback_mmap_->AppendRecord(tick, 1);
     }
+    return;
   }
 #endif
 
@@ -382,6 +437,10 @@ void StorageRouter::FlushAndClose() {
     e->Close();
   }
   for(auto& [k, e] : ob_mmap_) {
+    e->Sync();
+    e->Close();
+  }
+  for(auto& [k, e] : bt_mmap_) {
     e->Sync();
     e->Close();
   }

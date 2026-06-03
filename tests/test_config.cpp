@@ -18,7 +18,7 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
   auto config = LoadConfig(ConfigPath());
 
   EXPECT_EQ(config.global.environment, "production");
-  EXPECT_EQ(config.global.log_level, "debug");
+  EXPECT_EQ(config.global.log_level, "info");
   EXPECT_TRUE(config.global.cpu_affinity);
 
   EXPECT_EQ(config.threading_matrix.network_core, 2);
@@ -35,7 +35,7 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
   EXPECT_EQ(config.pub.tcp_endpoint, "tcp://*:5555");
   EXPECT_EQ(config.pub.ipc_endpoint, "ipc:///tmp/collector_pub.ipc");
 
-  EXPECT_EQ(config.storage.use_engine, "csv");
+  EXPECT_EQ(config.storage.use_engine, "dolphindb");
   EXPECT_EQ(config.storage.dolphindb.host, "192.168.11.139");
   EXPECT_EQ(config.storage.dolphindb.port, 8848);
 

@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
 
   // 5. Symbol channels
   std::vector<std::shared_ptr<ShardQueue>> shard_queues;
-  for(size_t i = 0; i < num_parsers; ++i) shard_queues.push_back(std::make_shared<ShardQueue>(1024));
+  for(size_t i = 0; i < num_parsers; ++i) shard_queues.push_back(std::make_shared<ShardQueue>(4096));
 
   std::vector<std::shared_ptr<SymbolChannel>> channels;
   std::vector<std::string> channel_topics;  // channel_id → topic prefix
@@ -144,23 +144,25 @@ int main(int argc, char* argv[]) {
           pub_worker.PublishTick(tick, i);
           // pub_worker.dropped_count() reads atomics concurrently — approximate,
           // single-value snapshot is acceptable for a telemetry gauge.
-          WriteTelemetrySlot(&telemetry_slots[i], 0, 0, 0, pub_worker.dropped_count());
+          WriteTelemetrySlot(&telemetry_slots[i], tick.local_diff, shard_queues[i]->size(), 0, pub_worker.dropped_count());
         },
-        [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
+        [&, i](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           const auto* info = channel_registry.Lookup(channel_id);
           if(!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           uint64_t latency_ns = now_ns - event.local_diff;
           storage_router.RouteOrderbook(event, latency_ns, *info);
           pub_worker.PublishDepth(event, i);
+          WriteTelemetrySlot(&telemetry_slots[i], latency_ns, shard_queues[i]->size(), 0, pub_worker.dropped_count());
         },
-        [&](uint32_t channel_id, BookTickerEvent event) {
+        [&, i](uint32_t channel_id, BookTickerEvent event) {
           const auto* info = channel_registry.Lookup(channel_id);
           if(!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           event.local_diff = now_ns - event.local_diff;
           storage_router.RouteBookTicker(event, *info);
           pub_worker.PublishBookTicker(event, i);
+          WriteTelemetrySlot(&telemetry_slots[i], event.local_diff, shard_queues[i]->size(), 0, pub_worker.dropped_count());
         });
 
     parser_workers.push_back(std::move(worker));

@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -105,7 +104,7 @@ class DolphinDBClient {
   static std::string BuildRangeSpec(int start_year, int end_year, const std::string& granularity);
 
   bool InitWriters();
-  void DestroyWriters();
+  void DestroyWriters(bool skip_drain = false);
 
   std::string host_;
   uint16_t port_ = 0;

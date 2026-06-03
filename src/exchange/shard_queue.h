@@ -60,6 +60,14 @@ class ShardQueue {
   RawMessage PopBlocking();
   void PushPoisonPill();
 
+  /// Approximate queue depth (consumer thread). Returns write_pos - read_pos.
+  /// The read is racy — suitable for telemetry gauges, not for exact accounting.
+  [[nodiscard]] size_t size() const noexcept {
+    size_t w = write_pos_.load(std::memory_order_acquire);
+    size_t r = read_pos_.load(std::memory_order_relaxed);
+    return w - r;
+  }
+
  private:
   alignas(64) std::atomic<size_t> write_pos_{0};  // hot — producer (own cache line)
   size_t capacity_;

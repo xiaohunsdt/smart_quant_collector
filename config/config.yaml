@@ -1,6 +1,6 @@
 global:
   environment: "production"
-  log_level: "debug"
+  log_level: "info"
   cpu_affinity: true
   log_file_path: "./log/collector.log"
 

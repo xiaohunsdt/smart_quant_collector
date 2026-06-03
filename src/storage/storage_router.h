@@ -58,7 +58,7 @@ class StorageRouter {
   uint32_t buffer_size_;
   std::atomic<bool> degraded_{false};
   std::atomic<bool> reconnecting_{false};        // CAS gate — only one thread runs Reconnect()
-  mutable std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
+  std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
 
   std::string csv_output_path_;
   std::string mmap_output_path_;
@@ -66,8 +66,9 @@ class StorageRouter {
   std::unordered_map<uint32_t, CsvWriter> csv_writers_;
   std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
   std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
+  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> bt_mmap_;
 
-  // Mutex protecting csv_writers_, tick_mmap_, ob_mmap_, and fallback_mmap_.
+  // Mutex protecting csv_writers_, tick_mmap_, ob_mmap_, bt_mmap_, and fallback_mmap_.
   mutable std::mutex storage_mtx_;
 
   // Lazy-created fallback mmap engine for DolphinDB degradation.
