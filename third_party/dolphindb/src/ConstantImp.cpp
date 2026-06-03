@@ -5,14 +5,6 @@
  *      Author: dzhou
  */
 #include "ConstantImp.h"
-#include "Constant.h"
-#include "Exceptions.h"
-#include "Guid.h"
-#include "ScalarImp.h"
-#include "SysIO.h"
-#include "Types.h"
-#include "Util.h"
-#include "Vector.h"
 
 #include <algorithm>
 #include <climits>
@@ -24,2810 +16,2564 @@
 #include <tuple>
 #include <vector>
 
+#include "Constant.h"
+#include "Exceptions.h"
+#include "Guid.h"
+#include "ScalarImp.h"
+#include "SysIO.h"
+#include "Types.h"
+#include "Util.h"
+#include "Vector.h"
+
 namespace dolphindb {
 
-StringVector::StringVector(INDEX sz, INDEX capacity, bool blob) : blob_(blob){
-	data_.reserve((std::max)(sz, capacity));
-	if(sz > 0)
-		data_.resize(sz);
-	containNull_ = false;
+StringVector::StringVector(INDEX sz, INDEX capacity, bool blob) : blob_(blob) {
+  data_.reserve((std::max)(sz, capacity));
+  if(sz > 0) data_.resize(sz);
+  containNull_ = false;
 }
 
 StringVector::StringVector(const std::vector<std::string>& data, INDEX capacity, bool containNull, bool blob) : blob_(blob) {
-	for(const auto& val : data){
-		checkString(val);
-	}
-	data_.reserve((std::max)(data.size(), (size_t)capacity));
-	data_.assign(data.begin(), data.end());
-	containNull_ = containNull;
+  for(const auto& val : data) {
+    checkString(val);
+  }
+  data_.reserve((std::max)(data.size(), (size_t)capacity));
+  data_.assign(data.begin(), data.end());
+  containNull_ = containNull;
 }
 
-INDEX StringVector::reserve(INDEX capacity){
-	data_.reserve(capacity);
-	return static_cast<INDEX>(data_.capacity());
+INDEX StringVector::reserve(INDEX capacity) {
+  data_.reserve(capacity);
+  return static_cast<INDEX>(data_.capacity());
 }
 
-IO_ERR StringVector::deserialize(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement){
-    auto readBlob = [&](std::string& value) -> IO_ERR {
-        IO_ERR ret;
-        int len;
-        if ((ret = in->read(len)) != OK)
-            return ret;
-        std::unique_ptr<char[]> buf(new char[len]);
-        if ((ret = in->read(buf.get(), len)) != OK)
-            return ret;
-        value.clear();
-        value.append(buf.get(), len);
-        return ret;
-    };
+IO_ERR StringVector::deserialize(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement) {
+  auto readBlob = [&](std::string& value) -> IO_ERR {
+    IO_ERR ret;
+    int len;
+    if((ret = in->read(len)) != OK) return ret;
+    std::unique_ptr<char[]> buf(new char[len]);
+    if((ret = in->read(buf.get(), len)) != OK) return ret;
+    value.clear();
+    value.append(buf.get(), len);
+    return ret;
+  };
 
-	//read string
-	numElement = 0;
-	INDEX firstTarget = ((std::min))(size() - indexStart, targetNumElement);
-	while(numElement < firstTarget){
-		IO_ERR ret;
-		if (blob_) {
-			ret = readBlob(data_[indexStart]);
-		} else {
-			ret = in->readString(data_[indexStart]);
-		}
-		if(ret != OK)
-			return ret;
-		++indexStart;
-		++numElement;
-	}
-	std::string value;
-	while(numElement < targetNumElement){
-		IO_ERR ret;
-		if (blob_) {
-			ret = readBlob(value);
-		} else {
-			ret = in->readString(value);
-		}
-		if(ret != OK)
-			return ret;
-		data_.push_back(value);
-		++numElement;
-	}
-	return OK;
+  // read string
+  numElement = 0;
+  INDEX firstTarget = ((std::min))(size() - indexStart, targetNumElement);
+  while(numElement < firstTarget) {
+    IO_ERR ret;
+    if(blob_) {
+      ret = readBlob(data_[indexStart]);
+    } else {
+      ret = in->readString(data_[indexStart]);
+    }
+    if(ret != OK) return ret;
+    ++indexStart;
+    ++numElement;
+  }
+  std::string value;
+  while(numElement < targetNumElement) {
+    IO_ERR ret;
+    if(blob_) {
+      ret = readBlob(value);
+    } else {
+      ret = in->readString(value);
+    }
+    if(ret != OK) return ret;
+    data_.push_back(value);
+    ++numElement;
+  }
+  return OK;
 }
 
-void StringVector::upper(){
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(it != end){
-		size_t sz = it->size();
-		for(size_t i=0; i<sz; ++i){
-			char& ch = (*it)[i];
-			if(ch>='a' && ch<='z')
-				ch -= 32;
-		}
-		++it;
-	}
+void StringVector::upper() {
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    size_t sz = it->size();
+    for(size_t i = 0; i < sz; ++i) {
+      char& ch = (*it)[i];
+      if(ch >= 'a' && ch <= 'z') ch -= 32;
+    }
+    ++it;
+  }
 }
 
-void StringVector::lower(){
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(it != end){
-		size_t sz = it->size();
-		for(size_t i=0; i<sz; ++i){
-			char& ch = (*it)[i];
-			if(ch>='A' && ch<='Z')
-				ch += 32;
-		}
-		++it;
-	}
+void StringVector::lower() {
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    size_t sz = it->size();
+    for(size_t i = 0; i < sz; ++i) {
+      char& ch = (*it)[i];
+      if(ch >= 'A' && ch <= 'Z') ch += 32;
+    }
+    ++it;
+  }
 }
 
-void StringVector::checkString(const std::string& val){
-	if(!blob_){
-		if(val.find('\0') != std::string::npos){
-			throw RuntimeException("A String cannot contain the character '\\0'");
-		}
-	}
+void StringVector::checkString(const std::string& val) {
+  if(!blob_) {
+    if(val.find('\0') != std::string::npos) {
+      throw RuntimeException("A String cannot contain the character '\\0'");
+    }
+  }
 }
 
-void StringVector::trim(){
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(it != end){
-		std::string& s =it->erase(it->find_last_not_of(' ') + 1);
-		s.erase(0, s.find_first_not_of(' '));
-		if(!containNull_)
-			containNull_ = s.empty();
-		++it;
-	}
+void StringVector::trim() {
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    std::string& s = it->erase(it->find_last_not_of(' ') + 1);
+    s.erase(0, s.find_first_not_of(' '));
+    if(!containNull_) containNull_ = s.empty();
+    ++it;
+  }
 }
 
-void StringVector::strip(){
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(it != end){
-		std::string& s =it->erase(it->find_last_not_of("\t\r\n ") + 1);
-		s.erase(0, s.find_first_not_of("\t\r\n "));
-		if(!containNull_)
-			containNull_ = s.empty();
-		++it;
-	}
+void StringVector::strip() {
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    std::string& s = it->erase(it->find_last_not_of("\t\r\n ") + 1);
+    s.erase(0, s.find_first_not_of("\t\r\n "));
+    if(!containNull_) containNull_ = s.empty();
+    ++it;
+  }
 }
 
-bool StringVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		bool literal=value->getCategory()==LITERAL;
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		char* bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		char** pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			if(literal){
-				pval=value->getStringConst(start,count,bufVal);
-				for(int i=0;i<count;i++)
-					data_[pindex[i]] = pval[i];
-			}
-			else{
-				for(int i=0;i<count;i++)
-					data_[pindex[i]] = value->getString(start + i);
-			}
-			start+=count;
-		}
-	}
-	else if(value->isScalar())
-		data_[index->getIndex()] = value->isNull() ? Constant::EMPTY : value->getString();
-	else
-		throw RuntimeException("Size incompatible between index and value");
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool StringVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    bool literal = value->getCategory() == LITERAL;
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    char* bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    char** pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      if(literal) {
+        pval = value->getStringConst(start, count, bufVal);
+        for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      } else {
+        for(int i = 0; i < count; i++) data_[pindex[i]] = value->getString(start + i);
+      }
+      start += count;
+    }
+  } else if(value->isScalar())
+    data_[index->getIndex()] = value->isNull() ? Constant::EMPTY : value->getString();
+  else
+    throw RuntimeException("Size incompatible between index and value");
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool StringVector::assign(const ConstantSP& value){
-	if(value->isVector()){
-		if(size()!=value->size())
-			return false;
-	}
-	fill(0,size(),value);
-	containNull_ = value->getNullFlag();
-	return true;
+bool StringVector::assign(const ConstantSP& value) {
+  if(value->isVector()) {
+    if(size() != value->size()) return false;
+  }
+  fill(0, size(), value);
+  containNull_ = value->getNullFlag();
+  return true;
 }
 
-INDEX StringVector::search(const std::string& val){
-	auto it=std::find(data_.begin(),data_.end(),val);
-	if(it!=data_.end())
-		return static_cast<INDEX>(it-data_.begin());
-	return -1;
+INDEX StringVector::search(const std::string& val) {
+  auto it = std::find(data_.begin(), data_.end(), val);
+  if(it != data_.end()) return static_cast<INDEX>(it - data_.begin());
+  return -1;
 }
 
 ConstantSP StringVector::getValue() const {
-	Vector* copy = new StringVector(data_, static_cast<INDEX>(data_.size()), containNull_, blob_);
-	copy->setForm(getForm());
-	return copy;
+  Vector* copy = new StringVector(data_, static_cast<INDEX>(data_.size()), containNull_, blob_);
+  copy->setForm(getForm());
+  return copy;
 }
 
 ConstantSP StringVector::getSubVector(INDEX start, INDEX length, INDEX capacity) const {
-	auto* vec=new StringVector(0, capacity, blob_);
-	ConstantSP result(vec);
-	if(start<0 || start>=size() || std::abs(length)>size())
-		return result;
+  auto* vec = new StringVector(0, capacity, blob_);
+  ConstantSP result(vec);
+  if(start < 0 || start >= size() || std::abs(length) > size()) return result;
 
-	if(length>0)
-		vec->data_.insert(vec->data_.begin(),data_.begin()+start,data_.begin()+(start+length));
-	else
-		vec->data_.insert(vec->data_.begin(),data_.rbegin()+(size()-1-start),data_.rbegin()+(size()-1-start-length));
-	result->setNullFlag(containNull_);
-	return result;
+  if(length > 0)
+    vec->data_.insert(vec->data_.begin(), data_.begin() + start, data_.begin() + (start + length));
+  else
+    vec->data_.insert(vec->data_.begin(), data_.rbegin() + (size() - 1 - start), data_.rbegin() + (size() - 1 - start - length));
+  result->setNullFlag(containNull_);
+  return result;
 }
 
 ConstantSP StringVector::get(const ConstantSP& index) const {
-	auto sz=static_cast<UINDEX>(data_.size());
-	if(index->isVector()){
-		INDEX len=index->size();
-		auto* p=new StringVector(len, len, blob_);
-		ConstantSP result(p);
-		if(index->isIndexArray()){
-			auto* bufIndex=(UINDEX*)index->getIndexArray();
-			for(INDEX i=0;i<len;++i)
-				p->data_[i]=bufIndex[i]<sz?data_[bufIndex[i]]:"";
-		} else{
-			const int bufSize=Util::BUF_SIZE;
-			UINDEX bufIndex[bufSize];
+  auto sz = static_cast<UINDEX>(data_.size());
+  if(index->isVector()) {
+    INDEX len = index->size();
+    auto* p = new StringVector(len, len, blob_);
+    ConstantSP result(p);
+    if(index->isIndexArray()) {
+      auto* bufIndex = (UINDEX*)index->getIndexArray();
+      for(INDEX i = 0; i < len; ++i) p->data_[i] = bufIndex[i] < sz ? data_[bufIndex[i]] : "";
+    } else {
+      const int bufSize = Util::BUF_SIZE;
+      UINDEX bufIndex[bufSize];
 
-			INDEX start=0;
-			int count=0;
-			int i;
-			while(start<len){
-				count=((std::min))(len-start,bufSize);
-				index->getIndex(start,count,(INDEX*)bufIndex);
-				for(i=0;i<count;i++){
-					p->data_[start+i]=bufIndex[i]<sz?data_[bufIndex[i]]:"";
-				}
-				start+=count;
-			}
-		}
-		p->setNullFlag(containNull_ || p->hasNull());
-		return result;
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return ConstantSP(new String(idx<sz?data_[idx]:"", blob_));
+      INDEX start = 0;
+      int count = 0;
+      int i;
+      while(start < len) {
+        count = ((std::min))(len - start, bufSize);
+        index->getIndex(start, count, (INDEX*)bufIndex);
+        for(i = 0; i < count; i++) {
+          p->data_[start + i] = bufIndex[i] < sz ? data_[bufIndex[i]] : "";
+        }
+        start += count;
+      }
+    }
+    p->setNullFlag(containNull_ || p->hasNull());
+    return result;
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return ConstantSP(new String(idx < sz ? data_[idx] : "", blob_));
 }
 
-bool StringVector::append(const ConstantSP& value, INDEX len){
-	size_t newSize;
-	if((newSize = data_.size() + len) > data_.capacity())
-		data_.reserve(newSize);
+bool StringVector::append(const ConstantSP& value, INDEX len) {
+  size_t newSize;
+  if((newSize = data_.size() + len) > data_.capacity()) data_.reserve(newSize);
 
-	if(value->getCategory()==LITERAL){
-		if(value->isScalar())
-			data_.push_back(value->getString());
-		else{
-
-			char* bufVal[Util::BUF_SIZE];
-			char** pval;
-			INDEX start=0;
-			int count;
-			while(start<len){
-				count=((std::min))(len-start,Util::BUF_SIZE);
-				pval=value->getStringConst(start,count,bufVal);
-				data_.insert(data_.end(), pval, pval + count);
-				start+=count;
-			}
-		}
-	}
-	else{
-		for(INDEX i=0;i<len;i++)
-			data_.push_back(value->getString(i));
-	}
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(value->getCategory() == LITERAL) {
+    if(value->isScalar())
+      data_.push_back(value->getString());
+    else {
+      char* bufVal[Util::BUF_SIZE];
+      char** pval;
+      INDEX start = 0;
+      int count;
+      while(start < len) {
+        count = ((std::min))(len - start, Util::BUF_SIZE);
+        pval = value->getStringConst(start, count, bufVal);
+        data_.insert(data_.end(), pval, pval + count);
+        start += count;
+      }
+    }
+  } else {
+    for(INDEX i = 0; i < len; i++) data_.push_back(value->getString(i));
+  }
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool StringVector::appendString(std::string* buf, int len){
-	for(int i = 0; i < len; ++i){
-		checkString(buf[i]);
-	}
-	size_t newSize;
-	if((newSize = data_.size() + len) > data_.capacity())
-		data_.reserve(newSize);
+bool StringVector::appendString(std::string* buf, int len) {
+  for(int i = 0; i < len; ++i) {
+    checkString(buf[i]);
+  }
+  size_t newSize;
+  if((newSize = data_.size() + len) > data_.capacity()) data_.reserve(newSize);
 
-	for(int i=0;i<len;i++)
-		data_.push_back(buf[i]);
-	return true;
+  for(int i = 0; i < len; i++) data_.push_back(buf[i]);
+  return true;
 }
 
-bool StringVector::appendString(char** buf, int len){
-	size_t newSize;
-	if((newSize = data_.size() + len) > data_.capacity())
-		data_.reserve(newSize);
+bool StringVector::appendString(char** buf, int len) {
+  size_t newSize;
+  if((newSize = data_.size() + len) > data_.capacity()) data_.reserve(newSize);
 
-	for(int i=0;i<len;i++)
-		data_.emplace_back(buf[i]);
-	return true;
+  for(int i = 0; i < len; i++) data_.emplace_back(buf[i]);
+  return true;
 }
 
-bool StringVector::remove(INDEX count){
-	bool fromHead=(count<0);
-	count=((std::min))(size(),abs(count));
-	if(fromHead)
-		data_.erase(data_.begin(),data_.begin()+count);
-	else
-		data_.erase(data_.end()-count,data_.end());
-	return true;
+bool StringVector::remove(INDEX count) {
+  bool fromHead = (count < 0);
+  count = ((std::min))(size(), abs(count));
+  if(fromHead)
+    data_.erase(data_.begin(), data_.begin() + count);
+  else
+    data_.erase(data_.end() - count, data_.end());
+  return true;
 }
 
-bool StringVector::remove(const ConstantSP& index){
-	INDEX sz = index->size();
-	auto invSize = static_cast<INDEX>(data_.size() - sz);
-	if(invSize <= 0){
-		data_.clear();
-		containNull_ = false;
-		return true;
-	}
+bool StringVector::remove(const ConstantSP& index) {
+  INDEX sz = index->size();
+  auto invSize = static_cast<INDEX>(data_.size() - sz);
+  if(invSize <= 0) {
+    data_.clear();
+    containNull_ = false;
+    return true;
+  }
 
-	INDEX* a[1];
-	INDEX** dataSeg = a;
-	INDEX segmentSize  = sz;
-	int segCount = 1;
-	if(index->isIndexArray())
-		dataSeg[0] = index->getIndexArray();
-	else
-		return false;
-	INDEX prevIndex = dataSeg[0][0];
-	INDEX cursor = prevIndex;
-	INDEX j = 1;
+  INDEX* a[1];
+  INDEX** dataSeg = a;
+  INDEX segmentSize = sz;
+  int segCount = 1;
+  if(index->isIndexArray())
+    dataSeg[0] = index->getIndexArray();
+  else
+    return false;
+  INDEX prevIndex = dataSeg[0][0];
+  INDEX cursor = prevIndex;
+  INDEX j = 1;
 
-	for(int i=0; i<segCount; ++i){
-		INDEX* delIndices = dataSeg[i];
-		INDEX count = sz - (i * segmentSize);
-		for(; j<count; ++j){
-			if(delIndices[j] > prevIndex + 1){
-				INDEX end = delIndices[j];
-				for(INDEX k = prevIndex + 1; k<end; ++k)
-					data_[cursor++] = data_[k];
-			}
-			prevIndex = delIndices[j];
-		}
-		j = 0;
-	}
+  for(int i = 0; i < segCount; ++i) {
+    INDEX* delIndices = dataSeg[i];
+    INDEX count = sz - (i * segmentSize);
+    for(; j < count; ++j) {
+      if(delIndices[j] > prevIndex + 1) {
+        INDEX end = delIndices[j];
+        for(INDEX k = prevIndex + 1; k < end; ++k) data_[cursor++] = data_[k];
+      }
+      prevIndex = delIndices[j];
+    }
+    j = 0;
+  }
 
-	auto total = static_cast<INDEX>(data_.size());
-	for(INDEX k = prevIndex + 1; k<total; ++k)
-		data_[cursor++] = data_[k];
+  auto total = static_cast<INDEX>(data_.size());
+  for(INDEX k = prevIndex + 1; k < total; ++k) data_[cursor++] = data_[k];
 
-	data_.resize(invSize);
-	if(containNull_){
-		containNull_ = hasNullInRange(0, invSize);
-	}
-	return true;
+  data_.resize(invSize);
+  if(containNull_) {
+    containNull_ = hasNullInRange(0, invSize);
+  }
+  return true;
 }
 
-void StringVector::next(INDEX steps){
-	steps=((std::min))(steps,size());
-	data_.erase(data_.begin(),data_.begin() + steps);
-	data_.insert(data_.end(),steps,"");
-	containNull_ = true;
+void StringVector::next(INDEX steps) {
+  steps = ((std::min))(steps, size());
+  data_.erase(data_.begin(), data_.begin() + steps);
+  data_.insert(data_.end(), steps, "");
+  containNull_ = true;
 }
 
-void StringVector::prev(INDEX steps){
-	INDEX len=size();
-	steps=((std::min))(steps,size());
-	data_.erase(data_.begin() + (len - steps),data_.end());
-	data_.insert(data_.begin(),steps,"");
-	containNull_ = true;
+void StringVector::prev(INDEX steps) {
+  INDEX len = size();
+  steps = ((std::min))(steps, size());
+  data_.erase(data_.begin() + (len - steps), data_.end());
+  data_.insert(data_.begin(), steps, "");
+  containNull_ = true;
 }
 
-void StringVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->isScalar() || length!=value->size()){
-		std::string fillVal=value->getString(0);
-		fill_n(data_.begin()+start,length,fillVal);
-	}
-	else if(value->getCategory()==LITERAL){
-		auto it=data_.begin()+start;
-		char* bufVal[Util::BUF_SIZE];
-		char** pval;
-		INDEX index=0;
-		int count;
-		while(index<length){
-			count=((std::min))(length-index,Util::BUF_SIZE);
-			pval=value->getStringConst(index,count,bufVal);
-			for(int i=0;i<count;i++)
-				*it++=pval[i];
-			index+=count;
-		}
-	}
-	else{
-		auto it=data_.begin()+start;
-		int count=0;
-		while(count<length){
-			*it++=value->getString(count++);
-		}
-	}
-	if(value->getNullFlag())
-		containNull_=true;
+void StringVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->isScalar() || length != value->size()) {
+    std::string fillVal = value->getString(0);
+    fill_n(data_.begin() + start, length, fillVal);
+  } else if(value->getCategory() == LITERAL) {
+    auto it = data_.begin() + start;
+    char* bufVal[Util::BUF_SIZE];
+    char** pval;
+    INDEX index = 0;
+    int count;
+    while(index < length) {
+      count = ((std::min))(length - index, Util::BUF_SIZE);
+      pval = value->getStringConst(index, count, bufVal);
+      for(int i = 0; i < count; i++) *it++ = pval[i];
+      index += count;
+    }
+  } else {
+    auto it = data_.begin() + start;
+    int count = 0;
+    while(count < length) {
+      *it++ = value->getString(count++);
+    }
+  }
+  if(value->getNullFlag()) containNull_ = true;
 }
 
-void StringVector::nullFill(const ConstantSP& val){
-	std::string rep=val->getString();
-	int len=size();
-	for(int i=0;i<len;++i)
-		if(data_[i].empty())
-			data_[i]=rep;
-	containNull_=false;
+void StringVector::nullFill(const ConstantSP& val) {
+  std::string rep = val->getString();
+  int len = size();
+  for(int i = 0; i < len; ++i)
+    if(data_[i].empty()) data_[i] = rep;
+  containNull_ = false;
 }
 
 bool StringVector::isNull(INDEX start, int len, char* buf) const {
-	if(containNull_){
-		auto it = data_.begin() + start;
-		for(int i=0;i<len;++i){
-			buf[i]= static_cast<char>(it->empty());
-			++it;
-		}
-	}
-	else{
-		memset(buf,0,len);
-	}
-	return true;
+  if(containNull_) {
+    auto it = data_.begin() + start;
+    for(int i = 0; i < len; ++i) {
+      buf[i] = static_cast<char>(it->empty());
+      ++it;
+    }
+  } else {
+    memset(buf, 0, len);
+  }
+  return true;
 }
 
-bool StringVector::hasNullInRange(INDEX start, INDEX end){
-	auto it = data_.begin() + start;
-	for(INDEX i=start; i<end; ++i){
-		if(it->empty())
-			return true;
-		++it;
-	}
-	return false;
+bool StringVector::hasNullInRange(INDEX start, INDEX end) {
+  auto it = data_.begin() + start;
+  for(INDEX i = start; i < end; ++i) {
+    if(it->empty()) return true;
+    ++it;
+  }
+  return false;
 }
 
 int StringVector::serialize(char* buf, int bufSize, INDEX indexStart, int offset, int& numElement, int& partial) const {
-    int size_ = size();
-    if (indexStart >= size_)
-        return -1;
-    partial = 0;
-    int initialBufSize = bufSize;
-    int initialIndex = indexStart;
+  int size_ = size();
+  if(indexStart >= size_) return -1;
+  partial = 0;
+  int initialBufSize = bufSize;
+  int initialIndex = indexStart;
 
-    if (!blob_) {
-        while (bufSize > 0 && indexStart < size_) {
-            const std::string& str = data_[indexStart];
-            if(str.size() >= 262144){
-                throw RuntimeException("String in vector too long, Serialization failed, length must be less than 256K bytes");
-            }
-            int len = static_cast<int>(str.size() + 1 - offset);
-            if (bufSize >= len) {
-                memcpy(buf, str.c_str() + offset, len);
-                buf += len;
-                bufSize -= len;
-                ++indexStart;
-                offset = 0;
-            } else {
-                memcpy(buf, str.c_str() + offset, bufSize);
-                partial = offset + bufSize;
-                bufSize = 0;
-            }
-        }
-    } else {
-        const int lenBytes = sizeof(int);
-        while (bufSize > 0 && indexStart < size_) {
-            const std::string& str = data_[indexStart];
-            int len = static_cast<int>(str.size());
-            if (LIKELY(offset == 0)) {
-                if (UNLIKELY(bufSize < lenBytes)) {
-                    partial = 0;
-                    break;
-                }
-                memcpy(buf, &len, lenBytes);
-                buf += lenBytes;
-                bufSize -= lenBytes;
-            } else {
-                offset -= lenBytes;
-            }
-
-            if (bufSize >= len - offset) {
-                memcpy(buf, str.data() + offset, len - offset);
-                buf += len - offset;
-                bufSize -= len - offset;
-                ++indexStart;
-                offset = 0;
-            } else {
-                memcpy(buf, str.data() + offset, bufSize);
-                partial = lenBytes + offset + bufSize;
-                bufSize = 0;
-            }
-        }
+  if(!blob_) {
+    while(bufSize > 0 && indexStart < size_) {
+      const std::string& str = data_[indexStart];
+      if(str.size() >= 262144) {
+        throw RuntimeException("String in vector too long, Serialization failed, length must be less than 256K bytes");
+      }
+      int len = static_cast<int>(str.size() + 1 - offset);
+      if(bufSize >= len) {
+        memcpy(buf, str.c_str() + offset, len);
+        buf += len;
+        bufSize -= len;
+        ++indexStart;
+        offset = 0;
+      } else {
+        memcpy(buf, str.c_str() + offset, bufSize);
+        partial = offset + bufSize;
+        bufSize = 0;
+      }
     }
+  } else {
+    const int lenBytes = sizeof(int);
+    while(bufSize > 0 && indexStart < size_) {
+      const std::string& str = data_[indexStart];
+      int len = static_cast<int>(str.size());
+      if(LIKELY(offset == 0)) {
+        if(UNLIKELY(bufSize < lenBytes)) {
+          partial = 0;
+          break;
+        }
+        memcpy(buf, &len, lenBytes);
+        buf += lenBytes;
+        bufSize -= lenBytes;
+      } else {
+        offset -= lenBytes;
+      }
 
-    numElement = indexStart - initialIndex;
-    return initialBufSize - bufSize;
+      if(bufSize >= len - offset) {
+        memcpy(buf, str.data() + offset, len - offset);
+        buf += len - offset;
+        bufSize -= len - offset;
+        ++indexStart;
+        offset = 0;
+      } else {
+        memcpy(buf, str.data() + offset, bufSize);
+        partial = lenBytes + offset + bufSize;
+        bufSize = 0;
+      }
+    }
+  }
+
+  numElement = indexStart - initialIndex;
+  return initialBufSize - bufSize;
 }
 
 bool StringVector::getString(INDEX start, int len, std::string** buf) const {
-	auto it=data_.begin()+start;
-	for(int i=0;i<len;++i)
-		buf[i]=&(*it++);
-	return true;
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) buf[i] = &(*it++);
+  return true;
 }
 
 bool StringVector::getString(INDEX start, int len, char** buf) const {
-	auto it=data_.begin()+start;
-	for(int i=0;i<len;++i)
-		buf[i]=(char*)((*it++).c_str());
-	return true;
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) buf[i] = (char*)((*it++).c_str());
+  return true;
 }
 
 std::string** StringVector::getStringConst(INDEX start, int len, std::string** buf) const {
-	auto it=data_.begin()+start;
-	for(int i=0;i<len;++i)
-		buf[i]=&(*it++);
-	return buf;
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) buf[i] = &(*it++);
+  return buf;
 }
 
 char** StringVector::getStringConst(INDEX start, int len, char** buf) const {
-	auto it=data_.begin()+start;
-	for(int i=0;i<len;++i)
-		buf[i]=(char*)((*it++).c_str());
-	return buf;
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) buf[i] = (char*)((*it++).c_str());
+  return buf;
 }
 
-void StringVector::replace(const ConstantSP& oldVal, const ConstantSP& newVal){
-	std::string ov=oldVal->getString(0);
-	std::string nv=newVal->getString(0);
-	std::replace(data_.begin(),data_.end(),ov,nv);
+void StringVector::replace(const ConstantSP& oldVal, const ConstantSP& newVal) {
+  std::string ov = oldVal->getString(0);
+  std::string nv = newVal->getString(0);
+  std::replace(data_.begin(), data_.end(), ov, nv);
 }
 
-long long StringVector::getAllocatedMemory() const{
-	auto sz = static_cast<INDEX>(data_.size());
-	long long bytes =sizeof(StringVector)+(sizeof(std::string)*sz);
-	if(sz <= 0)
-		return bytes;
-	INDEX len= ((std::min))(10, sz);
-	double sampleBytes = 0;
-	for(INDEX i=0;i<len;++i)
-		sampleBytes += data_[i].length() + 1;
-	return static_cast<long long>(bytes + (sampleBytes / len * sz));
+long long StringVector::getAllocatedMemory() const {
+  auto sz = static_cast<INDEX>(data_.size());
+  long long bytes = sizeof(StringVector) + (sizeof(std::string) * sz);
+  if(sz <= 0) return bytes;
+  INDEX len = ((std::min))(10, sz);
+  double sampleBytes = 0;
+  for(INDEX i = 0; i < len; ++i) sampleBytes += data_[i].length() + 1;
+  return static_cast<long long>(bytes + (sampleBytes / len * sz));
 }
 
 long long StringVector::getAllocatedMemory(INDEX sz) const {
-	long long bytes =sizeof(StringVector)+(sizeof(std::string)*sz);
-	if(sz <= 0)
-		return bytes;
-	INDEX len= ((std::min))(10, sz);
-	double sampleBytes = 0;
-	for(INDEX i=0;i<len;++i)
-		sampleBytes += data_[i].length() + 1;
-	return static_cast<long long>(bytes + (sampleBytes / len * sz));
+  long long bytes = sizeof(StringVector) + (sizeof(std::string) * sz);
+  if(sz <= 0) return bytes;
+  INDEX len = ((std::min))(10, sz);
+  double sampleBytes = 0;
+  for(INDEX i = 0; i < len; ++i) sampleBytes += data_[i].length() + 1;
+  return static_cast<long long>(bytes + (sampleBytes / len * sz));
 }
 
-void AnyVector::clear(){
-	data_.clear();
-	containNull_ = false;
+void AnyVector::clear() {
+  data_.clear();
+  containNull_ = false;
 }
 
-bool AnyVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value;
-	value->setIndependent(false);
-	value->setTemporary(false);
-	if(value->isNull())
-		containNull_ = true;
-	return true;
+bool AnyVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value;
+  value->setIndependent(false);
+  value->setTemporary(false);
+  if(value->isNull()) containNull_ = true;
+  return true;
 }
 
-bool AnyVector::assign(const ConstantSP& value){
-	if(value->isVector()){
-		if(size()!=value->size())
-			return false;
-	}
-	fill(0,size(),value);
-	containNull_ = value->getNullFlag();
-	return true;
+bool AnyVector::assign(const ConstantSP& value) {
+  if(value->isVector()) {
+    if(size() != value->size()) return false;
+  }
+  fill(0, size(), value);
+  containNull_ = value->getNullFlag();
+  return true;
 }
 
-void AnyVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(!value->isVector() || length!=value->size()){
-		fill_n(data_.begin()+start,length,value);
-		if(value->isNull())
-			containNull_ = true;
-	}
-	else{
-		auto it=data_.begin()+start;
-		int count=0;
-		while(count<length){
-			*it++=value->get(count++);
-		}
-		if(value->getNullFlag())
-			containNull_ = true;
-	}
+void AnyVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(!value->isVector() || length != value->size()) {
+    fill_n(data_.begin() + start, length, value);
+    if(value->isNull()) containNull_ = true;
+  } else {
+    auto it = data_.begin() + start;
+    int count = 0;
+    while(count < length) {
+      *it++ = value->get(count++);
+    }
+    if(value->getNullFlag()) containNull_ = true;
+  }
 }
 
-void AnyVector::nullFill(const ConstantSP& val){
-	int len=size();
-	for(int i=0;i<len;++i)
-		if(data_[i]->isNull())
-			data_[i]=val;
-	containNull_=false;
+void AnyVector::nullFill(const ConstantSP& val) {
+  int len = size();
+  for(int i = 0; i < len; ++i)
+    if(data_[i]->isNull()) data_[i] = val;
+  containNull_ = false;
 }
 
 bool AnyVector::isNull(INDEX start, int len, char* buf) const {
-	for(int i=0;i<len;++i)
-		buf[i]=static_cast<char>(data_[start+i]->isNull());
-	return true;
+  for(int i = 0; i < len; ++i) buf[i] = static_cast<char>(data_[start + i]->isNull());
+  return true;
 }
 
 bool AnyVector::isValid(INDEX start, int len, char* buf) const {
-	for(int i=0;i<len;++i)
-		buf[i]=static_cast<char>(!data_[start+i]->isNull());
-	return true;
+  for(int i = 0; i < len; ++i) buf[i] = static_cast<char>(!data_[start + i]->isNull());
+  return true;
 }
 
 ConstantSP AnyVector::getValue() const {
-	Vector* copy = new AnyVector(data_, containNull_);
-	copy->setForm(getForm());
-	return copy;
+  Vector* copy = new AnyVector(data_, containNull_);
+  copy->setForm(getForm());
+  return copy;
 }
 
 char AnyVector::getBool() const {
-	if(data_.size() == 1)
-		return data_[0]->getBool();
-	throw RuntimeException("The any vector can't be converted to bool scalar.");
+  if(data_.size() == 1) return data_[0]->getBool();
+  throw RuntimeException("The any vector can't be converted to bool scalar.");
 }
 
 char AnyVector::getChar() const {
-	if(data_.size() == 1)
-		return data_[0]->getChar();
-	throw RuntimeException("The any vector can't be converted to char scalar.");
+  if(data_.size() == 1) return data_[0]->getChar();
+  throw RuntimeException("The any vector can't be converted to char scalar.");
 }
 
 short AnyVector::getShort() const {
-	if(data_.size() == 1)
-		return data_[0]->getShort();
-	throw RuntimeException("The any vector can't be converted to short scalar.");
+  if(data_.size() == 1) return data_[0]->getShort();
+  throw RuntimeException("The any vector can't be converted to short scalar.");
 }
 
 int AnyVector::getInt() const {
-	if(data_.size() == 1)
-		return data_[0]->getInt();
-	throw RuntimeException("The any vector can't be converted to int scalar.");
+  if(data_.size() == 1) return data_[0]->getInt();
+  throw RuntimeException("The any vector can't be converted to int scalar.");
 }
 
 long long AnyVector::getLong() const {
-	if(data_.size() == 1)
-		return data_[0]->getLong();
-	throw RuntimeException("The any vector can't be converted to long scalar.");
+  if(data_.size() == 1) return data_[0]->getLong();
+  throw RuntimeException("The any vector can't be converted to long scalar.");
 }
 
 INDEX AnyVector::getIndex() const {
-	if(data_.size() == 1)
-		return data_[0]->getIndex();
-	throw RuntimeException("The any vector can't be converted to index scalar.");
+  if(data_.size() == 1) return data_[0]->getIndex();
+  throw RuntimeException("The any vector can't be converted to index scalar.");
 }
 
 float AnyVector::getFloat() const {
-	if(data_.size() == 1)
-		return data_[0]->getFloat();
-	throw RuntimeException("The any vector can't be converted to float scalar.");
+  if(data_.size() == 1) return data_[0]->getFloat();
+  throw RuntimeException("The any vector can't be converted to float scalar.");
 }
 
 double AnyVector::getDouble() const {
-	if(data_.size() == 1)
-		return data_[0]->getDouble();
-	throw RuntimeException("The any vector can't be converted to double scalar.");
+  if(data_.size() == 1) return data_[0]->getDouble();
+  throw RuntimeException("The any vector can't be converted to double scalar.");
 }
 
-long long AnyVector::getAllocatedMemory(){
-	long long sz=sizeof(AnyVector)+(sizeof(ConstantSP)*data_.size());
-	auto len=(INDEX)data_.size();
-	for(INDEX i=0;i<len;++i)
-		sz+=data_[i]->getAllocatedMemory();
-	return sz;
+long long AnyVector::getAllocatedMemory() {
+  long long sz = sizeof(AnyVector) + (sizeof(ConstantSP) * data_.size());
+  auto len = (INDEX)data_.size();
+  for(INDEX i = 0; i < len; ++i) sz += data_[i]->getAllocatedMemory();
+  return sz;
 }
 
-bool AnyVector::hasNull(INDEX start, INDEX len){
-	auto it = data_.begin() + start;
-	for(INDEX i=0; i<len; ++i){
-		if((*it)->isNull())
-			return true;
-		++it;
-	}
-	return false;
+bool AnyVector::hasNull(INDEX start, INDEX len) {
+  auto it = data_.begin() + start;
+  for(INDEX i = 0; i < len; ++i) {
+    if((*it)->isNull()) return true;
+    ++it;
+  }
+  return false;
 }
 
-bool AnyVector::getBool(INDEX start, int len, char* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getBool();
-		++it;
-	}
-	return true;
+bool AnyVector::getBool(INDEX start, int len, char* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getBool();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getChar(INDEX start, int len,char* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getChar();
-		++it;
-	}
-	return true;
+bool AnyVector::getChar(INDEX start, int len, char* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getChar();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getShort(INDEX start, int len, short* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getShort();
-		++it;
-	}
-	return true;
+bool AnyVector::getShort(INDEX start, int len, short* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getShort();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getInt(INDEX start, int len, int* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getInt();
-		++it;
-	}
-	return true;
+bool AnyVector::getInt(INDEX start, int len, int* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getInt();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getLong(INDEX start, int len, long long* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getLong();
-		++it;
-	}
-	return true;
+bool AnyVector::getLong(INDEX start, int len, long long* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getLong();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getIndex(INDEX start, int len, INDEX* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getIndex();
-		++it;
-	}
-	return true;
+bool AnyVector::getIndex(INDEX start, int len, INDEX* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getIndex();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getFloat(INDEX start, int len, float* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getFloat();
-		++it;
-	}
-	return true;
+bool AnyVector::getFloat(INDEX start, int len, float* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getFloat();
+    ++it;
+  }
+  return true;
 }
 
-bool AnyVector::getDouble(INDEX start, int len, double* buf) const{
-	auto it = data_.begin() + start;
-	for(int i=0; i<len; ++i){
-		if(!(*it)->isScalar())
-			return false;
-		buf[i] = (*it)->getDouble();
-		++it;
-	}
-	return true;
+bool AnyVector::getDouble(INDEX start, int len, double* buf) const {
+  auto it = data_.begin() + start;
+  for(int i = 0; i < len; ++i) {
+    if(!(*it)->isScalar()) return false;
+    buf[i] = (*it)->getDouble();
+    ++it;
+  }
+  return true;
 }
 
 const char* AnyVector::getBoolConst(INDEX start, int len, char* buf) const {
-	getBool(start, len, buf);
-	return buf;
+  getBool(start, len, buf);
+  return buf;
 }
 
-const char* AnyVector::getCharConst(INDEX start, int len,char* buf) const {
-	getChar(start, len, buf);
-	return buf;
+const char* AnyVector::getCharConst(INDEX start, int len, char* buf) const {
+  getChar(start, len, buf);
+  return buf;
 }
 
 const short* AnyVector::getShortConst(INDEX start, int len, short* buf) const {
-	getShort(start, len, buf);
-	return buf;
+  getShort(start, len, buf);
+  return buf;
 }
 
 const int* AnyVector::getIntConst(INDEX start, int len, int* buf) const {
-	getInt(start, len, buf);
-	return buf;
+  getInt(start, len, buf);
+  return buf;
 }
 
 const long long* AnyVector::getLongConst(INDEX start, int len, long long* buf) const {
-	getLong(start, len, buf);
-	return buf;
+  getLong(start, len, buf);
+  return buf;
 }
 
 const INDEX* AnyVector::getIndexConst(INDEX start, int len, INDEX* buf) const {
-	getIndex(start, len, buf);
-	return buf;
+  getIndex(start, len, buf);
+  return buf;
 }
 
 const float* AnyVector::getFloatConst(INDEX start, int len, float* buf) const {
-	getFloat(start, len, buf);
-	return buf;
+  getFloat(start, len, buf);
+  return buf;
 }
 
 const double* AnyVector::getDoubleConst(INDEX start, int len, double* buf) const {
-	getDouble(start, len, buf);
-	return buf;
+  getDouble(start, len, buf);
+  return buf;
 }
 
-bool AnyVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		const INDEX* pindex;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			for(int i=0;i<count;i++){
-				ConstantSP obj = value->get(start + i);
-				obj->setIndependent(false);
-				obj->setTemporary(false);
-				data_[pindex[i]] = obj;
-			}
-			start+=count;
-		}
-		if(value->getNullFlag())
-			containNull_=true;
-	}
-	else{
-		data_[index->getIndex()] = value;
-		if(value->isNull())
-			containNull_=true;
-		value->setIndependent(false);
-		value->setTemporary(false);
-	}
-	return true;
+bool AnyVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    const INDEX* pindex;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      for(int i = 0; i < count; i++) {
+        ConstantSP obj = value->get(start + i);
+        obj->setIndependent(false);
+        obj->setTemporary(false);
+        data_[pindex[i]] = obj;
+      }
+      start += count;
+    }
+    if(value->getNullFlag()) containNull_ = true;
+  } else {
+    data_[index->getIndex()] = value;
+    if(value->isNull()) containNull_ = true;
+    value->setIndependent(false);
+    value->setTemporary(false);
+  }
+  return true;
 }
 
 ConstantSP AnyVector::getSubVector(INDEX start, INDEX length) const {
-	auto* vec=new AnyVector((INDEX)0);
-	ConstantSP result(vec);
-	if(start<0 || start>=size() || length>size())
-		return result;
+  auto* vec = new AnyVector((INDEX)0);
+  ConstantSP result(vec);
+  if(start < 0 || start >= size() || length > size()) return result;
 
-	if(length>0)
-		vec->data_.insert(vec->data_.begin(),data_.begin()+start,data_.begin()+(start+length));
-	else
-		vec->data_.insert(vec->data_.begin(),data_.rbegin()+(size()-1-start),data_.rbegin()+(size()-1-start-length));
-	result->setNullFlag(containNull_);
-	return result;
+  if(length > 0)
+    vec->data_.insert(vec->data_.begin(), data_.begin() + start, data_.begin() + (start + length));
+  else
+    vec->data_.insert(vec->data_.begin(), data_.rbegin() + (size() - 1 - start), data_.rbegin() + (size() - 1 - start - length));
+  result->setNullFlag(containNull_);
+  return result;
 }
 
 ConstantSP AnyVector::get(const ConstantSP& index) const {
-	auto sz = static_cast<UINDEX>(data_.size());
-	if(index->isVector()){
-		INDEX len=index->size();
-		ConstantSP result = Util::createVector(DT_ANY, len);
-		Constant* p = result.get();
-		if(index->isIndexArray()){
-			auto* bufIndex=(UINDEX*)index->getIndexArray();
-			for(int i=0;i<len;++i)
-				p->set(i, bufIndex[i]<sz ? data_[bufIndex[i]] : Constant::void_);
-		} else{
-			const int bufSize=Util::BUF_SIZE;
-			UINDEX bufIndex[bufSize];
-			INDEX start=0;
-			int count=0;
-			int i;
-			while(start<len){
-				count=((std::min))(len-start,bufSize);
-				index->getIndex(start,count,(INDEX*)bufIndex);
-				for(i=0;i<count;i++)
-					p->set(start+i, bufIndex[i]<sz ? data_[bufIndex[i]] : Constant::void_);
-				start+=count;
-			}
-		}
-		p->setNullFlag(containNull_ || p->hasNull());
-		return result;
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < sz ? data_[idx] : nullptr;
+  auto sz = static_cast<UINDEX>(data_.size());
+  if(index->isVector()) {
+    INDEX len = index->size();
+    ConstantSP result = Util::createVector(DT_ANY, len);
+    Constant* p = result.get();
+    if(index->isIndexArray()) {
+      auto* bufIndex = (UINDEX*)index->getIndexArray();
+      for(int i = 0; i < len; ++i) p->set(i, bufIndex[i] < sz ? data_[bufIndex[i]] : Constant::void_);
+    } else {
+      const int bufSize = Util::BUF_SIZE;
+      UINDEX bufIndex[bufSize];
+      INDEX start = 0;
+      int count = 0;
+      int i;
+      while(start < len) {
+        count = ((std::min))(len - start, bufSize);
+        index->getIndex(start, count, (INDEX*)bufIndex);
+        for(i = 0; i < count; i++) p->set(start + i, bufIndex[i] < sz ? data_[bufIndex[i]] : Constant::void_);
+        start += count;
+      }
+    }
+    p->setNullFlag(containNull_ || p->hasNull());
+    return result;
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < sz ? data_[idx] : nullptr;
 }
 
-bool AnyVector::append(const ConstantSP& value){
-	if(data_.size() >= (UINDEX)Util::MAX_LENGTH_FOR_ANY_VECTOR)
-		return false;
-	value->setIndependent(false);
-	value->setTemporary(false);
-	data_.push_back(value);
-	if(value->isNull())
-		containNull_=true;
-	return true;
+bool AnyVector::append(const ConstantSP& value) {
+  if(data_.size() >= (UINDEX)Util::MAX_LENGTH_FOR_ANY_VECTOR) return false;
+  value->setIndependent(false);
+  value->setTemporary(false);
+  data_.push_back(value);
+  if(value->isNull()) containNull_ = true;
+  return true;
 }
 
-bool AnyVector::remove(INDEX count){
-	bool fromHead=(count<0);
-	count=((std::min))(size(),abs(count));
-	if(fromHead)
-		data_.erase(data_.begin(),data_.begin()+count);
-	else
-		data_.erase(data_.end()-count,data_.end());
-	return true;
+bool AnyVector::remove(INDEX count) {
+  bool fromHead = (count < 0);
+  count = ((std::min))(size(), abs(count));
+  if(fromHead)
+    data_.erase(data_.begin(), data_.begin() + count);
+  else
+    data_.erase(data_.end() - count, data_.end());
+  return true;
 }
 
-void AnyVector::next(INDEX steps){
-	steps=((std::min))(steps,size());
-	data_.insert(data_.end(),steps,Constant::void_);
-	setNullFlag(true);
-	data_.erase(data_.begin(), data_.begin()+steps);
+void AnyVector::next(INDEX steps) {
+  steps = ((std::min))(steps, size());
+  data_.insert(data_.end(), steps, Constant::void_);
+  setNullFlag(true);
+  data_.erase(data_.begin(), data_.begin() + steps);
 }
 
-void AnyVector::prev(INDEX steps){
-	int len=size();
-	steps=((std::min))(steps,size());
-	data_.insert(data_.begin(),steps,Constant::void_);
-	setNullFlag(true);
-	data_.erase(data_.begin()+len, data_.end());
+void AnyVector::prev(INDEX steps) {
+  int len = size();
+  steps = ((std::min))(steps, size());
+  data_.insert(data_.begin(), steps, Constant::void_);
+  setNullFlag(true);
+  data_.erase(data_.begin() + len, data_.end());
 }
 
 ConstantSP AnyVector::convertToRegularVector() const {
-	DATA_TYPE type;
-	if(!isHomogeneousScalar(type))
-		return Constant::void_;
-	VectorSP tmp = Util::createVector(type, static_cast<INDEX>(data_.size()));
-	auto it = data_.begin();
-	auto end = data_.end();
-	int cursor = 0;
-	while(it != end){
-		tmp->set(cursor++, *it++);
-	}
-	return (ConstantSP)tmp;
+  DATA_TYPE type;
+  if(!isHomogeneousScalar(type)) return Constant::void_;
+  VectorSP tmp = Util::createVector(type, static_cast<INDEX>(data_.size()));
+  auto it = data_.begin();
+  auto end = data_.end();
+  int cursor = 0;
+  while(it != end) {
+    tmp->set(cursor++, *it++);
+  }
+  return (ConstantSP)tmp;
 }
 
 bool AnyVector::isHomogeneousScalar(DATA_TYPE& type) const {
-	if(data_.empty() || !data_[0]->isScalar())
-		return false;
-	type = data_[0]->getType();
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(++it != end){
-		const ConstantSP& cur = *it;
-		if(!cur->isScalar() || cur->getType() != type)
-			return false;
-	}
-	return true;
+  if(data_.empty() || !data_[0]->isScalar()) return false;
+  type = data_[0]->getType();
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(++it != end) {
+    const ConstantSP& cur = *it;
+    if(!cur->isScalar() || cur->getType() != type) return false;
+  }
+  return true;
 }
 
 bool AnyVector::isTabular() const {
-	if(data_.empty())
-		return false;
-	auto it = data_.begin();
-	auto end = data_.end();
-	while(it != end){
-		const ConstantSP& cur = *it++;
-		if(!cur->isArray() || cur->getType() == DT_ANY)
-			return false;
-	}
-	return true;
+  if(data_.empty()) return false;
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    const ConstantSP& cur = *it++;
+    if(!cur->isArray() || cur->getType() == DT_ANY) return false;
+  }
+  return true;
 }
 
 bool AnyVector::containNotMarshallableObject() const {
-	auto  it = data_.begin();
-	auto  end = data_.end();
-	while(it != end){
-		if((*it)->containNotMarshallableObject())
-			return true;
-		++it;
-	}
-	return false;
+  auto it = data_.begin();
+  auto end = data_.end();
+  while(it != end) {
+    if((*it)->containNotMarshallableObject()) return true;
+    ++it;
+  }
+  return false;
 }
 
-bool FastBoolVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getBool();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastBoolVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getBool();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastBoolVector::get(INDEX index) const {
-	return ConstantSP(new Bool(data_[index]));
-}
+ConstantSP FastBoolVector::get(INDEX index) const { return ConstantSP(new Bool(data_[index])); }
 
 ConstantSP FastBoolVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Bool(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Bool(data_[idx]) : nullptr;
 }
 
-void FastBoolVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		char fillVal=value->getBool();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getBool(0,length,data_+start))
-		throw RuntimeException("Failed to read bool data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastBoolVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    char fillVal = value->getBool();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getBool(0, length, data_ + start))
+    throw RuntimeException("Failed to read bool data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastBoolVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+  checkCapacity(appendSize);
 
-	if(appendSize==1)
-		data_[size_] = value->getBool(0);
-	else if(!value->getBool(start, appendSize, data_+size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(appendSize == 1)
+    data_[size_] = value->getBool(0);
+  else if(!value->getBool(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastBoolVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
-}
+bool FastBoolVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
 int FastBoolVector::compare(INDEX index, const ConstantSP& target) const {
-	char val=target->getBool();
-	return data_[index]==val?0:(data_[index]<val?-1:1);
+  char val = target->getBool();
+  return data_[index] == val ? 0 : (data_[index] < val ? -1 : 1);
 }
 
-bool FastBoolVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		char bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const char* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getBoolConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getBool();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastBoolVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    char bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const char* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getBoolConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getBool();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastCharVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getChar();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastCharVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getChar();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastCharVector::get(INDEX index) const {
-	return ConstantSP( new Char(data_[index]));
-}
+ConstantSP FastCharVector::get(INDEX index) const { return ConstantSP(new Char(data_[index])); }
 
 ConstantSP FastCharVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Char(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Char(data_[idx]) : nullptr;
 }
 
-void FastCharVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		char fillVal=value->getChar();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getChar(0,length,data_+start))
-		throw RuntimeException("Failed to read char data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastCharVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    char fillVal = value->getChar();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getChar(0, length, data_ + start))
+    throw RuntimeException("Failed to read char data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastCharVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+  checkCapacity(appendSize);
 
-	if(appendSize==1)
-		data_[size_] = value->getChar(0);
-	else if(!value->getChar(start, appendSize, data_+size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(appendSize == 1)
+    data_[size_] = value->getChar(0);
+  else if(!value->getChar(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastCharVector::append(const ConstantSP& value, INDEX appendSize) {
-	return append(value, 0, appendSize);
-}
+bool FastCharVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
-bool FastCharVector::validIndex(INDEX uplimit){
-	return validIndex(0, size_, uplimit);
-}
+bool FastCharVector::validIndex(INDEX uplimit) { return validIndex(0, size_, uplimit); }
 
-bool FastCharVector::validIndex(INDEX start, INDEX length, INDEX uplimit){
-	unsigned char limit=(unsigned char)((std::min))(uplimit,(int)CHAR_MAX);
-	auto* data=(unsigned char*)data_;
-	INDEX end = start + length;
-	for(INDEX i=start;i<end;++i)
-		if(data[i]>limit)
-			return false;
-	return true;
+bool FastCharVector::validIndex(INDEX start, INDEX length, INDEX uplimit) {
+  unsigned char limit = (unsigned char)((std::min))(uplimit, (int)CHAR_MAX);
+  auto* data = (unsigned char*)data_;
+  INDEX end = start + length;
+  for(INDEX i = start; i < end; ++i)
+    if(data[i] > limit) return false;
+  return true;
 }
 
 int FastCharVector::compare(INDEX index, const ConstantSP& target) const {
-	char val=target->getChar();
-	return data_[index]==val?0:(data_[index]<val?-1:1);
+  char val = target->getChar();
+  return data_[index] == val ? 0 : (data_[index] < val ? -1 : 1);
 }
 
-void FastCharVector::upper(){
-	for(INDEX i=0; i<size_; ++i){
-		if(data_[i] >= 'a' && data_[i] <= 'z')
-			data_[i] -= 32;
-	}
+void FastCharVector::upper() {
+  for(INDEX i = 0; i < size_; ++i) {
+    if(data_[i] >= 'a' && data_[i] <= 'z') data_[i] -= 32;
+  }
 }
 
-void FastCharVector::lower(){
-	for(INDEX i=0; i<size_; ++i){
-		if(data_[i] >= 'A' && data_[i] <= 'Z')
-			data_[i] += 32;
-	}
+void FastCharVector::lower() {
+  for(INDEX i = 0; i < size_; ++i) {
+    if(data_[i] >= 'A' && data_[i] <= 'Z') data_[i] += 32;
+  }
 }
 
-bool FastCharVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		char bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const char* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getCharConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getChar();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastCharVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    char bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const char* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getCharConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getChar();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastShortVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getShort();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastShortVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getShort();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastShortVector::get(INDEX index) const {
-	return ConstantSP(new Short(data_[index]));
-}
+ConstantSP FastShortVector::get(INDEX index) const { return ConstantSP(new Short(data_[index])); }
 
 ConstantSP FastShortVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Short(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Short(data_[idx]) : nullptr;
 }
 
-void FastShortVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		short fillVal=value->getShort();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getShort(0,length,data_+start))
-		throw RuntimeException("Failed to read short data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastShortVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    short fillVal = value->getShort();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getShort(0, length, data_ + start))
+    throw RuntimeException("Failed to read short data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastShortVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+  checkCapacity(appendSize);
 
-	if(appendSize==1)
-		data_[size_] = value->getShort(0);
-	else if(!value->getShort(start, appendSize, data_ + size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(appendSize == 1)
+    data_[size_] = value->getShort(0);
+  else if(!value->getShort(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastShortVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
-}
+bool FastShortVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
-bool FastShortVector::validIndex(INDEX uplimit){
-	return validIndex(0, size_, uplimit);
-}
+bool FastShortVector::validIndex(INDEX uplimit) { return validIndex(0, size_, uplimit); }
 
-bool FastShortVector::validIndex(INDEX start, INDEX length, INDEX uplimit){
-	unsigned short limit=(unsigned short)((std::min))(uplimit,(int)SHRT_MAX);
-	auto* data=(unsigned short*)data_;
-	INDEX end = start + length;
-	for(INDEX i=start;i<end;++i)
-		if(data[i]>limit)
-			return false;
-	return true;
+bool FastShortVector::validIndex(INDEX start, INDEX length, INDEX uplimit) {
+  unsigned short limit = (unsigned short)((std::min))(uplimit, (int)SHRT_MAX);
+  auto* data = (unsigned short*)data_;
+  INDEX end = start + length;
+  for(INDEX i = start; i < end; ++i)
+    if(data[i] > limit) return false;
+  return true;
 }
 
 int FastShortVector::compare(INDEX index, const ConstantSP& target) const {
-	short val=target->getShort();
-	return data_[index]==val?0:(data_[index]<val?-1:1);
+  short val = target->getShort();
+  return data_[index] == val ? 0 : (data_[index] < val ? -1 : 1);
 }
 
-bool FastShortVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		short bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const short* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getShortConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getShort();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastShortVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    short bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const short* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getShortConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getShort();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastIntVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getInt();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastIntVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getInt();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastIntVector::get(INDEX index) const {
-	return ConstantSP(new Int(data_[index]));
+ConstantSP FastIntVector::get(INDEX index) const { return ConstantSP(new Int(data_[index])); }
+
+ConstantSP FastIntVector::get(const ConstantSP& index) const {
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Int(data_[idx]) : nullptr;
 }
 
-ConstantSP  FastIntVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Int(data_[idx]) : nullptr;
+void FastIntVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    int fillVal = value->getInt();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getInt(0, length, data_ + start))
+    throw RuntimeException("Failed to read int data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
-void  FastIntVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		int fillVal=value->getInt();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getInt(0,length,data_+start))
-		throw RuntimeException("Failed to read int data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+bool FastIntVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
+  checkCapacity(appendSize);
+
+  if(appendSize == 1)
+    data_[size_] = value->getInt(0);
+  else if(!value->getInt(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool  FastIntVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+bool FastIntVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
-	if(appendSize == 1)
-		data_[size_] = value->getInt(0);
-	else if(!value->getInt(start, appendSize, data_ + size_))
-		return false;
-	size_ += appendSize;
-	if(value->getNullFlag())
-		containNull_ = true;
-	return true;
+bool FastIntVector::validIndex(INDEX uplimit) { return validIndex(0, size_, uplimit); }
+
+bool FastIntVector::validIndex(INDEX start, INDEX length, INDEX uplimit) {
+  auto limit = (unsigned int)uplimit;
+  auto* data = (unsigned int*)data_;
+  INDEX end = start + length;
+  for(INDEX i = start; i < end; ++i)
+    if(data[i] > limit) return false;
+  return true;
 }
 
-bool  FastIntVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
+int FastIntVector::compare(INDEX index, const ConstantSP& target) const {
+  int val = target->getInt();
+  return data_[index] == val ? 0 : (data_[index] < val ? -1 : 1);
 }
 
-bool  FastIntVector::validIndex(INDEX uplimit){
-	return validIndex(0, size_, uplimit);
+bool FastIntVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    int bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const int* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getIntConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getInt();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool  FastIntVector::validIndex(INDEX start, INDEX length, INDEX uplimit){
-	auto limit=(unsigned int)uplimit;
-	auto* data=(unsigned int*)data_;
-	INDEX end = start + length;
-	for(INDEX i=start;i<end;++i)
-		if(data[i]>limit)
-			return false;
-	return true;
+bool FastLongVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getLong();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-int  FastIntVector::compare(INDEX index, const ConstantSP& target) const {
-	int val=target->getInt();
-	return data_[index]==val?0:(data_[index]<val?-1:1);
-}
-
-bool FastIntVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		int bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const int* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getIntConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getInt();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
-}
-
-bool FastLongVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getLong();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
-}
-
-ConstantSP FastLongVector::get(INDEX index) const {
-	return ConstantSP(new Long(data_[index]));
-}
+ConstantSP FastLongVector::get(INDEX index) const { return ConstantSP(new Long(data_[index])); }
 
 ConstantSP FastLongVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Long(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Long(data_[idx]) : nullptr;
 }
 
-void FastLongVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		long long fillVal=value->getLong();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getLong(0,length,data_+start))
-		throw RuntimeException("Failed to read long data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastLongVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    long long fillVal = value->getLong();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getLong(0, length, data_ + start))
+    throw RuntimeException("Failed to read long data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastLongVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+  checkCapacity(appendSize);
 
-	if(appendSize==1)
-		data_[size_] = value->getLong(0);
-	else if(!value->getLong(start, appendSize, data_+size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(appendSize == 1)
+    data_[size_] = value->getLong(0);
+  else if(!value->getLong(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastLongVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
-}
+bool FastLongVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
-bool FastLongVector::validIndex(INDEX uplimit){
-	return validIndex(0, size_, uplimit);
-}
+bool FastLongVector::validIndex(INDEX uplimit) { return validIndex(0, size_, uplimit); }
 
-bool FastLongVector::validIndex(INDEX start, INDEX length, INDEX uplimit){
-	unsigned long limit=uplimit;
-	auto* data=(unsigned long*)data_;
-	INDEX end = start + length;
-	for(INDEX i=start;i<end;++i)
-		if(data[i]>limit)
-			return false;
-	return true;
+bool FastLongVector::validIndex(INDEX start, INDEX length, INDEX uplimit) {
+  unsigned long limit = uplimit;
+  auto* data = (unsigned long*)data_;
+  INDEX end = start + length;
+  for(INDEX i = start; i < end; ++i)
+    if(data[i] > limit) return false;
+  return true;
 }
 
 int FastLongVector::compare(INDEX index, const ConstantSP& target) const {
-	long long targetVal=target->getLong();
-	if(data_[index]==targetVal)
-		return 0;
-	if(data_[index]<targetVal)
-		return -1;
-	return 1;
+  long long targetVal = target->getLong();
+  if(data_[index] == targetVal) return 0;
+  if(data_[index] < targetVal) return -1;
+  return 1;
 }
 
-bool FastLongVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		long long bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const long long* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getLongConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getLong();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastLongVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    long long bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const long long* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getLongConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getLong();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastFloatVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getFloat();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastFloatVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getFloat();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastFloatVector::get(INDEX index) const {
-	return ConstantSP(new Float(data_[index]));
-}
+ConstantSP FastFloatVector::get(INDEX index) const { return ConstantSP(new Float(data_[index])); }
 
 ConstantSP FastFloatVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Float(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Float(data_[idx]) : nullptr;
 }
 
-void FastFloatVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		float fillVal=value->getFloat();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getFloat(0,length,data_+start))
-		throw RuntimeException("Failed to read float data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastFloatVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    float fillVal = value->getFloat();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getFloat(0, length, data_ + start))
+    throw RuntimeException("Failed to read float data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastFloatVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
+  checkCapacity(appendSize);
 
-	if(appendSize==1)
-		data_[size_] = value->getFloat(0);
-	else if(!value->getFloat(start, appendSize, data_+size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  if(appendSize == 1)
+    data_[size_] = value->getFloat(0);
+  else if(!value->getFloat(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastFloatVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
-}
+bool FastFloatVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
 int FastFloatVector::compare(INDEX index, const ConstantSP& target) const {
-	float targetVal=target->getFloat();
-	if(data_[index]==targetVal)
-		return 0;
-	if(data_[index]<targetVal)
-		return -1;
-	return 1;
+  float targetVal = target->getFloat();
+  if(data_[index] == targetVal) return 0;
+  if(data_[index] < targetVal) return -1;
+  return 1;
 }
 
-bool FastFloatVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		float bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const float* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getFloatConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getFloat();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastFloatVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    float bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const float* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getFloatConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getFloat();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastDoubleVector::set(INDEX index, const ConstantSP& value){
-	data_[index]=value->getDouble();
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
+bool FastDoubleVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = value->getDouble();
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-ConstantSP FastDoubleVector::get(INDEX index) const {
-	return ConstantSP(new Double(data_[index]));
-}
+ConstantSP FastDoubleVector::get(INDEX index) const { return ConstantSP(new Double(data_[index])); }
 
 ConstantSP FastDoubleVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Double(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Double(data_[idx]) : nullptr;
 }
 
-void FastDoubleVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		double fillVal=value->getDouble();
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else if(!value->getDouble(0,length,data_+start))
-		throw RuntimeException("Failed to read double data from the given vector.");
-	if(value->getNullFlag())
-		containNull_=true;
+void FastDoubleVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    double fillVal = value->getDouble();
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else if(!value->getDouble(0, length, data_ + start))
+    throw RuntimeException("Failed to read double data from the given vector.");
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 bool FastDoubleVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
-	if(appendSize==1)
-		data_[size_] = value->getDouble(0);
-	else if(!value->getDouble(start, appendSize, data_+size_))
-		return false;
-	size_+=appendSize;
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+  checkCapacity(appendSize);
+  if(appendSize == 1)
+    data_[size_] = value->getDouble(0);
+  else if(!value->getDouble(start, appendSize, data_ + size_))
+    return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastDoubleVector::append(const ConstantSP& value, INDEX appendSize){
-	return append(value, 0, appendSize);
-}
+bool FastDoubleVector::append(const ConstantSP& value, INDEX appendSize) { return append(value, 0, appendSize); }
 
 int FastDoubleVector::compare(INDEX index, const ConstantSP& target) const {
-	double targetVal=target->getDouble();
-	if(data_[index]==targetVal)
-		return 0;
-	if(data_[index]<targetVal)
-		return -1;
-	return 1;
+  double targetVal = target->getDouble();
+  if(data_[index] == targetVal) return 0;
+  if(data_[index] < targetVal) return -1;
+  return 1;
 }
 
-bool FastDoubleVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		double bufVal[Util::BUF_SIZE];
-		const INDEX* pindex;
-		const double* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			pval=value->getDoubleConst(start,count,bufVal);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=pval[i];
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=value->getDouble();
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
+bool FastDoubleVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    double bufVal[Util::BUF_SIZE];
+    const INDEX* pindex;
+    const double* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      pval = value->getDoubleConst(start, count, bufVal);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = pval[i];
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = value->getDouble();
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
 ConstantSP FastDateVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Date(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Date(data_[idx]) : nullptr;
 }
 
-ConstantSP FastDateVector::castTemporal(DATA_TYPE expectType){
-	if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)){
-		throw RuntimeException("castTemporal from DATE to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType != DT_DATE && expectType != DT_TIMESTAMP && expectType != DT_NANOTIMESTAMP && expectType != DT_MONTH && expectType != DT_DATETIME && expectType != DT_DATEHOUR){
-		throw RuntimeException("castTemporal from DATE to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_DATE)
-		return getValue();
+ConstantSP FastDateVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)) {
+    throw RuntimeException("castTemporal from DATE to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType != DT_DATE && expectType != DT_TIMESTAMP && expectType != DT_NANOTIMESTAMP && expectType != DT_MONTH && expectType != DT_DATETIME &&
+     expectType != DT_DATEHOUR) {
+    throw RuntimeException("castTemporal from DATE to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_DATE) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	if(expectType == DT_DATEHOUR){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] * 24;
-        }
-        return (ConstantSP)res;
-	}
-	long long ratio = Util::getTemporalConversionRatio(DT_DATE, expectType);
-	if(expectType == DT_NANOTIMESTAMP ||  expectType  == DT_TIMESTAMP){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
-		}
-	}
-	else if(expectType == DT_DATETIME){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
-		}
-	}
-	else{
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			if(data_[i] == INT_MIN){
-				pbuf[i] = INT_MIN;
-				continue;
-			}
-			int year, month, day;
-			Util::parseDate(data_[i], year, month, day);
-			pbuf[i] = year*12+month-1;
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  if(expectType == DT_DATEHOUR) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] * 24;
+    }
+    return (ConstantSP)res;
+  }
+  long long ratio = Util::getTemporalConversionRatio(DT_DATE, expectType);
+  if(expectType == DT_NANOTIMESTAMP || expectType == DT_TIMESTAMP) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
+    }
+  } else if(expectType == DT_DATETIME) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
+    }
+  } else {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      if(data_[i] == INT_MIN) {
+        pbuf[i] = INT_MIN;
+        continue;
+      }
+      int year, month, day;
+      Util::parseDate(data_[i], year, month, day);
+      pbuf[i] = year * 12 + month - 1;
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastDateTimeVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new DateTime(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new DateTime(data_[idx]) : nullptr;
 }
 
-ConstantSP FastDateTimeVector::castTemporal(DATA_TYPE expectType){
-	if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)){
-		throw RuntimeException("castTemporal from DATETIME to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_DATETIME)
-		return getValue();
+ConstantSP FastDateTimeVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)) {
+    throw RuntimeException("castTemporal from DATETIME to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_DATETIME) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	if(expectType == DT_DATEHOUR){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600)) != 0);
-            data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] / 3600 - tail;
-        }
-        return (ConstantSP)res;
-	}
-	long long ratio = Util::getTemporalConversionRatio(DT_DATETIME, expectType);
-	if(expectType == DT_NANOTIMESTAMP ||  expectType  == DT_TIMESTAMP){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
-		}
-	}
-	else if(expectType == DT_DATE){
-		int *pbuf = (int*)res->getDataArray();
-		ratio = -ratio;
-		for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
-		}
-	}
-	else if(expectType == DT_MONTH){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			if(data_[i] == INT_MIN){
-				pbuf[i] = INT_MIN;
-				continue;
-			}
-			int year, month, day;
-			Util::parseDate(data_[i] / 86400, year, month, day);
-			pbuf[i] = year*12+month-1;
-		}
-	}
-	else if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			int remainder = data_[i] % 86400;
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)(remainder + (static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400)) * 1000000000LL;
-		}
-	}
-	else{
-		ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
-		int *pbuf = (int*)res->getDataArray();
-		if(ratio > 0){
-			for(int i = 0; i < size_; i++){
-				int remainder = data_[i] % 86400;
-				data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400) * ratio);
-			}
-		} else{
-			ratio = -ratio;
-			for(int i = 0; i < size_; i++){
-				int remainder = data_[i] % 86400;
-				data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400) / ratio);
-			}
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  if(expectType == DT_DATEHOUR) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600)) != 0);
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] / 3600 - tail;
+    }
+    return (ConstantSP)res;
+  }
+  long long ratio = Util::getTemporalConversionRatio(DT_DATETIME, expectType);
+  if(expectType == DT_NANOTIMESTAMP || expectType == DT_TIMESTAMP) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
+    }
+  } else if(expectType == DT_DATE) {
+    int* pbuf = (int*)res->getDataArray();
+    ratio = -ratio;
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
+    }
+  } else if(expectType == DT_MONTH) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      if(data_[i] == INT_MIN) {
+        pbuf[i] = INT_MIN;
+        continue;
+      }
+      int year, month, day;
+      Util::parseDate(data_[i] / 86400, year, month, day);
+      pbuf[i] = year * 12 + month - 1;
+    }
+  } else if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int remainder = data_[i] % 86400;
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN
+                          : pbuf[i] = (long long)(remainder + (static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400)) * 1000000000LL;
+    }
+  } else {
+    ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
+    int* pbuf = (int*)res->getDataArray();
+    if(ratio > 0) {
+      for(int i = 0; i < size_; i++) {
+        int remainder = data_[i] % 86400;
+        data_[i] == INT_MIN ? pbuf[i] = INT_MIN
+                            : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400) * ratio);
+      }
+    } else {
+      ratio = -ratio;
+      for(int i = 0; i < size_; i++) {
+        int remainder = data_[i] % 86400;
+        data_[i] == INT_MIN ? pbuf[i] = INT_MIN
+                            : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400) / ratio);
+      }
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastDateHourVector::get(const ConstantSP& index) const {
-    if(index->isVector()){
-        return retrieve((Vector*)index.get());
-    }
-    auto idx=(UINDEX)index->getIndex();
-    return idx < (UINDEX)size_ ? new DateHour(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new DateHour(data_[idx]) : nullptr;
 }
 
-ConstantSP FastDateHourVector::castTemporal(DATA_TYPE expectType){
-    if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)){
-        throw RuntimeException("castTemporal from DATEHOUR to "+ Util::getDataTypeString(expectType)+" not supported ");
-    }
-    if(expectType == DT_DATEHOUR)
-        return getValue();
+ConstantSP FastDateHourVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)) {
+    throw RuntimeException("castTemporal from DATEHOUR to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_DATEHOUR) return getValue();
 
-    VectorSP res = Util::createVector(expectType, size_);
-    long long ratio = Util::getTemporalConversionRatio(DT_DATETIME, expectType);
-    if(expectType == DT_NANOTIMESTAMP ||  expectType  == DT_TIMESTAMP){
-        auto *pbuf = (long long*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio * 3600;
-        }
+  VectorSP res = Util::createVector(expectType, size_);
+  long long ratio = Util::getTemporalConversionRatio(DT_DATETIME, expectType);
+  if(expectType == DT_NANOTIMESTAMP || expectType == DT_TIMESTAMP) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio * 3600;
     }
-    else if(expectType == DT_DATETIME){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] * 3600;
-        }
+  } else if(expectType == DT_DATETIME) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = data_[i] * 3600;
     }
-    else if(expectType == DT_DATE){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 / (-ratio));
-        }
+  } else if(expectType == DT_DATE) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 / (-ratio));
     }
-    else if(expectType == DT_MONTH){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            if(data_[i] == INT_MIN){
-                pbuf[i] = INT_MIN;
-                continue;
-            }
-            int year, month, day;
-            Util::parseDate(data_[i] * 3600 / 86400, year, month, day);
-            pbuf[i] = year*12+month-1;
-        }
+  } else if(expectType == DT_MONTH) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      if(data_[i] == INT_MIN) {
+        pbuf[i] = INT_MIN;
+        continue;
+      }
+      int year, month, day;
+      Util::parseDate(data_[i] * 3600 / 86400, year, month, day);
+      pbuf[i] = year * 12 + month - 1;
     }
-    else if(expectType == DT_NANOTIME){
-        auto *pbuf = (long long*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-            data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * 3600 % 86400 * 1000000000LL;
-        }
+  } else if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * 3600 % 86400 * 1000000000LL;
     }
-    else{
-        ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
-        int *pbuf = (int*)res->getDataArray();
-        if(ratio > 0){
-            for(int i = 0; i < size_; i++){
-                data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 % 86400 * ratio);
-            }
-        }
-        else{
-            for(int i = 0; i < size_; i++){
-                data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 % 86400 / (-ratio));
-            }
-        }
+  } else {
+    ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
+    int* pbuf = (int*)res->getDataArray();
+    if(ratio > 0) {
+      for(int i = 0; i < size_; i++) {
+        data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 % 86400 * ratio);
+      }
+    } else {
+      for(int i = 0; i < size_; i++) {
+        data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * 3600 % 86400 / (-ratio));
+      }
     }
-    return (ConstantSP)res;
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastMonthVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Month(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Month(data_[idx]) : nullptr;
 }
 
 ConstantSP FastTimeVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Time(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Time(data_[idx]) : nullptr;
 }
 
-void FastTimeVector::validate(){
-	auto* myData = (unsigned int*)data_;
-	for(INDEX i=0; i<size_; ++i){
-		if(myData[i] >= 86400){
-			data_[i] = INT_MIN;
-			containNull_ = true;
-		}
-	}
+void FastTimeVector::validate() {
+  auto* myData = (unsigned int*)data_;
+  for(INDEX i = 0; i < size_; ++i) {
+    if(myData[i] >= 86400) {
+      data_[i] = INT_MIN;
+      containNull_ = true;
+    }
+  }
 }
 
-ConstantSP FastTimeVector::castTemporal(DATA_TYPE expectType){
-	if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP){
-		throw RuntimeException("castTemporal from TIME to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE){
-		throw RuntimeException("castTemporal from TIME to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_TIME)
-		return getValue();
+ConstantSP FastTimeVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP) {
+    throw RuntimeException("castTemporal from TIME to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE) {
+    throw RuntimeException("castTemporal from TIME to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_TIME) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	long long ratio = Util::getTemporalConversionRatio(DT_TIME, expectType);
-	if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
-		}
-	}
-	else{
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  long long ratio = Util::getTemporalConversionRatio(DT_TIME, expectType);
+  if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
+    }
+  } else {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastMinuteVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Minute(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Minute(data_[idx]) : nullptr;
 }
 
-void FastMinuteVector::validate(){
-	auto* myData = (unsigned int*)data_;
-	for(INDEX i=0; i<size_; ++i){
-		if(myData[i] >= 1440){
-			data_[i] = INT_MIN;
-			containNull_ = true;
-		}
-	}
+void FastMinuteVector::validate() {
+  auto* myData = (unsigned int*)data_;
+  for(INDEX i = 0; i < size_; ++i) {
+    if(myData[i] >= 1440) {
+      data_[i] = INT_MIN;
+      containNull_ = true;
+    }
+  }
 }
 
-ConstantSP FastMinuteVector::castTemporal(DATA_TYPE expectType){
-	if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP){
-		throw RuntimeException("castTemporal from MINUTE to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE){
-		throw RuntimeException("castTemporal from MINUTE to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_MINUTE)
-		return getValue();
+ConstantSP FastMinuteVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP) {
+    throw RuntimeException("castTemporal from MINUTE to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE) {
+    throw RuntimeException("castTemporal from MINUTE to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_MINUTE) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	long long ratio = Util::getTemporalConversionRatio(DT_MINUTE, expectType);
-	if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
-		}
-	}
-	else{
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  long long ratio = Util::getTemporalConversionRatio(DT_MINUTE, expectType);
+  if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (long long)data_[i] * ratio;
+    }
+  } else {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastSecondVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Second(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Second(data_[idx]) : nullptr;
 }
 
-void FastSecondVector::validate(){
-	auto* myData = (unsigned int*)data_;
-	for(INDEX i=0; i<size_; ++i){
-		if(myData[i] >= 86400){
-			data_[i] = INT_MIN;
-			containNull_ = true;
-		}
-	}
+void FastSecondVector::validate() {
+  auto* myData = (unsigned int*)data_;
+  for(INDEX i = 0; i < size_; ++i) {
+    if(myData[i] >= 86400) {
+      data_[i] = INT_MIN;
+      containNull_ = true;
+    }
+  }
 }
 
-ConstantSP FastSecondVector::castTemporal(DATA_TYPE expectType){
-	if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP){
-		throw RuntimeException("castTemporal from SECOND to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE){
-		throw RuntimeException("castTemporal from SECOND to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_SECOND)
-		return getValue();
+ConstantSP FastSecondVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP) {
+    throw RuntimeException("castTemporal from SECOND to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE) {
+    throw RuntimeException("castTemporal from SECOND to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_SECOND) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	long long ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
-	if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] * ratio;
-		}
-	}
-	else if(expectType == DT_TIME){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
-		}
-	}
-	else{
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  long long ratio = Util::getTemporalConversionRatio(DT_SECOND, expectType);
+  if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] * ratio;
+    }
+  } else if(expectType == DT_TIME) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] * ratio);
+    }
+  } else {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == INT_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastNanoTimeVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new NanoTime(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new NanoTime(data_[idx]) : nullptr;
 }
 
-void FastNanoTimeVector::validate(){
-	auto* myData = (unsigned long long*)data_;
-	for(INDEX i=0; i<size_; ++i){
-		if(myData[i] >= 86400000000000LL){
-			data_[i] = LLONG_MIN;
-			containNull_ = true;
-		}
-	}
+void FastNanoTimeVector::validate() {
+  auto* myData = (unsigned long long*)data_;
+  for(INDEX i = 0; i < size_; ++i) {
+    if(myData[i] >= 86400000000000LL) {
+      data_[i] = LLONG_MIN;
+      containNull_ = true;
+    }
+  }
 }
 
-ConstantSP FastNanoTimeVector::castTemporal(DATA_TYPE expectType){
-	if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP){
-		throw RuntimeException("castTemporal from NANOTIME to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE){
-		throw RuntimeException("castTemporal from NANOTIME to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_NANOTIME)
-		return getValue();
+ConstantSP FastNanoTimeVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType < DT_DATE || expectType > DT_NANOTIMESTAMP) {
+    throw RuntimeException("castTemporal from NANOTIME to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType != DT_TIME && expectType != DT_NANOTIME && expectType != DT_SECOND && expectType != DT_MINUTE) {
+    throw RuntimeException("castTemporal from NANOTIME to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_NANOTIME) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	long long ratio = Util::getTemporalConversionRatio(DT_NANOTIME, expectType);
+  VectorSP res = Util::createVector(expectType, size_);
+  long long ratio = Util::getTemporalConversionRatio(DT_NANOTIME, expectType);
 
-	int *pbuf = (int*)res->getDataArray();
-	for(int i = 0; i < size_; i++){
-		data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
-	}
-	return (ConstantSP)res;
+  int* pbuf = (int*)res->getDataArray();
+  for(int i = 0; i < size_; i++) {
+    data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>(data_[i] / (-ratio));
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastTimestampVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new Timestamp(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new Timestamp(data_[idx]) : nullptr;
 }
 
-ConstantSP FastTimestampVector::castTemporal(DATA_TYPE expectType){
-	if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)){
-		throw RuntimeException("castTemporal from TIMESTAMP to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_TIMESTAMP)
-		return getValue();
+ConstantSP FastTimestampVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)) {
+    throw RuntimeException("castTemporal from TIMESTAMP to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_TIMESTAMP) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	if(expectType == DT_DATEHOUR){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600)) != 0);
-            data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / 3600000LL) - tail);
-        }
-        return (ConstantSP)res;
-	}
-	long long ratio = Util::getTemporalConversionRatio(DT_TIMESTAMP, expectType);
-	if(expectType == DT_NANOTIMESTAMP){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] * ratio;
-		}
-	}
-	else if(expectType == DT_DATE || expectType == DT_DATETIME){
-		int *pbuf = (int*)res->getDataArray();
-		ratio = -ratio;
-		for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
-			data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
-		}
-	}
-	else if(expectType == DT_MONTH){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			if(data_[i] == LLONG_MIN){
-				pbuf[i] = INT_MIN;
-				continue;
-			}
-			int year, month, day;
-			Util::parseDate(static_cast<int>(data_[i] / 86400000), year, month, day);
-			pbuf[i] = year*12+month-1;
-		}
-	}
-	else if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			int remainder = data_[i] % 86400000;
-			data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400000) * 1000000LL;
-		}
-	}
-	else{
-		ratio = Util::getTemporalConversionRatio(DT_TIME, expectType);
-		int *pbuf = (int*)res->getDataArray();
-		if(ratio < 0) ratio = -ratio;
-		for(int i = 0; i < size_; i++){
-			int remainder = data_[i] % 86400000;
-			data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400000) / ratio);
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  if(expectType == DT_DATEHOUR) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600)) != 0);
+      data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / 3600000LL) - tail);
+    }
+    return (ConstantSP)res;
+  }
+  long long ratio = Util::getTemporalConversionRatio(DT_TIMESTAMP, expectType);
+  if(expectType == DT_NANOTIMESTAMP) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] * ratio;
+    }
+  } else if(expectType == DT_DATE || expectType == DT_DATETIME) {
+    int* pbuf = (int*)res->getDataArray();
+    ratio = -ratio;
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
+      data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
+    }
+  } else if(expectType == DT_MONTH) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      if(data_[i] == LLONG_MIN) {
+        pbuf[i] = INT_MIN;
+        continue;
+      }
+      int year, month, day;
+      Util::parseDate(static_cast<int>(data_[i] / 86400000), year, month, day);
+      pbuf[i] = year * 12 + month - 1;
+    }
+  } else if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int remainder = data_[i] % 86400000;
+      data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN
+                            : pbuf[i] = (remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400000) * 1000000LL;
+    }
+  } else {
+    ratio = Util::getTemporalConversionRatio(DT_TIME, expectType);
+    int* pbuf = (int*)res->getDataArray();
+    if(ratio < 0) ratio = -ratio;
+    for(int i = 0; i < size_; i++) {
+      int remainder = data_[i] % 86400000;
+      data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN
+                            : pbuf[i] = static_cast<int>((remainder + static_cast<int>((data_[i] < 0) && (remainder != 0)) * 86400000) / ratio);
+    }
+  }
+  return (ConstantSP)res;
 }
 
 ConstantSP FastNanoTimestampVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		return retrieve((Vector*)index.get());
-	}
-	auto idx=(UINDEX)index->getIndex();
-	return idx < (UINDEX)size_ ? new NanoTimestamp(data_[idx]) : nullptr;
+  if(index->isVector()) {
+    return retrieve((Vector*)index.get());
+  }
+  auto idx = (UINDEX)index->getIndex();
+  return idx < (UINDEX)size_ ? new NanoTimestamp(data_[idx]) : nullptr;
 }
 
-ConstantSP FastNanoTimestampVector::castTemporal(DATA_TYPE expectType){
-	if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)){
-		throw RuntimeException("castTemporal from NANOTIMESTAMP to "+ Util::getDataTypeString(expectType)+" not supported ");
-	}
-	if(expectType == DT_NANOTIMESTAMP)
-		return getValue();
+ConstantSP FastNanoTimestampVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType != DT_DATEHOUR && (expectType < DT_DATE || expectType > DT_NANOTIMESTAMP)) {
+    throw RuntimeException("castTemporal from NANOTIMESTAMP to " + Util::getDataTypeString(expectType) + " not supported ");
+  }
+  if(expectType == DT_NANOTIMESTAMP) return getValue();
 
-	VectorSP res = Util::createVector(expectType, size_);
-	if(expectType == DT_DATEHOUR){
-        int *pbuf = (int*)res->getDataArray();
-        for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600000000000LL)) != 0);
-            data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / 3600000000000LL) - tail);
-        }
-        return (ConstantSP)res;
-	}
-	long long ratio = -Util::getTemporalConversionRatio(DT_NANOTIMESTAMP, expectType);
-	if(expectType == DT_TIMESTAMP){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
-			data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] / ratio - tail;
-		}
-	}
-	else if(expectType == DT_DATE || expectType == DT_DATETIME){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
-			data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
-		}
-	}
-	else if(expectType == DT_MONTH){
-		int *pbuf = (int*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			if(data_[i]  == LLONG_MIN){
-				pbuf[i] = INT_MIN;
-				continue;
-			}
-			int year, month, day;
-			Util::parseDate(static_cast<int>(data_[i] / 86400000000000LL), year, month, day);
-			pbuf[i] = year*12+month-1;
-		}
-	}
-	else if(expectType == DT_NANOTIME){
-		auto *pbuf = (long long*)res->getDataArray();
-		for(int i = 0; i < size_; i++){
-			long long remainder = data_[i] % 86400000000000LL;
-			data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = (remainder + static_cast<long long>(data_[i] < 0 && (remainder != 0)) * 86400000000000LL);
-		}
-	}
-	else{
-		ratio = Util::getTemporalConversionRatio(DT_NANOTIME, expectType);
-		int *pbuf = (int*)res->getDataArray();
-		ratio = -ratio;
-		for(int i = 0; i < size_; i++){
-			long long remainder = data_[i] % 86400000000000LL;
-			data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((remainder + static_cast<long long>(data_[i] < 0 && (remainder != 0)) * 86400000000000LL) / ratio);
-		}
-	}
-	return (ConstantSP)res;
+  VectorSP res = Util::createVector(expectType, size_);
+  if(expectType == DT_DATEHOUR) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % 3600000000000LL)) != 0);
+      data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / 3600000000000LL) - tail);
+    }
+    return (ConstantSP)res;
+  }
+  long long ratio = -Util::getTemporalConversionRatio(DT_NANOTIMESTAMP, expectType);
+  if(expectType == DT_TIMESTAMP) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
+      data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN : pbuf[i] = data_[i] / ratio - tail;
+    }
+  } else if(expectType == DT_DATE || expectType == DT_DATETIME) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      int tail = static_cast<int>((data_[i] < 0) && ((data_[i] % ratio)) != 0);
+      data_[i] == LLONG_MIN ? pbuf[i] = INT_MIN : pbuf[i] = static_cast<int>((data_[i] / ratio) - tail);
+    }
+  } else if(expectType == DT_MONTH) {
+    int* pbuf = (int*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      if(data_[i] == LLONG_MIN) {
+        pbuf[i] = INT_MIN;
+        continue;
+      }
+      int year, month, day;
+      Util::parseDate(static_cast<int>(data_[i] / 86400000000000LL), year, month, day);
+      pbuf[i] = year * 12 + month - 1;
+    }
+  } else if(expectType == DT_NANOTIME) {
+    auto* pbuf = (long long*)res->getDataArray();
+    for(int i = 0; i < size_; i++) {
+      long long remainder = data_[i] % 86400000000000LL;
+      data_[i] == LLONG_MIN ? pbuf[i] = LLONG_MIN
+                            : pbuf[i] = (remainder + static_cast<long long>(data_[i] < 0 && (remainder != 0)) * 86400000000000LL);
+    }
+  } else {
+    ratio = Util::getTemporalConversionRatio(DT_NANOTIME, expectType);
+    int* pbuf = (int*)res->getDataArray();
+    ratio = -ratio;
+    for(int i = 0; i < size_; i++) {
+      long long remainder = data_[i] % 86400000000000LL;
+      data_[i] == LLONG_MIN
+          ? pbuf[i] = INT_MIN
+          : pbuf[i] = static_cast<int>((remainder + static_cast<long long>(data_[i] < 0 && (remainder != 0)) * 86400000000000LL) / ratio);
+    }
+  }
+  return (ConstantSP)res;
 }
 
-ConstantSP FastArrayVector::castTemporal(DATA_TYPE expectType){
-	if(expectType < ARRAY_TYPE_BASE){
-		throw RuntimeException("castTemporal from "+ Util::getDataTypeString(dataType_) + " to " + Util::getDataTypeString(expectType) + " not supported.");
-	}
-	ConstantSP castValue = value_->castTemporal((DATA_TYPE)(expectType-ARRAY_TYPE_BASE));
-	VectorSP castIndex = Util::createVector(index_->getType(),index_->size());
-	castIndex->fill(0, index_->size(), (ConstantSP)index_);
-	auto res = (VectorSP)Util::createArrayVector(castIndex, (VectorSP)castValue);
-	return (ConstantSP)res;
+ConstantSP FastArrayVector::castTemporal(DATA_TYPE expectType) {
+  if(expectType < ARRAY_TYPE_BASE) {
+    throw RuntimeException("castTemporal from " + Util::getDataTypeString(dataType_) + " to " + Util::getDataTypeString(expectType) +
+                           " not supported.");
+  }
+  ConstantSP castValue = value_->castTemporal((DATA_TYPE)(expectType - ARRAY_TYPE_BASE));
+  VectorSP castIndex = Util::createVector(index_->getType(), index_->size());
+  castIndex->fill(0, index_->size(), (ConstantSP)index_);
+  auto res = (VectorSP)Util::createArrayVector(castIndex, (VectorSP)castValue);
+  return (ConstantSP)res;
 }
 
 int FastArrayVector::serialize(char* buf, int bufSize, INDEX indexStart, int offset, int& numElement, int& partial) const {
-	if(baseUnitLength_ > 0)
-		return serializeFixedLength(buf, bufSize, indexStart, offset, size_ - indexStart, numElement, partial);
-	return serializeVariableLength(buf, bufSize, indexStart, offset, size_ - indexStart, numElement, partial);
+  if(baseUnitLength_ > 0) return serializeFixedLength(buf, bufSize, indexStart, offset, size_ - indexStart, numElement, partial);
+  return serializeVariableLength(buf, bufSize, indexStart, offset, size_ - indexStart, numElement, partial);
 }
 
-int FastArrayVector::serializeFixedLength(char* buf, int bufSize, INDEX indexStart, int offset, int targetNumElement, int& numElement, int& partial) const {
-	numElement = 0;
-	partial = 0;
-	int tmpNumElement, tmpPartial;
-	int bytesSent = 0;
-	INDEX* pindex = index_->getIndexArray();
+int FastArrayVector::serializeFixedLength(char* buf, int bufSize, INDEX indexStart, int offset, int targetNumElement, int& numElement,
+                                          int& partial) const {
+  numElement = 0;
+  partial = 0;
+  int tmpNumElement, tmpPartial;
+  int bytesSent = 0;
+  INDEX* pindex = index_->getIndexArray();
 
-	if (offset > 0) {
-		INDEX rowStart = indexStart > 0 ? pindex[indexStart - 1] : 0;
-		int cellCount = pindex[indexStart] - rowStart;
-		int cellCountToSerialize = std::min(bufSize / baseUnitLength_, cellCount - offset);
-		bytesSent += value_->serialize(buf, bufSize, rowStart + offset, 0, cellCountToSerialize, tmpNumElement, tmpPartial);
-		if (cellCountToSerialize < cellCount - offset) {
-			partial = offset + cellCountToSerialize;
-			return bytesSent;
-		}
-		--targetNumElement;
-		++numElement;
-		++indexStart;
-		buf += bytesSent;
-		bufSize -= bytesSent;
-	}
+  if(offset > 0) {
+    INDEX rowStart = indexStart > 0 ? pindex[indexStart - 1] : 0;
+    int cellCount = pindex[indexStart] - rowStart;
+    int cellCountToSerialize = std::min(bufSize / baseUnitLength_, cellCount - offset);
+    bytesSent += value_->serialize(buf, bufSize, rowStart + offset, 0, cellCountToSerialize, tmpNumElement, tmpPartial);
+    if(cellCountToSerialize < cellCount - offset) {
+      partial = offset + cellCountToSerialize;
+      return bytesSent;
+    }
+    --targetNumElement;
+    ++numElement;
+    ++indexStart;
+    buf += bytesSent;
+    bufSize -= bytesSent;
+  }
 
-	size_t remainingBytes = (size_t)bufSize - 4;
-	size_t curCountBytes = 1;
-	int maxCount = 255;
-	INDEX prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
+  size_t remainingBytes = (size_t)bufSize - 4;
+  size_t curCountBytes = 1;
+  int maxCount = 255;
+  INDEX prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
 
-	//one block can't exceed 65535 rows
-	targetNumElement = std::min(targetNumElement, 65535);
-	short i = 0;
-	for (; i<targetNumElement && remainingBytes > 0; ++i) {
-		INDEX curStart = pindex[indexStart + i];
-		int curCount = curStart - prevStart;
-		prevStart = curStart;
-		size_t oldCountBytes = curCountBytes;
-		size_t bytesRequired = 0;
-		while (curCount > maxCount) {
-			bytesRequired += i * curCountBytes;
-			curCountBytes *= 2;
-			maxCount = static_cast<int>(std::min((long long)INT_MAX, (1LL << (8 * curCountBytes)) - 1));
-		}
-		bytesRequired += curCountBytes + curCount * baseUnitLength_;
+  // one block can't exceed 65535 rows
+  targetNumElement = std::min(targetNumElement, 65535);
+  short i = 0;
+  for(; i < targetNumElement && remainingBytes > 0; ++i) {
+    INDEX curStart = pindex[indexStart + i];
+    int curCount = curStart - prevStart;
+    prevStart = curStart;
+    size_t oldCountBytes = curCountBytes;
+    size_t bytesRequired = 0;
+    while(curCount > maxCount) {
+      bytesRequired += i * curCountBytes;
+      curCountBytes *= 2;
+      maxCount = static_cast<int>(std::min((long long)INT_MAX, (1LL << (8 * curCountBytes)) - 1));
+    }
+    bytesRequired += curCountBytes + curCount * baseUnitLength_;
 
-		if (bytesRequired > remainingBytes) {
-			if (numElement == 0) {
-				partial = ((int)remainingBytes - (int)curCountBytes) / baseUnitLength_;
-				if (partial <= 0) {
-					partial = 0;
-				} else {
-					++i;
-				}
-			} else {
-				if (oldCountBytes != curCountBytes)
-					curCountBytes = oldCountBytes;
-			}
-			break;
-		}
-		remainingBytes -= bytesRequired;
-		++numElement;
-	}
+    if(bytesRequired > remainingBytes) {
+      if(numElement == 0) {
+        partial = ((int)remainingBytes - (int)curCountBytes) / baseUnitLength_;
+        if(partial <= 0) {
+          partial = 0;
+        } else {
+          ++i;
+        }
+      } else {
+        if(oldCountBytes != curCountBytes) curCountBytes = oldCountBytes;
+      }
+      break;
+    }
+    remainingBytes -= bytesRequired;
+    ++numElement;
+  }
 
-	if (UNLIKELY(i == 0))
-		return bytesSent;
+  if(UNLIKELY(i == 0)) return bytesSent;
 
-	//output the block header
-	unsigned short rowNum = i;
-	memcpy(buf, &rowNum, 2);
-	buf[2] = (char)curCountBytes;
-	buf[3] = 0;
-	buf += 4;
-	bytesSent += 4;
-	bufSize -= 4;
+  // output the block header
+  unsigned short rowNum = i;
+  memcpy(buf, &rowNum, 2);
+  buf[2] = (char)curCountBytes;
+  buf[3] = 0;
+  buf += 4;
+  bytesSent += 4;
+  bufSize -= 4;
 
-	//output array of counts
-	prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
-	if (curCountBytes == 1) {
-		for (int k = 0; k<i; ++k) {
-			INDEX curStart = pindex[indexStart + k];
-			auto curCount = static_cast<unsigned char>(curStart - prevStart);
-			memcpy(buf + k, &curCount, 1);
-			prevStart = curStart;
-		}
-	}
-	else if (curCountBytes == 2) {
-		for (int k = 0; k<i; ++k) {
-			INDEX curStart = pindex[indexStart + k];
-			auto curCount = static_cast<unsigned short>(curStart - prevStart);
-			memcpy(buf + (2 * k), &curCount, 2);
-			prevStart = curStart;
-		}
-	}
-	else {
-		for (int k = 0; k<i; ++k) {
-			INDEX curStart = pindex[indexStart + k];
-			auto curCount = static_cast<unsigned int>(curStart - prevStart);
-			memcpy(buf + (4 * k), &curCount, 4);
-			prevStart = curStart;
-		}
-	}
-	bytesSent += (int)curCountBytes * i;
-	bufSize -= (int)curCountBytes * i;
-	buf += curCountBytes * i;
+  // output array of counts
+  prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
+  if(curCountBytes == 1) {
+    for(int k = 0; k < i; ++k) {
+      INDEX curStart = pindex[indexStart + k];
+      auto curCount = static_cast<unsigned char>(curStart - prevStart);
+      memcpy(buf + k, &curCount, 1);
+      prevStart = curStart;
+    }
+  } else if(curCountBytes == 2) {
+    for(int k = 0; k < i; ++k) {
+      INDEX curStart = pindex[indexStart + k];
+      auto curCount = static_cast<unsigned short>(curStart - prevStart);
+      memcpy(buf + (2 * k), &curCount, 2);
+      prevStart = curStart;
+    }
+  } else {
+    for(int k = 0; k < i; ++k) {
+      INDEX curStart = pindex[indexStart + k];
+      auto curCount = static_cast<unsigned int>(curStart - prevStart);
+      memcpy(buf + (4 * k), &curCount, 4);
+      prevStart = curStart;
+    }
+  }
+  bytesSent += (int)curCountBytes * i;
+  bufSize -= (int)curCountBytes * i;
+  buf += curCountBytes * i;
 
-	//output array of data
-	prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
-	INDEX curStart = indexStart + numElement - static_cast<int>(offset > 0);
-	INDEX counts = (curStart == 0 ? 0 : pindex[curStart - 1]) + partial - prevStart;
-	int bytes = value_->serialize(buf, bufSize, prevStart, 0, counts, tmpNumElement, tmpPartial);
-	//assert(bytes == count * baseUnitLength_);
-	return bytesSent + bytes;
+  // output array of data
+  prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
+  INDEX curStart = indexStart + numElement - static_cast<int>(offset > 0);
+  INDEX counts = (curStart == 0 ? 0 : pindex[curStart - 1]) + partial - prevStart;
+  int bytes = value_->serialize(buf, bufSize, prevStart, 0, counts, tmpNumElement, tmpPartial);
+  // assert(bytes == count * baseUnitLength_);
+  return bytesSent + bytes;
 }
-
 
 ConstantSP FastArrayVector::getValue() const {
-	ConstantSP newIndex = Util::createIndexVector(size_, true);
-	newIndex->assign((ConstantSP)index_);
-	return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->getValue()));
+  ConstantSP newIndex = Util::createIndexVector(size_, true);
+  newIndex->assign((ConstantSP)index_);
+  return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->getValue()));
 }
 
 ConstantSP FastArrayVector::getValue(INDEX capacity) const {
-	ConstantSP newIndex = Util::createIndexVector(size_, true, capacity);
-	newIndex->assign((ConstantSP)index_);
-	return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->getValue()));
+  ConstantSP newIndex = Util::createIndexVector(size_, true, capacity);
+  newIndex->assign((ConstantSP)index_);
+  return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->getValue()));
 }
 
 ConstantSP FastArrayVector::getInstance(INDEX sz) const {
-	INDEX *pindex = index_->getIndexArray();
-	auto *indexArray = new INDEX[sz];
-	memcpy(indexArray, pindex, sz * sizeof(INDEX));
-	VectorSP index = Util::createVector(DT_INT, sz, sz, true, 0, indexArray);
+  INDEX* pindex = index_->getIndexArray();
+  auto* indexArray = new INDEX[sz];
+  memcpy(indexArray, pindex, sz * sizeof(INDEX));
+  VectorSP index = Util::createVector(DT_INT, sz, sz, true, 0, indexArray);
 
-	INDEX valueSize = 0;
-	if(sz>0)
-		valueSize = pindex[sz - 1];
-	INDEX capacity = (std::max)(1, valueSize);
-	INDEX bytes = capacity * static_cast<int>(value_->getUnitLength());
-	auto* data = new unsigned char[bytes];
-	VectorSP value = Util::createVector(baseType_, valueSize, capacity, true, value_->getExtraParamForType(), data);
-	return new FastArrayVector(index, value);
+  INDEX valueSize = 0;
+  if(sz > 0) valueSize = pindex[sz - 1];
+  INDEX capacity = (std::max)(1, valueSize);
+  INDEX bytes = capacity * static_cast<int>(value_->getUnitLength());
+  auto* data = new unsigned char[bytes];
+  VectorSP value = Util::createVector(baseType_, valueSize, capacity, true, value_->getExtraParamForType(), data);
+  return new FastArrayVector(index, value);
 }
 
-int FastArrayVector::serializeVariableLength(char* buf, int bufSize, INDEX indexStart, int offset, int targetNumElement, int& numElement, int& partial) const {
-	std::ignore = buf;
-	std::ignore = bufSize;
-	std::ignore = indexStart;
-	std::ignore = offset;
-	std::ignore = targetNumElement;
-	std::ignore = numElement;
-	std::ignore = partial;
-	return 0;
+int FastArrayVector::serializeVariableLength(char* buf, int bufSize, INDEX indexStart, int offset, int targetNumElement, int& numElement,
+                                             int& partial) const {
+  std::ignore = buf;
+  std::ignore = bufSize;
+  std::ignore = indexStart;
+  std::ignore = offset;
+  std::ignore = targetNumElement;
+  std::ignore = numElement;
+  std::ignore = partial;
+  return 0;
 }
 
 IO_ERR FastArrayVector::deserialize(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement) {
-	IO_ERR ret;
-	if(baseUnitLength_ > 0)
-		ret = deserializeFixedLength(in, indexStart, targetNumElement, numElement);
-	else
-		ret = deserializeVariableLength(in, indexStart, targetNumElement, numElement);
-	return ret;
+  IO_ERR ret;
+  if(baseUnitLength_ > 0)
+    ret = deserializeFixedLength(in, indexStart, targetNumElement, numElement);
+  else
+    ret = deserializeVariableLength(in, indexStart, targetNumElement, numElement);
+  return ret;
 }
 
-INDEX FastArrayVector::lowerBoundIndex(INDEX* data, INDEX sz, INDEX start, INDEX value) const{
-	INDEX counts = sz - start;
-	while (counts > 0){
-		INDEX step = counts / 2;
-		INDEX index = start + step;
-		if (data[index]<value) {
-			start = index + 1;
-			counts -= step + 1;
-		} else counts = step;
-	}
-	return start;
+INDEX FastArrayVector::lowerBoundIndex(INDEX* data, INDEX sz, INDEX start, INDEX value) const {
+  INDEX counts = sz - start;
+  while(counts > 0) {
+    INDEX step = counts / 2;
+    INDEX index = start + step;
+    if(data[index] < value) {
+      start = index + 1;
+      counts -= step + 1;
+    } else
+      counts = step;
+  }
+  return start;
 }
 
 bool FastArrayVector::set(INDEX index, const ConstantSP& value) {
-	ConstantSP valueVec;
-	DATA_FORM dform = value->getForm();
-	if (dform == DF_VECTOR) {
-		DATA_TYPE type = value->getType();
-		if (type >= ARRAY_TYPE_BASE) {
-			if (value->size() != 1)
-				return false;
-			//array vector;
-			VectorSP vec(value);
-			if (vec->getVectorType() != VECTOR_TYPE::ARRAYVECTOR)
-				vec = (VectorSP)value->getValue();
-			valueVec = ((FastArrayVector*)vec.get())->getSourceValue();
-		} else if (type == DT_ANY) {
-			if (value->size() != 1)
-				return false;
-			valueVec = value->get(0);
-		} else {
-			valueVec = value;
-		}
-	}
-	else if(dform == DF_SCALAR){
-		valueVec = Util::createVector(value->getType(), 1);
-		valueVec->set(0, value);
-	}
-	else {
-		return false;
-	}
-	if (valueVec->getType() != baseType_) {
-		return false;
-	}
-	if (index >= index_->rows()) {
-		throw RuntimeException("Index value is out of range "+std::to_string(index_->rows()));
-		return false;
-	}
-	INDEX* pdestIndex = index_->getIndexArray();
-	INDEX valueStartIndex = index == 0 ? 0 : pdestIndex[index - 1];
-	INDEX valueCellCount = pdestIndex[index] - valueStartIndex;
-	INDEX setValueCount = valueVec->size();
-	if (setValueCount != valueCellCount) {
-		INDEX newSize = valueSize_ - valueCellCount + setValueCount;
-		auto newValue = (VectorSP)value_->getSubVector(0, valueStartIndex, newSize);
-		newValue->append(valueVec);
-		INDEX lastPartSize = valueSize_ - pdestIndex[index];
-		if (lastPartSize > 0) {
-			newValue->append(value_->getSubVector(pdestIndex[index], lastPartSize));
-		}
-		INDEX diff = setValueCount - valueCellCount;
-		for (INDEX i = index; i < size_; i++) {
-			pdestIndex[i] += diff;
-		}
-		valueSize_ += diff;
-		value_ = newValue;
-	}
-	else {
-		value_->fill(valueStartIndex, valueCellCount, valueVec);
-	}
-	if (!containNull_ && valueVec->getNullFlag())
-		containNull_ = true;
-	return true;
+  ConstantSP valueVec;
+  DATA_FORM dform = value->getForm();
+  if(dform == DF_VECTOR) {
+    DATA_TYPE type = value->getType();
+    if(type >= ARRAY_TYPE_BASE) {
+      if(value->size() != 1) return false;
+      // array vector;
+      VectorSP vec(value);
+      if(vec->getVectorType() != VECTOR_TYPE::ARRAYVECTOR) vec = (VectorSP)value->getValue();
+      valueVec = ((FastArrayVector*)vec.get())->getSourceValue();
+    } else if(type == DT_ANY) {
+      if(value->size() != 1) return false;
+      valueVec = value->get(0);
+    } else {
+      valueVec = value;
+    }
+  } else if(dform == DF_SCALAR) {
+    valueVec = Util::createVector(value->getType(), 1);
+    valueVec->set(0, value);
+  } else {
+    return false;
+  }
+  if(valueVec->getType() != baseType_) {
+    return false;
+  }
+  if(index >= index_->rows()) {
+    throw RuntimeException("Index value is out of range " + std::to_string(index_->rows()));
+    return false;
+  }
+  INDEX* pdestIndex = index_->getIndexArray();
+  INDEX valueStartIndex = index == 0 ? 0 : pdestIndex[index - 1];
+  INDEX valueCellCount = pdestIndex[index] - valueStartIndex;
+  INDEX setValueCount = valueVec->size();
+  if(setValueCount != valueCellCount) {
+    INDEX newSize = valueSize_ - valueCellCount + setValueCount;
+    auto newValue = (VectorSP)value_->getSubVector(0, valueStartIndex, newSize);
+    newValue->append(valueVec);
+    INDEX lastPartSize = valueSize_ - pdestIndex[index];
+    if(lastPartSize > 0) {
+      newValue->append(value_->getSubVector(pdestIndex[index], lastPartSize));
+    }
+    INDEX diff = setValueCount - valueCellCount;
+    for(INDEX i = index; i < size_; i++) {
+      pdestIndex[i] += diff;
+    }
+    valueSize_ += diff;
+    value_ = newValue;
+  } else {
+    value_->fill(valueStartIndex, valueCellCount, valueVec);
+  }
+  if(!containNull_ && valueVec->getNullFlag()) containNull_ = true;
+  return true;
 }
 
 bool FastArrayVector::set(const ConstantSP& index, const ConstantSP& value) {
-	INDEX rowNum = index->size();
-	if (rowNum == 1)
-		return set(index->getInt(), value);
+  INDEX rowNum = index->size();
+  if(rowNum == 1) return set(index->getInt(), value);
 
-	DATA_TYPE type = value->getType();
-	if (!value->isArray() || (type != DT_ANY && type < ARRAY_TYPE_BASE) || value->size() != rowNum)
-		return false;
+  DATA_TYPE type = value->getType();
+  if(!value->isArray() || (type != DT_ANY && type < ARRAY_TYPE_BASE) || value->size() != rowNum) return false;
 
-	INDEX* pdestIndex = index_->getIndexArray();
-	INDEX valueCellCount = 0;
-	INDEX start = 0;
-	INDEX buf[Util::BUF_SIZE];
+  INDEX* pdestIndex = index_->getIndexArray();
+  INDEX valueCellCount = 0;
+  INDEX start = 0;
+  INDEX buf[Util::BUF_SIZE];
 
-	if (type >= ARRAY_TYPE_BASE) {
-		VectorSP vec(value);
-		if (vec->getVectorType() != VECTOR_TYPE::ARRAYVECTOR)
-			vec = (VectorSP)value->getValue();
-		INDEX* psourceIndex = ((FastArrayVector*)vec.get())->getSourceIndex()->getIndexArray();
-		INDEX sourcePrevStart = 0;
+  if(type >= ARRAY_TYPE_BASE) {
+    VectorSP vec(value);
+    if(vec->getVectorType() != VECTOR_TYPE::ARRAYVECTOR) vec = (VectorSP)value->getValue();
+    INDEX* psourceIndex = ((FastArrayVector*)vec.get())->getSourceIndex()->getIndexArray();
+    INDEX sourcePrevStart = 0;
 
-		while (start < rowNum) {
-			int counts = std::min(rowNum - start, Util::BUF_SIZE);
-			const INDEX* pbuf = index->getIndexConst(start, counts, buf);
-			for (int i = 0; i<counts; ++i) {
-				int sourceLen = psourceIndex[start + i] - sourcePrevStart;
-				sourcePrevStart = psourceIndex[start + i];
+    while(start < rowNum) {
+      int counts = std::min(rowNum - start, Util::BUF_SIZE);
+      const INDEX* pbuf = index->getIndexConst(start, counts, buf);
+      for(int i = 0; i < counts; ++i) {
+        int sourceLen = psourceIndex[start + i] - sourcePrevStart;
+        sourcePrevStart = psourceIndex[start + i];
 
-				int destIndex = pbuf[i];
-				int destLen = pdestIndex[destIndex] - (destIndex == 0 ? 0 : pdestIndex[destIndex - 1]);
-				if (sourceLen != destLen)
-					return false;
-				valueCellCount += destLen;
-			}
-			start += counts;
-		}
+        int destIndex = pbuf[i];
+        int destLen = pdestIndex[destIndex] - (destIndex == 0 ? 0 : pdestIndex[destIndex - 1]);
+        if(sourceLen != destLen) return false;
+        valueCellCount += destLen;
+      }
+      start += counts;
+    }
 
-		ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
-		INDEX* pvalueIndex = valueIndex->getIndexArray();
-		INDEX cursor = 0;
-		start = 0;
-		while (start < rowNum) {
-			int counts = std::min(rowNum - start, Util::BUF_SIZE);
-			const INDEX* pbuf = index->getIndexConst(start, counts, buf);
-			for (int i = 0; i<counts; ++i) {
-				INDEX destIndex = pbuf[i];
-				INDEX valueStart = destIndex == 0 ? 0 : pdestIndex[destIndex - 1];
-				int destLen = pdestIndex[destIndex] - valueStart;
-				for (int j = 0; j<destLen; ++j)
-					pvalueIndex[cursor++] = valueStart++;
-			}
-			start += counts;
-		}
+    ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
+    INDEX* pvalueIndex = valueIndex->getIndexArray();
+    INDEX cursor = 0;
+    start = 0;
+    while(start < rowNum) {
+      int counts = std::min(rowNum - start, Util::BUF_SIZE);
+      const INDEX* pbuf = index->getIndexConst(start, counts, buf);
+      for(int i = 0; i < counts; ++i) {
+        INDEX destIndex = pbuf[i];
+        INDEX valueStart = destIndex == 0 ? 0 : pdestIndex[destIndex - 1];
+        int destLen = pdestIndex[destIndex] - valueStart;
+        for(int j = 0; j < destLen; ++j) pvalueIndex[cursor++] = valueStart++;
+      }
+      start += counts;
+    }
 
-		ConstantSP valueVec = ((FastArrayVector*)vec.get())->getSourceValue();
-		if (!((Constant*)value_.get())->set(valueIndex, valueVec))
-			return false;
-		if (!containNull_ && value->getNullFlag())
-			containNull_ = true;
-	}
-	else {
-		while (start < rowNum) {
-			int counts = std::min(rowNum - start, Util::BUF_SIZE);
-			const INDEX* pbuf = index->getIndexConst(start, counts, buf);
-			for (int i = 0; i<counts; ++i) {
-				int destIndex = pbuf[i];
-				int destLen = pdestIndex[destIndex] - (destIndex == 0 ? 0 : pdestIndex[destIndex - 1]);
-				if (value->get(start + i)->size() != destLen)
-					return false;
-			}
-			start += counts;
-		}
+    ConstantSP valueVec = ((FastArrayVector*)vec.get())->getSourceValue();
+    if(!((Constant*)value_.get())->set(valueIndex, valueVec)) return false;
+    if(!containNull_ && value->getNullFlag()) containNull_ = true;
+  } else {
+    while(start < rowNum) {
+      int counts = std::min(rowNum - start, Util::BUF_SIZE);
+      const INDEX* pbuf = index->getIndexConst(start, counts, buf);
+      for(int i = 0; i < counts; ++i) {
+        int destIndex = pbuf[i];
+        int destLen = pdestIndex[destIndex] - (destIndex == 0 ? 0 : pdestIndex[destIndex - 1]);
+        if(value->get(start + i)->size() != destLen) return false;
+      }
+      start += counts;
+    }
 
-		start = 0;
-		while (start < rowNum) {
-			int counts = std::min(rowNum - start, Util::BUF_SIZE);
-			const INDEX* pbuf = index->getIndexConst(start, counts, buf);
-			for (int i = 0; i<counts; ++i) {
-				int destIndex = pbuf[i];
-				INDEX valueStart = destIndex == 0 ? 0 : pdestIndex[destIndex - 1];
-				INDEX destLen = pdestIndex[destIndex] - valueStart;
-				ConstantSP curValue = value->get(start + i);
-				value_->fill(valueStart, destLen, curValue);
-				if (!containNull_ && curValue->getNullFlag())
-					containNull_ = true;
-			}
-			start += counts;
-		}
-	}
-	return true;
+    start = 0;
+    while(start < rowNum) {
+      int counts = std::min(rowNum - start, Util::BUF_SIZE);
+      const INDEX* pbuf = index->getIndexConst(start, counts, buf);
+      for(int i = 0; i < counts; ++i) {
+        int destIndex = pbuf[i];
+        INDEX valueStart = destIndex == 0 ? 0 : pdestIndex[destIndex - 1];
+        INDEX destLen = pdestIndex[destIndex] - valueStart;
+        ConstantSP curValue = value->get(start + i);
+        value_->fill(valueStart, destLen, curValue);
+        if(!containNull_ && curValue->getNullFlag()) containNull_ = true;
+      }
+      start += counts;
+    }
+  }
+  return true;
 }
 
 void FastArrayVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
-	if (UNLIKELY(length == 0))
-		return;
-	if (length == 1) {
-		if (!set(start, value)) {
-			throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
-		}
-		return;
-	}
-	INDEX* pindex = index_->getIndexArray();
-	//if (pindex[start] >= 0)
-	//	throw RuntimeException("Can't fill an array vector which has been filled.");
-	INDEX vStart = start == 0 ? 0 : pindex[start - 1];
-	if (size_ < start + length)
-		throw RuntimeException("The length of the array vector was shorter than expected.");
-	if (value->isScalar()) {
-		INDEX coveredSize = 0;
-		for(INDEX i = 0; i < length; ++i){
-			INDEX index = start + i;
-			coveredSize += (index == 0 ? pindex[index] : (pindex[index] - pindex[index - 1]));
-		}
-		INDEX newValueSize = valueSize_ - coveredSize + length;
-		auto newValue = (VectorSP)value_->getSubVector(0, vStart, newValueSize);
-		newValue->append(value, length);
-		INDEX indexNextToCovered =  pindex[start + length - 1];
-		INDEX lastPartSize = valueSize_ - indexNextToCovered;
-		if (lastPartSize > 0) {
-			newValue->append(value_->getSubVector(indexNextToCovered, lastPartSize));
-		}
-		for(INDEX i = 0; i < length; ++i){
-			INDEX index = start + i;
-			pindex[index] = index == 0 ? 1 : pindex[index - 1] + 1;
-		}
-		INDEX diff = length - coveredSize;
-		for (INDEX i = start + length; i < size_; ++i) {
-			pindex[i] += diff;
-		}
-		valueSize_ += diff;
-		value_ = newValue;
-	}
-	else if (value->isTuple()) {
-		if (length > value->rows()) {
-			throw RuntimeException("The length of the any vector was shorter than expected.");
-		}
-		INDEX oldIndexNextToCovered =  pindex[start + length - 1];
-		auto newValue = (VectorSP)value_->getSubVector(0, vStart);
-		for(INDEX i = 0; i < length; ++i){
-			ConstantSP element = value->get(i);
-			INDEX elementLength = element->size();
-			if(elementLength == 0){
-				element = Constant::void_;
-			}
-			newValue->append(element);
-			INDEX index = start + i;
-			pindex[index] = index == 0 ? elementLength : pindex[index - 1] + elementLength;
-			if (!containNull_ && elementLength == 1 && element->isNull(0)){
-				containNull_ = true;
-			}
-		}
-		INDEX newIndexNextToCovered =  pindex[start + length - 1];
-		INDEX lastPartSize = valueSize_ - oldIndexNextToCovered;
-		if (lastPartSize > 0) {
-			newValue->append(value_->getSubVector(oldIndexNextToCovered, lastPartSize));
-		}
-		INDEX diff = newIndexNextToCovered - oldIndexNextToCovered;
-		for (INDEX i = start + length; i < size_; ++i) {
-			pindex[i] += diff;
-		}
-		valueSize_ += diff;
-		value_ = newValue;
-	}
-	else if (value->isArray()) {
-		if (length > value->rows()) {
-			throw RuntimeException("The length of the copy array vector was shorter than expected.");
-		}
-		if (UNLIKELY(((Vector*)value.get())->getVectorType() != VECTOR_TYPE::ARRAYVECTOR))
-			throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
-		VectorSP tuple = Util::createVector(DT_ANY, 0, length);
-		for(INDEX i = 0; i < length; ++i){
-			tuple->append(value->get(i));
-		}
-		fill(start, length, (ConstantSP)tuple);
-	}
-	else
-		throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
+  if(UNLIKELY(length == 0)) return;
+  if(length == 1) {
+    if(!set(start, value)) {
+      throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
+    }
+    return;
+  }
+  INDEX* pindex = index_->getIndexArray();
+  // if (pindex[start] >= 0)
+  //	throw RuntimeException("Can't fill an array vector which has been filled.");
+  INDEX vStart = start == 0 ? 0 : pindex[start - 1];
+  if(size_ < start + length) throw RuntimeException("The length of the array vector was shorter than expected.");
+  if(value->isScalar()) {
+    INDEX coveredSize = 0;
+    for(INDEX i = 0; i < length; ++i) {
+      INDEX index = start + i;
+      coveredSize += (index == 0 ? pindex[index] : (pindex[index] - pindex[index - 1]));
+    }
+    INDEX newValueSize = valueSize_ - coveredSize + length;
+    auto newValue = (VectorSP)value_->getSubVector(0, vStart, newValueSize);
+    newValue->append(value, length);
+    INDEX indexNextToCovered = pindex[start + length - 1];
+    INDEX lastPartSize = valueSize_ - indexNextToCovered;
+    if(lastPartSize > 0) {
+      newValue->append(value_->getSubVector(indexNextToCovered, lastPartSize));
+    }
+    for(INDEX i = 0; i < length; ++i) {
+      INDEX index = start + i;
+      pindex[index] = index == 0 ? 1 : pindex[index - 1] + 1;
+    }
+    INDEX diff = length - coveredSize;
+    for(INDEX i = start + length; i < size_; ++i) {
+      pindex[i] += diff;
+    }
+    valueSize_ += diff;
+    value_ = newValue;
+  } else if(value->isTuple()) {
+    if(length > value->rows()) {
+      throw RuntimeException("The length of the any vector was shorter than expected.");
+    }
+    INDEX oldIndexNextToCovered = pindex[start + length - 1];
+    auto newValue = (VectorSP)value_->getSubVector(0, vStart);
+    for(INDEX i = 0; i < length; ++i) {
+      ConstantSP element = value->get(i);
+      INDEX elementLength = element->size();
+      if(elementLength == 0) {
+        element = Constant::void_;
+      }
+      newValue->append(element);
+      INDEX index = start + i;
+      pindex[index] = index == 0 ? elementLength : pindex[index - 1] + elementLength;
+      if(!containNull_ && elementLength == 1 && element->isNull(0)) {
+        containNull_ = true;
+      }
+    }
+    INDEX newIndexNextToCovered = pindex[start + length - 1];
+    INDEX lastPartSize = valueSize_ - oldIndexNextToCovered;
+    if(lastPartSize > 0) {
+      newValue->append(value_->getSubVector(oldIndexNextToCovered, lastPartSize));
+    }
+    INDEX diff = newIndexNextToCovered - oldIndexNextToCovered;
+    for(INDEX i = start + length; i < size_; ++i) {
+      pindex[i] += diff;
+    }
+    valueSize_ += diff;
+    value_ = newValue;
+  } else if(value->isArray()) {
+    if(length > value->rows()) {
+      throw RuntimeException("The length of the copy array vector was shorter than expected.");
+    }
+    if(UNLIKELY(((Vector*)value.get())->getVectorType() != VECTOR_TYPE::ARRAYVECTOR))
+      throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
+    VectorSP tuple = Util::createVector(DT_ANY, 0, length);
+    for(INDEX i = 0; i < length; ++i) {
+      tuple->append(value->get(i));
+    }
+    fill(start, length, (ConstantSP)tuple);
+  } else
+    throw RuntimeException("The value to fill must be a scalar, a tuple or an array vector.");
 }
 
 IO_ERR FastArrayVector::deserializeFixedLength(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement) {
-	IO_ERR ret = OK;
-	numElement = 0;
+  IO_ERR ret = OK;
+  numElement = 0;
 
-	while(targetNumElement > 0){
-		/*
-		 * Read the row count, bytes of count and reserved byte
-		*/
-		if(stage_ == 0){
-			ret = in->bufferBytes(4);
-			if(ret != OK)
-				return ret;
-			in->read(rowCount_);
-			in->read(countBytes_);
-			char reserved;
-			in->read(reserved);
-			if(countBytes_ < 1 || countBytes_ > 4)
-				return INVALIDDATA;
-			rowsRead_ = 0;
-			stage_ = 1;
-		}
-		/*
-		 * Read the count of each row and update `index_`
-		*/
-		// index_ = Util::createVector(DT_INT, rowCount_, rowCount_);
-		INDEX* pindex = index_->getIndexArray();
-		if(stage_ == 1){
-			INDEX prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
-			while(rowsRead_ < rowCount_) {
-				int counts = std::min(rowCount_ - rowsRead_, 2048/countBytes_);
-				ret = in->bufferBytes(counts * countBytes_);
-				if(ret != OK)
-					return ret;
-				if(countBytes_ == 1){
-					unsigned char curRowCount;
-					for(int i=0; i<counts; ++i){
-						in->read(curRowCount);
-						prevStart += curRowCount;
-						pindex[indexStart + rowsRead_ + i] = prevStart;
-					}
-				}
-				else if(countBytes_ == 2){
-					unsigned short curRowCount;
-					for(int i=0; i<counts; ++i){
-						in->read(curRowCount);
-						prevStart += curRowCount;
-						pindex[indexStart + rowsRead_ + i] = prevStart;
-					}
-				}
-				else {
-					unsigned int curRowCount;
-					for(int i=0; i<counts; ++i){
-						in->read(curRowCount);
-						prevStart += curRowCount;
-						pindex[indexStart + rowsRead_ + i] = prevStart;
-					}
-				}
-				rowsRead_ += counts;
-			}
-			stage_ = 2;
-			rowsRead_ = 0;
-		}
-		/*
-		 * Read the array data
-		*/
-		if(stage_ == 2){
-			INDEX prevStart = (indexStart == 0 ? 0 : pindex[indexStart - 1]);
-			// cell count of this row
-			int valueCellCount = pindex[indexStart + rowCount_ - rowsRead_ - 1] - prevStart;
-			int tmpNumElement;
-			// `value_` need expand
-			if(valueSize_ < prevStart + valueCellCount){
-				// change the size of value_
-				value_->resize(prevStart + valueCellCount);
-				valueSize_ = value_->size();
-			}
-			ret = value_->deserialize(in, prevStart, valueCellCount, tmpNumElement);
-			valueSize_ = value_->size();
-			if(ret != OK && ret != NODATA)
-				return ret;
-			if(tmpNumElement == valueCellCount){
-				numElement += rowCount_ - rowsRead_;
-				stage_ = 0;
-				targetNumElement -= rowCount_ - rowsRead_;
-				indexStart += rowCount_ - rowsRead_;
-			}
-			else{
-				//use binary search to find
-				INDEX index = lowerBoundIndex(pindex, indexStart + rowCount_ - rowsRead_, indexStart,  prevStart + tmpNumElement);
-				if(pindex[index] == prevStart + tmpNumElement){
-					numElement += index - indexStart + 1;
-					rowsRead_ += index - indexStart + 1;
-				}
-				else{
-					numElement += index - indexStart;
-					rowsRead_ += index - indexStart;
-				}
-				return ret;
-			}
-		}
-	}
-	return OK;
+  while(targetNumElement > 0) {
+    /*
+     * Read the row count, bytes of count and reserved byte
+     */
+    if(stage_ == 0) {
+      ret = in->bufferBytes(4);
+      if(ret != OK) return ret;
+      in->read(rowCount_);
+      in->read(countBytes_);
+      char reserved;
+      in->read(reserved);
+      if(countBytes_ < 1 || countBytes_ > 4) return INVALIDDATA;
+      rowsRead_ = 0;
+      stage_ = 1;
+    }
+    /*
+     * Read the count of each row and update `index_`
+     */
+    // index_ = Util::createVector(DT_INT, rowCount_, rowCount_);
+    INDEX* pindex = index_->getIndexArray();
+    if(stage_ == 1) {
+      INDEX prevStart = indexStart == 0 ? 0 : pindex[indexStart - 1];
+      while(rowsRead_ < rowCount_) {
+        int counts = std::min(rowCount_ - rowsRead_, 2048 / countBytes_);
+        ret = in->bufferBytes(counts * countBytes_);
+        if(ret != OK) return ret;
+        if(countBytes_ == 1) {
+          unsigned char curRowCount;
+          for(int i = 0; i < counts; ++i) {
+            in->read(curRowCount);
+            prevStart += curRowCount;
+            pindex[indexStart + rowsRead_ + i] = prevStart;
+          }
+        } else if(countBytes_ == 2) {
+          unsigned short curRowCount;
+          for(int i = 0; i < counts; ++i) {
+            in->read(curRowCount);
+            prevStart += curRowCount;
+            pindex[indexStart + rowsRead_ + i] = prevStart;
+          }
+        } else {
+          unsigned int curRowCount;
+          for(int i = 0; i < counts; ++i) {
+            in->read(curRowCount);
+            prevStart += curRowCount;
+            pindex[indexStart + rowsRead_ + i] = prevStart;
+          }
+        }
+        rowsRead_ += counts;
+      }
+      stage_ = 2;
+      rowsRead_ = 0;
+    }
+    /*
+     * Read the array data
+     */
+    if(stage_ == 2) {
+      INDEX prevStart = (indexStart == 0 ? 0 : pindex[indexStart - 1]);
+      // cell count of this row
+      int valueCellCount = pindex[indexStart + rowCount_ - rowsRead_ - 1] - prevStart;
+      int tmpNumElement;
+      // `value_` need expand
+      if(valueSize_ < prevStart + valueCellCount) {
+        // change the size of value_
+        value_->resize(prevStart + valueCellCount);
+        valueSize_ = value_->size();
+      }
+      ret = value_->deserialize(in, prevStart, valueCellCount, tmpNumElement);
+      valueSize_ = value_->size();
+      if(ret != OK && ret != NODATA) return ret;
+      if(tmpNumElement == valueCellCount) {
+        numElement += rowCount_ - rowsRead_;
+        stage_ = 0;
+        targetNumElement -= rowCount_ - rowsRead_;
+        indexStart += rowCount_ - rowsRead_;
+      } else {
+        // use binary search to find
+        INDEX index = lowerBoundIndex(pindex, indexStart + rowCount_ - rowsRead_, indexStart, prevStart + tmpNumElement);
+        if(pindex[index] == prevStart + tmpNumElement) {
+          numElement += index - indexStart + 1;
+          rowsRead_ += index - indexStart + 1;
+        } else {
+          numElement += index - indexStart;
+          rowsRead_ += index - indexStart;
+        }
+        return ret;
+      }
+    }
+  }
+  return OK;
 }
 
 IO_ERR FastArrayVector::deserializeVariableLength(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement) {
-	std::ignore = in;
-	std::ignore = indexStart;
-	std::ignore = targetNumElement;
-	std::ignore = numElement;
-	return OK;
+  std::ignore = in;
+  std::ignore = indexStart;
+  std::ignore = targetNumElement;
+  std::ignore = numElement;
+  return OK;
 }
 
 std::string FastArrayVector::getString(INDEX index) const {
-	INDEX* pindex = index_->getIndexArray();
-	INDEX start = index == 0 ? 0 : pindex[index - 1];
-	INDEX counts = pindex[index] - start;
-	if(counts <= 0 || start < 0)
-		return "[]";
-	std::string str("[");
-	int len = std::min(3, counts);
-	str.append(value_->getString(start));
-	for(int i = 1; i < len; ++i){
-		str.append(",");
-		str.append(value_->getString(start + i));
-	}
-	if(counts > len)
-		str.append("...");
-	str.append("]");
-	return str;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX start = index == 0 ? 0 : pindex[index - 1];
+  INDEX counts = pindex[index] - start;
+  if(counts <= 0 || start < 0) return "[]";
+  std::string str("[");
+  int len = std::min(3, counts);
+  str.append(value_->getString(start));
+  for(int i = 1; i < len; ++i) {
+    str.append(",");
+    str.append(value_->getString(start + i));
+  }
+  if(counts > len) str.append("...");
+  str.append("]");
+  return str;
 }
 
 std::string FastArrayVector::getString() const {
-	std::string str("[");
-	int len = (std::min)(Util::DISPLAY_ROWS, size_);
-	int maxLen = Util::DISPLAY_ROWS, lastStart = 0;
-	INDEX *pindex = index_->getIndexArray();
-	for (int i = 0; i < len; i++) {
-		if (i != 0) {
-			str.append(",");
-		}
-		str.append("[");
-		for (int j = 0; j < maxLen && j < pindex[i] - lastStart; j++) {
-			if (j != 0) {
-				str.append(",");
-			}
-			str.append(value_->getString(lastStart + j));
-		}
-		if (maxLen < pindex[i] - lastStart) {
-			str.append("...]");
-		} else {
-			str.append("]");
-		}
-		lastStart = pindex[i];
-	}
-	if (size_ > len)
-		str.append("...");
-	str.append("]");
+  std::string str("[");
+  int len = (std::min)(Util::DISPLAY_ROWS, size_);
+  int maxLen = Util::DISPLAY_ROWS, lastStart = 0;
+  INDEX* pindex = index_->getIndexArray();
+  for(int i = 0; i < len; i++) {
+    if(i != 0) {
+      str.append(",");
+    }
+    str.append("[");
+    for(int j = 0; j < maxLen && j < pindex[i] - lastStart; j++) {
+      if(j != 0) {
+        str.append(",");
+      }
+      str.append(value_->getString(lastStart + j));
+    }
+    if(maxLen < pindex[i] - lastStart) {
+      str.append("...]");
+    } else {
+      str.append("]");
+    }
+    lastStart = pindex[i];
+  }
+  if(size_ > len) str.append("...");
+  str.append("]");
 
-	return str;
+  return str;
 }
 
 void FastArrayVector::clear() {
-	index_->clear();
-	value_->clear();
-	size_ = 0;
-	valueSize_ = 0;
-	containNull_ = false;
-	stage_ = 0;
+  index_->clear();
+  value_->clear();
+  size_ = 0;
+  valueSize_ = 0;
+  containNull_ = false;
+  stage_ = 0;
 }
 
 void FastArrayVector::reverse(INDEX start, INDEX length) {
-	if(UNLIKELY(length == 0))
-		return;
+  if(UNLIKELY(length == 0)) return;
 
-	INDEX* pindex = index_->getIndexArray();
-	INDEX valueStart = start == 0 ? 0 : pindex[start - 1];
-	INDEX valueCellCount = pindex[start + length - 1] - valueStart;
-	ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
-	INDEX* pvalueIndex = valueIndex->getIndexArray();
-	INDEX cursor = valueStart + valueCellCount;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX valueStart = start == 0 ? 0 : pindex[start - 1];
+  INDEX valueCellCount = pindex[start + length - 1] - valueStart;
+  ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
+  INDEX* pvalueIndex = valueIndex->getIndexArray();
+  INDEX cursor = valueStart + valueCellCount;
 
-	INDEX end = start + length;
-	while(start < end){
-		INDEX valueEnd = pindex[start];
-		int curCellCount = valueEnd - valueStart;
-		cursor -= curCellCount;
-		for(int j=0; j<curCellCount; ++j)
-			pvalueIndex[cursor + j] = valueStart + j;
-		valueStart = valueEnd;
-		++start;
-	}
-	if(length == size_)
-		value_ = (VectorSP)(((Constant*)value_.get())->get(valueIndex));
-	else
-		value_->fill(valueStart, valueCellCount, ((Constant*)value_.get())->get(valueIndex));
+  INDEX end = start + length;
+  while(start < end) {
+    INDEX valueEnd = pindex[start];
+    int curCellCount = valueEnd - valueStart;
+    cursor -= curCellCount;
+    for(int j = 0; j < curCellCount; ++j) pvalueIndex[cursor + j] = valueStart + j;
+    valueStart = valueEnd;
+    ++start;
+  }
+  if(length == size_)
+    value_ = (VectorSP)(((Constant*)value_.get())->get(valueIndex));
+  else
+    value_->fill(valueStart, valueCellCount, ((Constant*)value_.get())->get(valueIndex));
 
-	start = end - length;
-	valueStart = start == 0 ? 0 : pindex[start - 1];
-	INDEX newValueStart = valueStart;
-	INDEX valueEnd = valueStart + valueCellCount;
-	INDEX newValueEnd = valueEnd;
-	INDEX half = length / 2;
-	for(int i=0; i<half; ++i){
-		INDEX frontCount = pindex[start+i] - valueStart;
-		INDEX backCount = valueEnd - pindex[end - i - 2];
-		INDEX tmp = frontCount;
-		frontCount = backCount;
-		backCount = tmp;
+  start = end - length;
+  valueStart = start == 0 ? 0 : pindex[start - 1];
+  INDEX newValueStart = valueStart;
+  INDEX valueEnd = valueStart + valueCellCount;
+  INDEX newValueEnd = valueEnd;
+  INDEX half = length / 2;
+  for(int i = 0; i < half; ++i) {
+    INDEX frontCount = pindex[start + i] - valueStart;
+    INDEX backCount = valueEnd - pindex[end - i - 2];
+    INDEX tmp = frontCount;
+    frontCount = backCount;
+    backCount = tmp;
 
-		valueStart = pindex[start + i];
-		pindex[start + i] = newValueStart + frontCount;
-		newValueStart += frontCount;
+    valueStart = pindex[start + i];
+    pindex[start + i] = newValueStart + frontCount;
+    newValueStart += frontCount;
 
-		valueEnd = pindex[end - i - 2];
-		pindex[end - i - 2] = newValueEnd - backCount;
-		newValueEnd -= backCount;
-	}
+    valueEnd = pindex[end - i - 2];
+    pindex[end - i - 2] = newValueEnd - backCount;
+    newValueEnd -= backCount;
+  }
 }
 
-void FastArrayVector::reverse() {
-	reverse(0, size_);
-}
+void FastArrayVector::reverse() { reverse(0, size_); }
 
-bool FastArrayVector::append(const ConstantSP& value){
-	if (value->isArray() && value->isTuple() == false && ((Vector*)value.get())->getVectorType() != VECTOR_TYPE::ARRAYVECTOR) {
-		ConstantSP cur = value;
-		if (UNLIKELY(cur->size() == 0))
-			cur = void_;
-		index_->resize(size_ + 1);
-		INDEX* pindex = index_->getIndexArray();
-		INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
-		int curSize = cur->size();
-		if (!value_->append(cur, 0, curSize)) {
-			value_->resize(valueSize_);
-			index_->resize(size_);
-			return false;
-		}
-		pindex[size_] = pre + curSize;
-		if (!containNull_ && curSize == 1 && cur->isNull(0))
-			containNull_ = true;
-		size_ += 1;
-		valueSize_ = value_->size();
-		return true;
-	}
-	return append(value, 0, value->size());
+bool FastArrayVector::append(const ConstantSP& value) {
+  if(value->isArray() && value->isTuple() == false && ((Vector*)value.get())->getVectorType() != VECTOR_TYPE::ARRAYVECTOR) {
+    ConstantSP cur = value;
+    if(UNLIKELY(cur->size() == 0)) cur = void_;
+    index_->resize(size_ + 1);
+    INDEX* pindex = index_->getIndexArray();
+    INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
+    int curSize = cur->size();
+    if(!value_->append(cur, 0, curSize)) {
+      value_->resize(valueSize_);
+      index_->resize(size_);
+      return false;
+    }
+    pindex[size_] = pre + curSize;
+    if(!containNull_ && curSize == 1 && cur->isNull(0)) containNull_ = true;
+    size_ += 1;
+    valueSize_ = value_->size();
+    return true;
+  }
+  return append(value, 0, value->size());
 }
 
 // VectorSP FastArrayVector::getFlatValueArray(){
@@ -2839,2191 +2585,2090 @@ bool FastArrayVector::append(const ConstantSP& value){
 // 	return pFlatValue;
 // }
 
-INDEX FastArrayVector::checkVectorSize(){
-	INDEX indexSize = index_->size();
-	if(indexSize < 1)
-		return 0;
-	auto* pIndex = (INDEX*)index_->getDataArray();
-	INDEX colSize = pIndex[0];
-	INDEX lastCount = colSize;
-	for(INDEX i=1; i < indexSize; i++){
-		if((pIndex[i] - lastCount) != colSize)
-			return -1;
-		lastCount = pIndex[i];
-	}
-	return colSize;
+INDEX FastArrayVector::checkVectorSize() {
+  INDEX indexSize = index_->size();
+  if(indexSize < 1) return 0;
+  auto* pIndex = (INDEX*)index_->getDataArray();
+  INDEX colSize = pIndex[0];
+  INDEX lastCount = colSize;
+  for(INDEX i = 1; i < indexSize; i++) {
+    if((pIndex[i] - lastCount) != colSize) return -1;
+    lastCount = pIndex[i];
+  }
+  return colSize;
 }
 
-bool FastArrayVector::append(const ConstantSP& value, INDEX counts) {
-	return append(value, 0, counts);
-}
+bool FastArrayVector::append(const ConstantSP& value, INDEX counts) { return append(value, 0, counts); }
 
 bool FastArrayVector::append(const ConstantSP& value, INDEX start, INDEX len) {
-	if(value->isTuple()){
-		if(start + len > value->size()){
-			return false;
-		}
-		try{
-			index_->resize(size_ + len);
-			INDEX* pindex = index_->getIndexArray();
-			INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
+  if(value->isTuple()) {
+    if(start + len > value->size()) {
+      return false;
+    }
+    try {
+      index_->resize(size_ + len);
+      INDEX* pindex = index_->getIndexArray();
+      INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
 
-			for(int i=0; i<len; ++i){
-				ConstantSP cur = value->get(start + i);
-				if(UNLIKELY(cur->size() == 0))
-					cur = void_;
-				int curSize = cur->size();
-				if(!value_->append(cur, 0, curSize)){
-					value_->resize(valueSize_);
-					index_->resize(size_);
-					return false;
-				}
-				pindex[size_ + i] = pre + curSize;
-				pre = pindex[size_ + i];
-				if(!containNull_ && curSize == 1 && cur->isNull(0))
-					containNull_ = true;
-			}
-			size_ += len;
-			valueSize_ = value_->size();
-		}
-		catch(...){
-			value_->resize(valueSize_);
-			index_->resize(size_);
-			throw;
-		}
-	}
-	else if(value->isArray()){
-		VECTOR_TYPE vecType = ((Vector*)value.get())->getVectorType();
-		auto* copy =  (FastArrayVector*)value.get();
-		if(vecType != VECTOR_TYPE::ARRAYVECTOR)
-			return false;
-		if(UNLIKELY(len == 0))
-			return true;
-		INDEX* pindexCopy = copy->index_->getIndexArray();
-		INDEX valueStart = start == 0 ? 0 : pindexCopy[start - 1];
-		INDEX valueCount = pindexCopy[start + len - 1] - valueStart;
-		if(!value_->append((ConstantSP)copy->value_, valueStart, valueCount))
-			return false;
-		INDEX oldSize = size_;
-		index_->append((ConstantSP)copy->index_, start, len);
-		size_ += len;
-		valueSize_ += valueCount;
-		if(oldSize > 0 || valueStart > 0){
-			INDEX* pindex = index_->getIndexArray();
-			INDEX inc = (oldSize == 0 ? 0: pindex[oldSize - 1]) - valueStart;
-			index_->addIndex(oldSize, size_ - oldSize, inc);
-		}
-		if(!containNull_ && copy->getNullFlag())
-			containNull_ = true;
-	}
-	else if(value->isScalar()){
-		if(!value_->append(value))
-			return false;
-		INDEX* pindex = index_->getIndexArray();
-		INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
-		INDEX cur = pre + 1;
-		try{
-			index_->appendIndex(&cur, 1);
-			if(!containNull_ && value->isNull())
-				containNull_ = true;
-		}
-		catch(...){
-			value_->resize(valueSize_);
-			throw;
-		}
-		++size_;
-		valueSize_ += 1;
-	}
-	else
-		return false;
-	return true;
+      for(int i = 0; i < len; ++i) {
+        ConstantSP cur = value->get(start + i);
+        if(UNLIKELY(cur->size() == 0)) cur = void_;
+        int curSize = cur->size();
+        if(!value_->append(cur, 0, curSize)) {
+          value_->resize(valueSize_);
+          index_->resize(size_);
+          return false;
+        }
+        pindex[size_ + i] = pre + curSize;
+        pre = pindex[size_ + i];
+        if(!containNull_ && curSize == 1 && cur->isNull(0)) containNull_ = true;
+      }
+      size_ += len;
+      valueSize_ = value_->size();
+    } catch(...) {
+      value_->resize(valueSize_);
+      index_->resize(size_);
+      throw;
+    }
+  } else if(value->isArray()) {
+    VECTOR_TYPE vecType = ((Vector*)value.get())->getVectorType();
+    auto* copy = (FastArrayVector*)value.get();
+    if(vecType != VECTOR_TYPE::ARRAYVECTOR) return false;
+    if(UNLIKELY(len == 0)) return true;
+    INDEX* pindexCopy = copy->index_->getIndexArray();
+    INDEX valueStart = start == 0 ? 0 : pindexCopy[start - 1];
+    INDEX valueCount = pindexCopy[start + len - 1] - valueStart;
+    if(!value_->append((ConstantSP)copy->value_, valueStart, valueCount)) return false;
+    INDEX oldSize = size_;
+    index_->append((ConstantSP)copy->index_, start, len);
+    size_ += len;
+    valueSize_ += valueCount;
+    if(oldSize > 0 || valueStart > 0) {
+      INDEX* pindex = index_->getIndexArray();
+      INDEX inc = (oldSize == 0 ? 0 : pindex[oldSize - 1]) - valueStart;
+      index_->addIndex(oldSize, size_ - oldSize, inc);
+    }
+    if(!containNull_ && copy->getNullFlag()) containNull_ = true;
+  } else if(value->isScalar()) {
+    if(!value_->append(value)) return false;
+    INDEX* pindex = index_->getIndexArray();
+    INDEX pre = size_ == 0 ? 0 : pindex[size_ - 1];
+    INDEX cur = pre + 1;
+    try {
+      index_->appendIndex(&cur, 1);
+      if(!containNull_ && value->isNull()) containNull_ = true;
+    } catch(...) {
+      value_->resize(valueSize_);
+      throw;
+    }
+    ++size_;
+    valueSize_ += 1;
+  } else
+    return false;
+  return true;
 }
 
 bool FastArrayVector::append(const ConstantSP& value, const ConstantSP& index) {
-	DATA_TYPE type = value->getType();
-	if(value->isArray() && (type == DT_ANY || type >= ARRAY_TYPE_BASE)){
-		return append(value->get(index), 0, index->size());
-	}
-	return false;
+  DATA_TYPE type = value->getType();
+  if(value->isArray() && (type == DT_ANY || type >= ARRAY_TYPE_BASE)) {
+    return append(value->get(index), 0, index->size());
+  }
+  return false;
 }
 
 long long FastArrayVector::count(INDEX start, INDEX length) const {
-	checkSize(start, length);
-	if(!containNull_ || ! value_->getNullFlag())
-		return length;
+  checkSize(start, length);
+  if(!containNull_ || !value_->getNullFlag()) return length;
 
-	INDEX* pindex = index_->getIndexArray();
-	INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
-	char valids[Util::BUF_SIZE];
-	INDEX valueStart = 0;
-	INDEX valueEnd = 0;
-	long long sum = 0;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
+  char valids[Util::BUF_SIZE];
+  INDEX valueStart = 0;
+  INDEX valueEnd = 0;
+  long long sum = 0;
 
-	for(int i=0; i<length; ++i){
-		INDEX curIndex = pindex[start + i];
-		if(curIndex - prevStart != 1)
-			++sum;
-		else {
-			if(UNLIKELY(prevStart >= valueEnd)){
-				int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
-				valueStart = prevStart;
-				valueEnd = valueStart + counts;
-				value_->isValid(valueStart, counts, valids);
-			}
-			sum += valids[prevStart - valueStart];
-		}
-		prevStart = curIndex;
-	}
-	return sum;
+  for(int i = 0; i < length; ++i) {
+    INDEX curIndex = pindex[start + i];
+    if(curIndex - prevStart != 1)
+      ++sum;
+    else {
+      if(UNLIKELY(prevStart >= valueEnd)) {
+        int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
+        valueStart = prevStart;
+        valueEnd = valueStart + counts;
+        value_->isValid(valueStart, counts, valids);
+      }
+      sum += valids[prevStart - valueStart];
+    }
+    prevStart = curIndex;
+  }
+  return sum;
 }
 
 bool FastArrayVector::remove(INDEX counts) {
-	if(!sizeable() || std::abs(counts)>size_)
-		return false;
+  if(!sizeable() || std::abs(counts) > size_) return false;
 
-	INDEX* pindex = index_->getIndexArray();
-	if(counts > 0){
-		if(counts == size_){
-			value_->remove(valueSize_);
-			containNull_ = false;
-		} else{
-			INDEX valueCount = valueSize_ - pindex[size_ - counts - 1];
-			value_->remove(valueCount);
-		}
-		index_->remove(counts);
-	}
-	else if(counts<0){
-		counts = -counts;
-		if(counts == size_){
-			value_->remove(valueSize_);
-			containNull_ = false;
-			index_->remove(-counts);
-		} else{
-			INDEX valueCount = pindex[counts - 1];
-			value_->remove(-valueCount);
-			for (int i = 0; i < size_; i++) {
-				pindex[i] -= valueCount;
-			}
-			index_->remove(-counts);
-		}
-	}
-	size_ = index_->size();
-	valueSize_ = value_->size();
-	return true;
+  INDEX* pindex = index_->getIndexArray();
+  if(counts > 0) {
+    if(counts == size_) {
+      value_->remove(valueSize_);
+      containNull_ = false;
+    } else {
+      INDEX valueCount = valueSize_ - pindex[size_ - counts - 1];
+      value_->remove(valueCount);
+    }
+    index_->remove(counts);
+  } else if(counts < 0) {
+    counts = -counts;
+    if(counts == size_) {
+      value_->remove(valueSize_);
+      containNull_ = false;
+      index_->remove(-counts);
+    } else {
+      INDEX valueCount = pindex[counts - 1];
+      value_->remove(-valueCount);
+      for(int i = 0; i < size_; i++) {
+        pindex[i] -= valueCount;
+      }
+      index_->remove(-counts);
+    }
+  }
+  size_ = index_->size();
+  valueSize_ = value_->size();
+  return true;
 }
 
 bool FastArrayVector::remove(const ConstantSP& index) {
-	if(index->size() == 0)
-		return true;
-	if(!index->isArray() || !((Vector*)index.get())->isSorted(true, true))
-		return false;
+  if(index->size() == 0) return true;
+  if(!index->isArray() || !((Vector*)index.get())->isSorted(true, true)) return false;
 
-	INDEX sz = index->size();
-	if(sz == size_){
-		value_->clear();
-		index_->clear();
-		size_ = 0;
-		valueSize_ = 0;
-		containNull_ = false;
-		return true;
-	}
+  INDEX sz = index->size();
+  if(sz == size_) {
+    value_->clear();
+    index_->clear();
+    size_ = 0;
+    valueSize_ = 0;
+    containNull_ = false;
+    return true;
+  }
 
-	if(!value_->remove(convertRowIndexToValueIndex(0, index)))
-		return false;
-	valueSize_ = value_->size();
+  if(!value_->remove(convertRowIndexToValueIndex(0, index))) return false;
+  valueSize_ = value_->size();
 
-	INDEX* pindex = index_->getIndexArray();
-	INDEX buf[Util::BUF_SIZE];
-	INDEX newCursor = index->getIndex(0);
-	INDEX cursor = newCursor;
-	INDEX newPrev = newCursor == 0 ? 0 : pindex[newCursor - 1];
-	INDEX pre = newPrev;
-	INDEX delIndex{};
+  INDEX* pindex = index_->getIndexArray();
+  INDEX buf[Util::BUF_SIZE];
+  INDEX newCursor = index->getIndex(0);
+  INDEX cursor = newCursor;
+  INDEX newPrev = newCursor == 0 ? 0 : pindex[newCursor - 1];
+  INDEX pre = newPrev;
+  INDEX delIndex{};
 
-	INDEX start = 0;
-	while(start < sz){
-		int counts = std::min(sz - start, Util::BUF_SIZE);
-		const INDEX* pindexRow = index->getIndexBuffer(start, counts, buf);
-		for(int i=0; i<counts; ++i){
-			delIndex = pindexRow[i];
-			while(cursor < delIndex){
-				int curRowCount = pindex[cursor] - pre;
-				pre = pindex[cursor];
-				pindex[newCursor] = newPrev + curRowCount;
-				newPrev = pindex[newCursor];
-				++newCursor;
-				++cursor;
-			}
-			++cursor;
-			pre = pindex[delIndex];
-		}
-		start += counts;
-	}
+  INDEX start = 0;
+  while(start < sz) {
+    int counts = std::min(sz - start, Util::BUF_SIZE);
+    const INDEX* pindexRow = index->getIndexBuffer(start, counts, buf);
+    for(int i = 0; i < counts; ++i) {
+      delIndex = pindexRow[i];
+      while(cursor < delIndex) {
+        int curRowCount = pindex[cursor] - pre;
+        pre = pindex[cursor];
+        pindex[newCursor] = newPrev + curRowCount;
+        newPrev = pindex[newCursor];
+        ++newCursor;
+        ++cursor;
+      }
+      ++cursor;
+      pre = pindex[delIndex];
+    }
+    start += counts;
+  }
 
-	while(cursor < size_){
-		pindex[newCursor++] = pindex[cursor++] + newPrev - pre;
-	}
+  while(cursor < size_) {
+    pindex[newCursor++] = pindex[cursor++] + newPrev - pre;
+  }
 
-	index_->resize(newCursor);
-	size_ = newCursor;
+  index_->resize(newCursor);
+  size_ = newCursor;
 
-	return true;
+  return true;
 }
 
 ConstantSP FastArrayVector::convertRowIndexToValueIndex(INDEX offset, const ConstantSP& rowIndexVector) const {
-	INDEX* pindex = index_->getIndexArray();
-	INDEX pre = 0;
-	INDEX rowNum = rowIndexVector->rows();
-	INDEX buf[Util::BUF_SIZE];
-	INDEX start = 0;
-	UINDEX* prowIndex;
-	UINDEX sz = size_;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX pre = 0;
+  INDEX rowNum = rowIndexVector->rows();
+  INDEX buf[Util::BUF_SIZE];
+  INDEX start = 0;
+  UINDEX* prowIndex;
+  UINDEX sz = size_;
 
-	while(start < rowNum){
-		int counts = std::min(Util::BUF_SIZE, rowNum - start);
-		prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
-		for(int i=0; i<counts; ++i){
-			UINDEX rowIndex = prowIndex[i] + offset;
-			if(rowIndex >= sz){
-				++pre;
-			}
-			else {
-				INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
-				pre += pindex[rowIndex] - curRowStart;
-			}
-		}
-		start += counts;
-	}
+  while(start < rowNum) {
+    int counts = std::min(Util::BUF_SIZE, rowNum - start);
+    prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
+    for(int i = 0; i < counts; ++i) {
+      UINDEX rowIndex = prowIndex[i] + offset;
+      if(rowIndex >= sz) {
+        ++pre;
+      } else {
+        INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
+        pre += pindex[rowIndex] - curRowStart;
+      }
+    }
+    start += counts;
+  }
 
-	INDEX valueCellCount = pre;
-	ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
-	INDEX* pvalueIndex = valueIndex->getIndexArray();
-	INDEX cursor = 0;
-	start = 0;
+  INDEX valueCellCount = pre;
+  ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
+  INDEX* pvalueIndex = valueIndex->getIndexArray();
+  INDEX cursor = 0;
+  start = 0;
 
-	while(start < rowNum){
-		int counts = std::min(Util::BUF_SIZE, rowNum - start);
-		prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
-		for(int i=0; i<counts; ++i){
-			UINDEX rowIndex = prowIndex[i] + offset;
-			if(rowIndex >= sz){
-				pvalueIndex[cursor++] = -1;
-			}
-			else {
-				INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
-				int curCellCount = pindex[rowIndex] - curRowStart;
-				for(int j=0; j<curCellCount; ++j)
-					pvalueIndex[cursor++] = curRowStart + j;
-			}
-		}
-		start += counts;
-	}
-	return valueIndex;
+  while(start < rowNum) {
+    int counts = std::min(Util::BUF_SIZE, rowNum - start);
+    prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
+    for(int i = 0; i < counts; ++i) {
+      UINDEX rowIndex = prowIndex[i] + offset;
+      if(rowIndex >= sz) {
+        pvalueIndex[cursor++] = -1;
+      } else {
+        INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
+        int curCellCount = pindex[rowIndex] - curRowStart;
+        for(int j = 0; j < curCellCount; ++j) pvalueIndex[cursor++] = curRowStart + j;
+      }
+    }
+    start += counts;
+  }
+  return valueIndex;
 }
 
 ConstantSP FastArrayVector::get(INDEX index) const {
-	INDEX* pindex = index_->getIndexArray();
-	INDEX pre = index == 0 ? 0 : pindex[index - 1];
-	int counts = pindex[index] - pre;
-	return value_->getSubVector(pre, counts);
+  INDEX* pindex = index_->getIndexArray();
+  INDEX pre = index == 0 ? 0 : pindex[index - 1];
+  int counts = pindex[index] - pre;
+  return value_->getSubVector(pre, counts);
 }
 
 ConstantSP FastArrayVector::sliceOneColumn(int colIndex, INDEX rowStart, INDEX rowEnd) const {
-	INDEX rowNum = rowEnd - rowStart;
-	INDEX* pindex = index_->getIndexArray();
-	INDEX pre = rowStart == 0 ? 0 : pindex[rowStart - 1];
+  INDEX rowNum = rowEnd - rowStart;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX pre = rowStart == 0 ? 0 : pindex[rowStart - 1];
 
-	ConstantSP newIndex = Util::createIndexVector(rowNum, true);
-	INDEX* pnewIndex = newIndex->getIndexArray();
-	for(int i=rowStart; i<rowEnd; ++i){
-		int curCount = pindex[i] - pre;
-		if(colIndex < curCount)
-			pnewIndex[i - rowStart] = pre + colIndex;
-		else
-			pnewIndex[i - rowStart] = -1;
-		pre = pindex[i];
-	}
-	return ((Constant*)value_.get())->get(newIndex);
+  ConstantSP newIndex = Util::createIndexVector(rowNum, true);
+  INDEX* pnewIndex = newIndex->getIndexArray();
+  for(int i = rowStart; i < rowEnd; ++i) {
+    int curCount = pindex[i] - pre;
+    if(colIndex < curCount)
+      pnewIndex[i - rowStart] = pre + colIndex;
+    else
+      pnewIndex[i - rowStart] = -1;
+    pre = pindex[i];
+  }
+  return ((Constant*)value_.get())->get(newIndex);
 }
 
-ConstantSP FastArrayVector::get(const ConstantSP &index) const {
-	if(index->isScalar()){
-		INDEX colIndex = index->getInt();
-		if(colIndex < 0)
-			throw RuntimeException("Invalid index");
-		return sliceOneColumn(colIndex, 0, size_);
-	}
-	if(index->isPair()){
-		INDEX start = index->getInt(0);
-		INDEX end = index->getInt(1);
-		if(start < 0 || end <= start)
-			throw RuntimeException("Invalid index");
-		return sliceColumnRange(start, end, 0, size_);
-	}
-	if(index->isArray() && index->getType() != DT_ANY){
-		return sliceRows(0, index);
-	}
-	throw RuntimeException("Invalid index");
+ConstantSP FastArrayVector::get(const ConstantSP& index) const {
+  if(index->isScalar()) {
+    INDEX colIndex = index->getInt();
+    if(colIndex < 0) throw RuntimeException("Invalid index");
+    return sliceOneColumn(colIndex, 0, size_);
+  }
+  if(index->isPair()) {
+    INDEX start = index->getInt(0);
+    INDEX end = index->getInt(1);
+    if(start < 0 || end <= start) throw RuntimeException("Invalid index");
+    return sliceColumnRange(start, end, 0, size_);
+  }
+  if(index->isArray() && index->getType() != DT_ANY) {
+    return sliceRows(0, index);
+  }
+  throw RuntimeException("Invalid index");
 }
 
-ConstantSP FastArrayVector::get(INDEX column, INDEX rowStart,INDEX rowEnd) const {
-	return sliceOneColumn(column, rowStart, rowEnd);
-}
+ConstantSP FastArrayVector::get(INDEX column, INDEX rowStart, INDEX rowEnd) const { return sliceOneColumn(column, rowStart, rowEnd); }
 
 ConstantSP FastArrayVector::sliceColumnRange(int colStart, int colEnd, INDEX rowStart, INDEX rowEnd) const {
-	INDEX* pindex = index_->getIndexArray();
-	INDEX pre = rowStart == 0 ? 0 : pindex[rowStart - 1];
+  INDEX* pindex = index_->getIndexArray();
+  INDEX pre = rowStart == 0 ? 0 : pindex[rowStart - 1];
 
-	INDEX rowNum = rowEnd - rowStart;
-	INDEX colNum = colEnd - colStart;
+  INDEX rowNum = rowEnd - rowStart;
+  INDEX colNum = colEnd - colStart;
 
-	long long valueCellCount = std::min((long long)rowNum * colNum, (long long)valueSize_);
-	if(valueCellCount > INT_MAX)
-		throw RuntimeException("A vector can't exceed 2 billion rows.");
+  long long valueCellCount = std::min((long long)rowNum * colNum, (long long)valueSize_);
+  if(valueCellCount > INT_MAX) throw RuntimeException("A vector can't exceed 2 billion rows.");
 
-	ConstantSP newIndex = Util::createIndexVector(rowNum, true);
-	INDEX* pnewIndex = newIndex->getIndexArray();
+  ConstantSP newIndex = Util::createIndexVector(rowNum, true);
+  INDEX* pnewIndex = newIndex->getIndexArray();
 
-	ConstantSP valueIndex = Util::createIndexVector(static_cast<INDEX>(valueCellCount), true);
-	INDEX* pvalueIndex = valueIndex->getIndexArray();
-	INDEX cursor = 0;
-	for(INDEX i=rowStart; i<rowEnd; ++i){
-		INDEX curRowStart = pre;
-		int curCellCount = pindex[i] - curRowStart;
-		int curEnd = std::min(curCellCount, colEnd);
-		for(int j=colStart; j<curEnd; ++j)
-			pvalueIndex[cursor++] = curRowStart + j;
-		if(colStart >= curEnd){
-			pvalueIndex[cursor++] = -1;
-		}
-		pnewIndex[i - rowStart] = cursor;
-		pre = pindex[i];
-	}
-	if(cursor < valueCellCount)
-		((Vector*)valueIndex.get())->resize(cursor);
-	ConstantSP newValue = ((Constant*)value_.get())->get(valueIndex);
-	valueIndex.clear();
+  ConstantSP valueIndex = Util::createIndexVector(static_cast<INDEX>(valueCellCount), true);
+  INDEX* pvalueIndex = valueIndex->getIndexArray();
+  INDEX cursor = 0;
+  for(INDEX i = rowStart; i < rowEnd; ++i) {
+    INDEX curRowStart = pre;
+    int curCellCount = pindex[i] - curRowStart;
+    int curEnd = std::min(curCellCount, colEnd);
+    for(int j = colStart; j < curEnd; ++j) pvalueIndex[cursor++] = curRowStart + j;
+    if(colStart >= curEnd) {
+      pvalueIndex[cursor++] = -1;
+    }
+    pnewIndex[i - rowStart] = cursor;
+    pre = pindex[i];
+  }
+  if(cursor < valueCellCount) ((Vector*)valueIndex.get())->resize(cursor);
+  ConstantSP newValue = ((Constant*)value_.get())->get(valueIndex);
+  valueIndex.clear();
 
-	return new FastArrayVector((VectorSP)newIndex, (VectorSP)newValue);
+  return new FastArrayVector((VectorSP)newIndex, (VectorSP)newValue);
 }
 
 ConstantSP FastArrayVector::sliceRows(INDEX offset, const ConstantSP& rowIndexVector) const {
-	INDEX* pindex = index_->getIndexArray();
-	INDEX pre = 0;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX pre = 0;
 
-	INDEX rowNum = rowIndexVector->rows();
-	ConstantSP newIndex = Util::createIndexVector(rowNum, true);
-	INDEX* pnewIndex = newIndex->getIndexArray();
+  INDEX rowNum = rowIndexVector->rows();
+  ConstantSP newIndex = Util::createIndexVector(rowNum, true);
+  INDEX* pnewIndex = newIndex->getIndexArray();
 
-	INDEX buf[Util::BUF_SIZE];
-	INDEX start = 0;
-	UINDEX* prowIndex;
-	UINDEX sz = size_;
+  INDEX buf[Util::BUF_SIZE];
+  INDEX start = 0;
+  UINDEX* prowIndex;
+  UINDEX sz = size_;
 
-	while(start < rowNum){
-		int counts = std::min(Util::BUF_SIZE, rowNum - start);
-		prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
-		for(int i=0; i<counts; ++i){
-			UINDEX rowIndex = prowIndex[i] + offset;
-			if(rowIndex >= sz){
-				pnewIndex[start + i] = pre + 1;
-			}
-			else {
-				INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
-				pnewIndex[start + i] = pre + pindex[rowIndex] - curRowStart;
-			}
-			pre = pnewIndex[start + i];
-		}
-		start += counts;
-	}
+  while(start < rowNum) {
+    int counts = std::min(Util::BUF_SIZE, rowNum - start);
+    prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
+    for(int i = 0; i < counts; ++i) {
+      UINDEX rowIndex = prowIndex[i] + offset;
+      if(rowIndex >= sz) {
+        pnewIndex[start + i] = pre + 1;
+      } else {
+        INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
+        pnewIndex[start + i] = pre + pindex[rowIndex] - curRowStart;
+      }
+      pre = pnewIndex[start + i];
+    }
+    start += counts;
+  }
 
-	INDEX valueCellCount = pnewIndex[rowNum - 1];
-	ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
-	INDEX* pvalueIndex = valueIndex->getIndexArray();
-	INDEX cursor = 0;
-	start = 0;
+  INDEX valueCellCount = pnewIndex[rowNum - 1];
+  ConstantSP valueIndex = Util::createIndexVector(valueCellCount, true);
+  INDEX* pvalueIndex = valueIndex->getIndexArray();
+  INDEX cursor = 0;
+  start = 0;
 
-	while(start < rowNum){
-		int counts = std::min(Util::BUF_SIZE, rowNum - start);
-		prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
-		for(int i=0; i<counts; ++i){
-			UINDEX rowIndex = prowIndex[i] + offset;
-			if(rowIndex >= sz){
-				pvalueIndex[cursor++] = -1;
-			}
-			else {
-				INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
-				int curCellCount = pindex[rowIndex] - curRowStart;
-				for(int j=0; j<curCellCount; ++j)
-					pvalueIndex[cursor++] = curRowStart + j;
-			}
-		}
-		start += counts;
-	}
+  while(start < rowNum) {
+    int counts = std::min(Util::BUF_SIZE, rowNum - start);
+    prowIndex = (UINDEX*)rowIndexVector->getIndexConst(start, counts, buf);
+    for(int i = 0; i < counts; ++i) {
+      UINDEX rowIndex = prowIndex[i] + offset;
+      if(rowIndex >= sz) {
+        pvalueIndex[cursor++] = -1;
+      } else {
+        INDEX curRowStart = rowIndex > 0 ? pindex[rowIndex - 1] : 0;
+        int curCellCount = pindex[rowIndex] - curRowStart;
+        for(int j = 0; j < curCellCount; ++j) pvalueIndex[cursor++] = curRowStart + j;
+      }
+    }
+    start += counts;
+  }
 
-	return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->get(valueIndex)));
+  return new FastArrayVector((VectorSP)newIndex, (VectorSP)(((Constant*)value_.get())->get(valueIndex)));
 }
 
 bool FastArrayVector::isNull(INDEX index) const {
-	if(!containNull_)
-		return false;
-	INDEX *pindex = index_->getIndexArray();
-	INDEX prevStart = index == 0 ? 0 : pindex[index - 1];
-	if (pindex[index] - prevStart == 1)
-		return value_->isNull(prevStart);
-	return false;
+  if(!containNull_) return false;
+  INDEX* pindex = index_->getIndexArray();
+  INDEX prevStart = index == 0 ? 0 : pindex[index - 1];
+  if(pindex[index] - prevStart == 1) return value_->isNull(prevStart);
+  return false;
 }
 
 bool FastArrayVector::isNull(INDEX start, int len, char* buf) const {
-	if(containNull_ && value_->getNullFlag()){
-		INDEX* pindex = index_->getIndexArray();
-		INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
-		char nulls[Util::BUF_SIZE];
-		INDEX valueStart = 0;
-		INDEX valueEnd = 0;
+  if(containNull_ && value_->getNullFlag()) {
+    INDEX* pindex = index_->getIndexArray();
+    INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
+    char nulls[Util::BUF_SIZE];
+    INDEX valueStart = 0;
+    INDEX valueEnd = 0;
 
-		for(int i=0; i<len; ++i){
-			INDEX curIndex = pindex[start + i];
-			if(curIndex - prevStart != 1)
-				buf[i] = 0;
-			else {
-				if(UNLIKELY(prevStart >= valueEnd)){
-					int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
-					valueStart = prevStart;
-					valueEnd = valueStart + counts;
-					value_->isNull(valueStart, counts, nulls);
-				}
-				buf[i] = nulls[prevStart - valueStart];
-			}
-			prevStart = curIndex;
-		}
-	}
-	else{
-		memset(buf, 0, len);
-	}
-	return true;
+    for(int i = 0; i < len; ++i) {
+      INDEX curIndex = pindex[start + i];
+      if(curIndex - prevStart != 1)
+        buf[i] = 0;
+      else {
+        if(UNLIKELY(prevStart >= valueEnd)) {
+          int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
+          valueStart = prevStart;
+          valueEnd = valueStart + counts;
+          value_->isNull(valueStart, counts, nulls);
+        }
+        buf[i] = nulls[prevStart - valueStart];
+      }
+      prevStart = curIndex;
+    }
+  } else {
+    memset(buf, 0, len);
+  }
+  return true;
 }
 
 bool FastArrayVector::isValid(INDEX start, int len, char* buf) const {
-	if(containNull_ && value_->getNullFlag()){
-		INDEX* pindex = index_->getIndexArray();
-		INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
-		char valids[Util::BUF_SIZE];
-		INDEX valueStart = 0;
-		INDEX valueEnd = 0;
+  if(containNull_ && value_->getNullFlag()) {
+    INDEX* pindex = index_->getIndexArray();
+    INDEX prevStart = start == 0 ? 0 : pindex[start - 1];
+    char valids[Util::BUF_SIZE];
+    INDEX valueStart = 0;
+    INDEX valueEnd = 0;
 
-		for(int i=0; i<len; ++i){
-			INDEX curIndex = pindex[start + i];
-			if(curIndex - prevStart != 1)
-				buf[i] = 0;
-			else {
-				if(UNLIKELY(prevStart >= valueEnd)){
-					int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
-					valueStart = prevStart;
-					valueEnd = valueStart + counts;
-					value_->isValid(valueStart, counts, valids);
-				}
-				buf[i] = valids[prevStart - valueStart];
-			}
-			prevStart = curIndex;
-		}
-	}
-	else{
-		memset(buf, 1, len);
-	}
-	return true;
+    for(int i = 0; i < len; ++i) {
+      INDEX curIndex = pindex[start + i];
+      if(curIndex - prevStart != 1)
+        buf[i] = 0;
+      else {
+        if(UNLIKELY(prevStart >= valueEnd)) {
+          int counts = std::min(valueSize_ - prevStart, Util::BUF_SIZE);
+          valueStart = prevStart;
+          valueEnd = valueStart + counts;
+          value_->isValid(valueStart, counts, valids);
+        }
+        buf[i] = valids[prevStart - valueStart];
+      }
+      prevStart = curIndex;
+    }
+  } else {
+    memset(buf, 1, len);
+  }
+  return true;
 }
 
 ConstantSP FastArrayVector::getSubVector(INDEX start, INDEX length, INDEX capacity) const {
-	capacity = std::max(length, capacity);
-	VectorSP newIndex = Util::createIndexVector(capacity, true);
-	newIndex->resize(0);
-	if(length > 0)
-		newIndex->append((ConstantSP)index_, start, length);
-	INDEX* pindex = index_->getIndexArray();
-	INDEX offset = start == 0 ? 0 : pindex[start - 1];
-	INDEX valueCellCount = 0;
-	INDEX valueCapacity = capacity;
-	if(length > 0){
-		if(offset > 0)
-			newIndex->addIndex(0, length, -offset);
-		valueCellCount = pindex[start + length - 1] - offset;
-		valueCapacity = valueCellCount;
-		if(capacity > length)
-			valueCapacity = capacity/length * valueCellCount;
-		valueCapacity = std::max(valueCapacity, valueCellCount);
-	}
-	auto newValue = (VectorSP)value_->getSubVector(offset, valueCellCount, valueCapacity);
-	return new FastArrayVector(newIndex, newValue);
+  capacity = std::max(length, capacity);
+  VectorSP newIndex = Util::createIndexVector(capacity, true);
+  newIndex->resize(0);
+  if(length > 0) newIndex->append((ConstantSP)index_, start, length);
+  INDEX* pindex = index_->getIndexArray();
+  INDEX offset = start == 0 ? 0 : pindex[start - 1];
+  INDEX valueCellCount = 0;
+  INDEX valueCapacity = capacity;
+  if(length > 0) {
+    if(offset > 0) newIndex->addIndex(0, length, -offset);
+    valueCellCount = pindex[start + length - 1] - offset;
+    valueCapacity = valueCellCount;
+    if(capacity > length) valueCapacity = capacity / length * valueCellCount;
+    valueCapacity = std::max(valueCapacity, valueCellCount);
+  }
+  auto newValue = (VectorSP)value_->getSubVector(offset, valueCellCount, valueCapacity);
+  return new FastArrayVector(newIndex, newValue);
 }
 
 ConstantSP FastArrayVector::get(INDEX offset, const ConstantSP& index) const {
-	if(!index->isArray() || index->getCategory() == ARRAY)
-		throw RuntimeException("Invalid index");
-	return sliceRows(offset, index);
+  if(!index->isArray() || index->getCategory() == ARRAY) throw RuntimeException("Invalid index");
+  return sliceRows(offset, index);
 }
 
-
-ConstantSP FastBoolMatrix::getValue() const{
-	char* data = new char[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(char));
-	return ConstantSP(new FastBoolMatrix(cols_,rows_,cols_,data,containNull_));
+ConstantSP FastBoolMatrix::getValue() const {
+  char* data = new char[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(char));
+  return ConstantSP(new FastBoolMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastBoolMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getBool();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastBoolMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getBool();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastBoolMatrix::getRow(INDEX index) const {
-	char* data= new char[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = CHAR_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastBoolVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  char* data = new char[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = CHAR_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastBoolVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastBoolMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	char* data = new char[colNum*rowNum];
-	char* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = CHAR_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = CHAR_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastBoolMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastBoolMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  char* data = new char[colNum * rowNum];
+  char* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = CHAR_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = CHAR_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastBoolMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastBoolMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastCharMatrix::getValue() const {
-	char* data = new char[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(char));
-	return ConstantSP(new FastCharMatrix(cols_,rows_,cols_,data,containNull_));
+  char* data = new char[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(char));
+  return ConstantSP(new FastCharMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastCharMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getChar();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastCharMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getChar();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastCharMatrix::getRow(INDEX index) const {
-	char* data= new char[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = CHAR_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastCharVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  char* data = new char[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = CHAR_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastCharVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastCharMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	char* data=new char[colNum*rowNum];
-	char* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = CHAR_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = CHAR_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastCharMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastCharMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  char* data = new char[colNum * rowNum];
+  char* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = CHAR_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = CHAR_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastCharMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastCharMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastShortMatrix::getValue() const {
-	auto* data = new short[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(short));
-	return ConstantSP(new FastShortMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new short[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(short));
+  return ConstantSP(new FastShortMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastShortMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getShort();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastShortMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getShort();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastShortMatrix::getRow(INDEX index) const {
-	auto* data= new short[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = SHRT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastShortVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new short[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = SHRT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastShortVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastShortMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new short[colNum*rowNum];
-	short* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = SHRT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = SHRT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastShortMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastShortMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new short[colNum * rowNum];
+  short* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = SHRT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = SHRT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastShortMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
-ConstantSP  FastShortMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+ConstantSP FastShortMatrix::getColumn(INDEX index) const {
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
-ConstantSP FastIntMatrix::getValue() const{
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastIntMatrix(cols_,rows_,cols_,data,containNull_));
+ConstantSP FastIntMatrix::getValue() const {
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastIntMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastIntMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastIntMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastIntMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastIntVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastIntVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastIntMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum*rowNum];
-	int* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastIntMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastIntMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastIntMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
-ConstantSP  FastIntMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+ConstantSP FastIntMatrix::getColumn(INDEX index) const {
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastLongMatrix::getValue() const {
-	auto* data = new long long[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(long long));
-	return ConstantSP(new FastLongMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new long long[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(long long));
+  return ConstantSP(new FastLongMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastLongMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getLong();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastLongMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getLong();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastLongMatrix::getRow(INDEX index) const {
-	auto* data = new long long[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = LLONG_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastLongVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new long long[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = LLONG_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastLongVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastLongMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new long long[colNum*rowNum];
-	long long* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = LLONG_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = LLONG_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastLongMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastLongMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new long long[colNum * rowNum];
+  long long* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = LLONG_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = LLONG_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastLongMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastLongMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastFloatMatrix::getValue() const {
-	auto* data = new float[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(float));
-	return ConstantSP(new FastFloatMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new float[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(float));
+  return ConstantSP(new FastFloatMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastFloatMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getFloat();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastFloatMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getFloat();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastFloatMatrix::getRow(INDEX index) const {
-	auto* data = new float[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = FLT_NMIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastFloatVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new float[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = FLT_NMIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastFloatVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastFloatMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new float[colNum*rowNum];
-	float* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = FLT_NMIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = FLT_NMIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastFloatMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastFloatMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new float[colNum * rowNum];
+  float* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = FLT_NMIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = FLT_NMIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastFloatMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
-ConstantSP  FastFloatMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+ConstantSP FastFloatMatrix::getColumn(INDEX index) const {
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastDoubleMatrix::getValue() const {
-	auto* data = new double[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(double));
-	return ConstantSP(new FastDoubleMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new double[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(double));
+  return ConstantSP(new FastDoubleMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastDoubleMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1){
-		data_[(column*rows_)+row]=value->getDouble();
-	}
-	else{
-		fill((column*rows_)+row,value->size(),value);
-	}
-	return true;
+bool FastDoubleMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1) {
+    data_[(column * rows_) + row] = value->getDouble();
+  } else {
+    fill((column * rows_) + row, value->size(), value);
+  }
+  return true;
 }
 
 ConstantSP FastDoubleMatrix::getRow(INDEX index) const {
-	auto* data = new double[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = DBL_NMIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastDoubleVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new double[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = DBL_NMIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastDoubleVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastDoubleMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new double[colNum*rowNum];
-	double* dest=data;
-	INDEX start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = DBL_NMIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = DBL_NMIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastDoubleMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastDoubleMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new double[colNum * rowNum];
+  double* dest = data;
+  INDEX start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = DBL_NMIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = DBL_NMIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastDoubleMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastDoubleMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastDateMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastDateMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastDateMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastDateMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastDateMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastDateMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastDateVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastDateVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastDateMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastDateMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastDateMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastDateMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastDateMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastDateTimeMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastDateTimeMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastDateTimeMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastDateTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastDateTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastDateTimeMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastDateTimeVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastDateTimeVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastDateTimeMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastDateTimeMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastDateTimeMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastDateTimeMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastDateTimeMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastDateHourMatrix::getValue() const {
-    int* data = new int[cols_ * rows_];
-    memcpy(data, data_, size_ * sizeof(int));
-    return ConstantSP(new FastDateTimeMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastDateTimeMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastDateHourMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-    if(value->size()==1)
-        data_[(column*rows_)+row]=value->getInt();
-    else
-        fill((column*rows_)+row,value->size(),value);
-    return true;
+bool FastDateHourMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastDateHourMatrix::getRow(INDEX index) const {
-    int* data = new int[cols_];
-    for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-    auto row = VectorSP(new FastDateHourVector(cols_,0,data,containNull_));
-    if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-    return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastDateHourVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastDateHourMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-    int colNum=std::abs(colLength);
-    int rowNum=std::abs(rowLength);
-    int* data = new int[colNum * rowNum];
-    int* dest=data;
-    int start=rowStart+(colStart*rows_);
-    bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-    for(int i=0;i<colNum;++i){
-        getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-        if(reverseCol)
-            start-=rows_;
-        else
-            start+=rows_;
-        dest+=rowNum;
+ConstantSP FastDateHourMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
     }
-    ConstantSP matrix=ConstantSP(new FastDateHourMatrix(colNum,rowNum,colNum,data,containNull_));
-    if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-    if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-    return matrix;
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastDateHourMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastDateHourMatrix::getColumn(INDEX index) const {
-    auto col = (VectorSP)getSubVector(rows_ * index, rows_);
-    if (!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-    return (ConstantSP)col;
+  auto col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastMonthMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastMonthMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastMonthMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastMonthMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastMonthMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastMonthMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastMonthVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastMonthVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastMonthMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastMonthMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastMonthMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastMonthMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastMonthMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastTimeMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastTimeMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastTimeMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastTimeMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastTimeVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastTimeVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastTimeMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastTimeMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastTimeMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastTimeMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastTimeMatrix::getColumn(INDEX index) const {
-	auto col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  auto col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastSecondMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastSecondMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastSecondMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastSecondMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastSecondMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastSecondMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastSecondVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastSecondVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastSecondMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastSecondMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastSecondMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastSecondMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastSecondMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastMinuteMatrix::getValue() const {
-	int* data = new int[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(int));
-	return ConstantSP(new FastMinuteMatrix(cols_,rows_,cols_,data,containNull_));
+  int* data = new int[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(int));
+  return ConstantSP(new FastMinuteMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastMinuteMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getInt();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastMinuteMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getInt();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastMinuteMatrix::getRow(INDEX index) const {
-	int* data = new int[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = INT_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	VectorSP row= VectorSP(new FastMinuteVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  int* data = new int[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = INT_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  VectorSP row = VectorSP(new FastMinuteVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastMinuteMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	int* data = new int[colNum * rowNum];
-	int* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = INT_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = INT_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastMinuteMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastMinuteMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  int* data = new int[colNum * rowNum];
+  int* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = INT_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = INT_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastMinuteMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
-ConstantSP  FastMinuteMatrix::getColumn(INDEX index) const {
-	auto col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+ConstantSP FastMinuteMatrix::getColumn(INDEX index) const {
+  auto col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastNanoTimeMatrix::getValue() const {
-	auto* data = new long long[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(long long));
-	return ConstantSP(new FastNanoTimeMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new long long[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(long long));
+  return ConstantSP(new FastNanoTimeMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastNanoTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getLong();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastNanoTimeMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getLong();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastNanoTimeMatrix::getRow(INDEX index) const {
-	auto* data = new long long[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = LLONG_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(ConstantSP(new FastNanoTimeVector(cols_,0,data,containNull_)));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new long long[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = LLONG_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(ConstantSP(new FastNanoTimeVector(cols_, 0, data, containNull_)));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastNanoTimeMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new long long[colNum * rowNum];
-	long long* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = LLONG_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = LLONG_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastNanoTimeMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastNanoTimeMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new long long[colNum * rowNum];
+  long long* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = LLONG_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = LLONG_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastNanoTimeMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastNanoTimeMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
-
 
 ConstantSP FastTimestampMatrix::getValue() const {
-	auto* data = new long long[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(long long));
-	return ConstantSP(new FastTimestampMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new long long[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(long long));
+  return ConstantSP(new FastTimestampMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastTimestampMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getLong();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastTimestampMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getLong();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastTimestampMatrix::getRow(INDEX index) const {
-	auto* data = new long long[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = LLONG_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(new FastTimestampVector(cols_,0,data,containNull_));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new long long[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = LLONG_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(new FastTimestampVector(cols_, 0, data, containNull_));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastTimestampMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new long long[colNum * rowNum];
-	long long* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = LLONG_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = LLONG_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastTimestampMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastTimestampMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new long long[colNum * rowNum];
+  long long* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = LLONG_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = LLONG_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastTimestampMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastTimestampMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
 ConstantSP FastNanoTimestampMatrix::getValue() const {
-	auto* data = new long long[cols_ * rows_];
-	memcpy(data, data_, size_ * sizeof(long long));
-	return ConstantSP(new FastNanoTimestampMatrix(cols_,rows_,cols_,data,containNull_));
+  auto* data = new long long[cols_ * rows_];
+  memcpy(data, data_, size_ * sizeof(long long));
+  return ConstantSP(new FastNanoTimestampMatrix(cols_, rows_, cols_, data, containNull_));
 }
 
-bool FastNanoTimestampMatrix::set(INDEX column, INDEX row, const ConstantSP& value){
-	if(value->size()==1)
-		data_[(column*rows_)+row]=value->getLong();
-	else
-		fill((column*rows_)+row,value->size(),value);
-	return true;
+bool FastNanoTimestampMatrix::set(INDEX column, INDEX row, const ConstantSP& value) {
+  if(value->size() == 1)
+    data_[(column * rows_) + row] = value->getLong();
+  else
+    fill((column * rows_) + row, value->size(), value);
+  return true;
 }
 
 ConstantSP FastNanoTimestampMatrix::getRow(INDEX index) const {
-	auto* data = new long long[cols_];
-	for(int i = 0; i < cols_; ++i){
-		if(index >= rows_){
-			data[i] = LLONG_MIN;
-		} else{
-			data[i] = data_[(i * rows_) + index];
-		}
-	}
-	auto row = VectorSP(ConstantSP(new FastNanoTimestampVector(cols_,0,data,containNull_)));
-	if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
-	return (ConstantSP)row;
+  auto* data = new long long[cols_];
+  for(int i = 0; i < cols_; ++i) {
+    if(index >= rows_) {
+      data[i] = LLONG_MIN;
+    } else {
+      data[i] = data_[(i * rows_) + index];
+    }
+  }
+  auto row = VectorSP(ConstantSP(new FastNanoTimestampVector(cols_, 0, data, containNull_)));
+  if(!rowLabel_->isNull()) row->setName(rowLabel_->getString(index));
+  return (ConstantSP)row;
 }
 
-ConstantSP FastNanoTimestampMatrix::getWindow(INDEX colStart, int colLength,INDEX rowStart, int rowLength) const {
-	int colNum=std::abs(colLength);
-	int rowNum=std::abs(rowLength);
-	auto* data = new long long[colNum * rowNum];
-	long long* dest=data;
-	int start=rowStart+(colStart*rows_);
-	bool reverseCol=colLength<0;
-	int invalidLenBeginning = 0, invalidLenEnding = 0;
-	calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
-	for(int i=0;i<colNum;++i){
-		getDataArray(start,rowLength,dest);
-		for(int j = 0; j < invalidLenBeginning; ++j){
-			dest[j] = LLONG_MIN;
-		}
-		for(int j = 0; j < invalidLenEnding; ++j){
-			dest[rowNum - 1 - j] = LLONG_MIN;
-		}
-		if(reverseCol)
-			start-=rows_;
-		else
-			start+=rows_;
-		dest+=rowNum;
-	}
-	ConstantSP matrix=ConstantSP(new FastNanoTimestampMatrix(colNum,rowNum,colNum,data,containNull_));
-	if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart,rowLength));
-	if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart,colLength));
-	return matrix;
+ConstantSP FastNanoTimestampMatrix::getWindow(INDEX colStart, int colLength, INDEX rowStart, int rowLength) const {
+  int colNum = std::abs(colLength);
+  int rowNum = std::abs(rowLength);
+  auto* data = new long long[colNum * rowNum];
+  long long* dest = data;
+  int start = rowStart + (colStart * rows_);
+  bool reverseCol = colLength < 0;
+  int invalidLenBeginning = 0, invalidLenEnding = 0;
+  calculateInvalidLength(colStart, colLength, rowStart, rowLength, invalidLenBeginning, invalidLenEnding);
+  for(int i = 0; i < colNum; ++i) {
+    getDataArray(start, rowLength, dest);
+    for(int j = 0; j < invalidLenBeginning; ++j) {
+      dest[j] = LLONG_MIN;
+    }
+    for(int j = 0; j < invalidLenEnding; ++j) {
+      dest[rowNum - 1 - j] = LLONG_MIN;
+    }
+    if(reverseCol)
+      start -= rows_;
+    else
+      start += rows_;
+    dest += rowNum;
+  }
+  ConstantSP matrix = ConstantSP(new FastNanoTimestampMatrix(colNum, rowNum, colNum, data, containNull_));
+  if(!rowLabel_->isNull()) matrix->setRowLabel(((Vector*)rowLabel_.get())->getSubVector(rowStart, rowLength));
+  if(!colLabel_->isNull()) matrix->setColumnLabel(((Vector*)colLabel_.get())->getSubVector(colStart, colLength));
+  return matrix;
 }
 
 ConstantSP FastNanoTimestampMatrix::getColumn(INDEX index) const {
-	VectorSP col = (VectorSP)getSubVector(rows_*index,rows_);
-	if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
-	return (ConstantSP)col;
+  VectorSP col = (VectorSP)getSubVector(rows_ * index, rows_);
+  if(!colLabel_->isNull()) col->setName(colLabel_->getString(index));
+  return (ConstantSP)col;
 }
 
-void FastFixedLengthVector::clear(){
-	size_ = 0;
-	containNull_ = false;
+void FastFixedLengthVector::clear() {
+  size_ = 0;
+  containNull_ = false;
 }
 
-void FastFixedLengthVector::initialize(){
-	memset((void*)data_,0,fixedLength_*size_);
+void FastFixedLengthVector::initialize() { memset((void*)data_, 0, fixedLength_ * size_); }
+
+FastFixedLengthVector::FastFixedLengthVector(DATA_TYPE type, int fixedLength, int sz, int capacity, unsigned char* srcData, bool containNull)
+    : fixedLength_(fixedLength), size_(sz), capacity_(capacity), type_(type), containNull_(containNull) {
+  if(capacity < sz) capacity_ = sz;
+  data_ = srcData;
 }
 
-FastFixedLengthVector::FastFixedLengthVector(DATA_TYPE type, int fixedLength, int sz, int capacity, unsigned char* srcData, bool containNull): fixedLength_(fixedLength), size_(sz),
-		capacity_(capacity), type_(type), containNull_(containNull){
-	if(capacity<sz)
-		capacity_=sz;
-	data_ = srcData;
-}
-
-FastFixedLengthVector::~FastFixedLengthVector(){
-	delete[] data_;
-}
+FastFixedLengthVector::~FastFixedLengthVector() { delete[] data_; }
 
 void FastFixedLengthVector::resize(INDEX sz) {
-	if (sz < 0)
-		return;
-	if (sz > capacity_) {
-		checkCapacity(sz - size_);
-	}
-	size_ = sz;
+  if(sz < 0) return;
+  if(sz > capacity_) {
+    checkCapacity(sz - size_);
+  }
+  size_ = sz;
 }
 
-INDEX FastFixedLengthVector::reserve(INDEX capacity){
-	if(capacity > capacity_){
-		INDEX newCapacity= (std::max)((INDEX)(capacity_ * 1.2), capacity);
-		auto* newData = new unsigned char[newCapacity * fixedLength_];
-		memcpy(newData,data_,size_*fixedLength_);
-		delete[] data_;
-		data_=newData;
-		capacity_=newCapacity;
-	}
-	return capacity_;
+INDEX FastFixedLengthVector::reserve(INDEX capacity) {
+  if(capacity > capacity_) {
+    INDEX newCapacity = (std::max)((INDEX)(capacity_ * 1.2), capacity);
+    auto* newData = new unsigned char[newCapacity * fixedLength_];
+    memcpy(newData, data_, size_ * fixedLength_);
+    delete[] data_;
+    data_ = newData;
+    capacity_ = newCapacity;
+  }
+  return capacity_;
 }
 
 unsigned char* FastFixedLengthVector::getDataArray(const Vector* indexVector, bool& haveNull) const {
-	INDEX len = indexVector->size();
-	INDEX bytes = len * fixedLength_;
-	auto* buf = new unsigned char[bytes];
-	UINDEX sz=size_;
-	unsigned char* dest = buf;
-	haveNull = false;
-	if(indexVector->isIndexArray()){
-		auto* bufIndex=(UINDEX*)indexVector->getIndexArray();
-		for(INDEX i=0;i<len;++i){
-			if(bufIndex[i]<sz)
-				memcpy(dest, data_ + (bufIndex[i] * fixedLength_), fixedLength_);
-			else{
-				memset(dest, 0, fixedLength_);
-				haveNull=true;
-			}
-			dest += fixedLength_;
-		}
-	}
-	else{
-		UINDEX bufIndex[Util::BUF_SIZE];
-		const UINDEX* pbufIndex;
-		INDEX start=0;
-		int count=0;
-		int i;
-		while(start<len){
-			count=(std::min)(len-start,Util::BUF_SIZE);
-			pbufIndex = (const UINDEX*)indexVector->getIndexConst(start,count,(INDEX*)bufIndex);
-			for(i=0;i<count;++i){
-				if(pbufIndex[i]<sz)
-					memcpy(dest, data_ + (pbufIndex[i] * fixedLength_), fixedLength_);
-				else{
-					memset(dest, 0, fixedLength_);
-					haveNull=true;
-				}
-				dest += fixedLength_;
-			}
-			start+=count;
-		}
-	}
-	if(containNull_ && !haveNull){
-		haveNull = hasNullInRange(buf, 0, len);
-	}
-	return buf;
+  INDEX len = indexVector->size();
+  INDEX bytes = len * fixedLength_;
+  auto* buf = new unsigned char[bytes];
+  UINDEX sz = size_;
+  unsigned char* dest = buf;
+  haveNull = false;
+  if(indexVector->isIndexArray()) {
+    auto* bufIndex = (UINDEX*)indexVector->getIndexArray();
+    for(INDEX i = 0; i < len; ++i) {
+      if(bufIndex[i] < sz)
+        memcpy(dest, data_ + (bufIndex[i] * fixedLength_), fixedLength_);
+      else {
+        memset(dest, 0, fixedLength_);
+        haveNull = true;
+      }
+      dest += fixedLength_;
+    }
+  } else {
+    UINDEX bufIndex[Util::BUF_SIZE];
+    const UINDEX* pbufIndex;
+    INDEX start = 0;
+    int count = 0;
+    int i;
+    while(start < len) {
+      count = (std::min)(len - start, Util::BUF_SIZE);
+      pbufIndex = (const UINDEX*)indexVector->getIndexConst(start, count, (INDEX*)bufIndex);
+      for(i = 0; i < count; ++i) {
+        if(pbufIndex[i] < sz)
+          memcpy(dest, data_ + (pbufIndex[i] * fixedLength_), fixedLength_);
+        else {
+          memset(dest, 0, fixedLength_);
+          haveNull = true;
+        }
+        dest += fixedLength_;
+      }
+      start += count;
+    }
+  }
+  if(containNull_ && !haveNull) {
+    haveNull = hasNullInRange(buf, 0, len);
+  }
+  return buf;
 }
 
-unsigned char* FastFixedLengthVector::getDataArray(INDEX start, INDEX length) const {
-	return getDataArray(start, length, std::abs(length));
-}
+unsigned char* FastFixedLengthVector::getDataArray(INDEX start, INDEX length) const { return getDataArray(start, length, std::abs(length)); }
 
 unsigned char* FastFixedLengthVector::getDataArray(INDEX start, INDEX length, INDEX capacity) const {
-	auto* buf= new unsigned char[capacity*fixedLength_];
-	if(length>0)
-		memcpy(buf,data_+(start*fixedLength_),length*fixedLength_);
-	else{
-		unsigned char* src = data_ + (start * fixedLength_);
-		unsigned char* dest = buf;
-		length=std::abs(length);
-		while(length>0){
-			memcpy(dest, src, fixedLength_);
-			dest += fixedLength_;
-			src -= fixedLength_;
-			--length;
-		}
-	}
-	return buf;
+  auto* buf = new unsigned char[capacity * fixedLength_];
+  if(length > 0)
+    memcpy(buf, data_ + (start * fixedLength_), length * fixedLength_);
+  else {
+    unsigned char* src = data_ + (start * fixedLength_);
+    unsigned char* dest = buf;
+    length = std::abs(length);
+    while(length > 0) {
+      memcpy(dest, src, fixedLength_);
+      dest += fixedLength_;
+      src -= fixedLength_;
+      --length;
+    }
+  }
+  return buf;
 }
-
 
 void FastFixedLengthVector::getDataArray(INDEX start, INDEX length, unsigned char* buf) const {
-	if(length>0)
-		memcpy(buf, data_+(start*fixedLength_), length*fixedLength_);
-	else{
-		unsigned char* src=data_+(start * fixedLength_);
-		unsigned char* dest=buf;
-		length=std::abs(length);
-		while(length>0){
-			memcpy(dest, src, fixedLength_);
-			dest += fixedLength_;
-			src -= fixedLength_;
-			--length;
-		}
-	}
+  if(length > 0)
+    memcpy(buf, data_ + (start * fixedLength_), length * fixedLength_);
+  else {
+    unsigned char* src = data_ + (start * fixedLength_);
+    unsigned char* dest = buf;
+    length = std::abs(length);
+    while(length > 0) {
+      memcpy(dest, src, fixedLength_);
+      dest += fixedLength_;
+      src -= fixedLength_;
+      --length;
+    }
+  }
 }
 
-void FastFixedLengthVector::checkCapacity(int appendSize){
-	if(size_+appendSize>capacity_){
-		auto newCapacity= static_cast<INDEX>((size_+appendSize)*1.2);
-		auto* newData = new unsigned char[newCapacity * fixedLength_];
-		memcpy(newData,data_,size_ * fixedLength_);
-		delete[] data_;
-		capacity_=newCapacity;
-		data_=newData;
-	}
+void FastFixedLengthVector::checkCapacity(int appendSize) {
+  if(size_ + appendSize > capacity_) {
+    auto newCapacity = static_cast<INDEX>((size_ + appendSize) * 1.2);
+    auto* newData = new unsigned char[newCapacity * fixedLength_];
+    memcpy(newData, data_, size_ * fixedLength_);
+    delete[] data_;
+    capacity_ = newCapacity;
+    data_ = newData;
+  }
 }
 
 ConstantSP FastFixedLengthVector::getSubVector(INDEX start, INDEX length, INDEX capacity) const {
-	if(capacity <= 0)
-		capacity = 1;
-	DATA_TYPE type = getType();
-	unsigned char* data = getDataArray(start,length,capacity);
-	if (data == nullptr) {
-		throw MemoryException();
-	}
-	return Util::createVector(type,std::abs(length), capacity, true, getExtraParamForType(), data, containNull_);
+  if(capacity <= 0) capacity = 1;
+  DATA_TYPE type = getType();
+  unsigned char* data = getDataArray(start, length, capacity);
+  if(data == nullptr) {
+    throw MemoryException();
+  }
+  return Util::createVector(type, std::abs(length), capacity, true, getExtraParamForType(), data, containNull_);
 }
 
-IO_ERR FastFixedLengthVector::deserialize(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement){
-	IO_ERR ret=OK;
-	INDEX end = indexStart + targetNumElement;
-	checkCapacity(end - size_);
-	INDEX i=indexStart;
-	size_t unitLength = fixedLength_;
-	if(!in->isIntegerReversed()){
-		size_t actualLength;
-		ret = in->readBytes((char*)(data_ + (i*fixedLength_)), unitLength,  targetNumElement, actualLength);
-		i += static_cast<INDEX>(actualLength);
-	}
-	else{
-		for(; i<end; ++i){
-			if((ret = in->readBytes((char*)(data_+(i*fixedLength_)), unitLength, true)) != OK){
-				numElement = i - indexStart;
-				size_ = std::max(i, size_);
-				if(!containNull_)
-					containNull_ = hasNullInRange(data_, indexStart, i);
-				return ret;
-			}
-		}
-	}
-	numElement = i - indexStart;
-	size_ = std::max(i, size_);
-	if(!containNull_)
-		containNull_ = hasNullInRange(data_, indexStart, i);
-	return ret;
+IO_ERR FastFixedLengthVector::deserialize(DataInputStream* in, INDEX indexStart, INDEX targetNumElement, INDEX& numElement) {
+  IO_ERR ret = OK;
+  INDEX end = indexStart + targetNumElement;
+  checkCapacity(end - size_);
+  INDEX i = indexStart;
+  size_t unitLength = fixedLength_;
+  if(!in->isIntegerReversed()) {
+    size_t actualLength;
+    ret = in->readBytes((char*)(data_ + (i * fixedLength_)), unitLength, targetNumElement, actualLength);
+    i += static_cast<INDEX>(actualLength);
+  } else {
+    for(; i < end; ++i) {
+      if((ret = in->readBytes((char*)(data_ + (i * fixedLength_)), unitLength, true)) != OK) {
+        numElement = i - indexStart;
+        size_ = std::max(i, size_);
+        if(!containNull_) containNull_ = hasNullInRange(data_, indexStart, i);
+        return ret;
+      }
+    }
+  }
+  numElement = i - indexStart;
+  size_ = std::max(i, size_);
+  if(!containNull_) containNull_ = hasNullInRange(data_, indexStart, i);
+  return ret;
 }
 
 ConstantSP FastFixedLengthVector::retrieve(Vector* index) const {
-	INDEX length = index->size();
-	bool haveNull =containNull_;
-	DATA_TYPE type = getType();
-	unsigned char* data = getDataArray(index, haveNull);
-	return Util::createVector(type,length, 0, true, getExtraParamForType(), (void*)data, haveNull);
+  INDEX length = index->size();
+  bool haveNull = containNull_;
+  DATA_TYPE type = getType();
+  unsigned char* data = getDataArray(index, haveNull);
+  return Util::createVector(type, length, 0, true, getExtraParamForType(), (void*)data, haveNull);
 }
 
 ConstantSP FastFixedLengthVector::getInstance(INDEX sz) const {
-	DATA_TYPE type = getType();
-	INDEX capacity = (std::max)(1, sz);
-	INDEX bytes = capacity * fixedLength_;
-	auto* data = new unsigned char[bytes];
-	return Util::createVector(type,sz, capacity, true, getExtraParamForType(), (void*)data, false);
+  DATA_TYPE type = getType();
+  INDEX capacity = (std::max)(1, sz);
+  INDEX bytes = capacity * fixedLength_;
+  auto* data = new unsigned char[bytes];
+  return Util::createVector(type, sz, capacity, true, getExtraParamForType(), (void*)data, false);
 }
 
 ConstantSP FastFixedLengthVector::getValue() const {
-	DATA_TYPE type = getType();
-		unsigned char* data = getDataArray(0, size_);
-	Vector* copy = Util::createVector(type,size_, 0, true, getExtraParamForType(), (void*)data, containNull_);
-	copy->setForm(getForm());
-	return copy;
+  DATA_TYPE type = getType();
+  unsigned char* data = getDataArray(0, size_);
+  Vector* copy = Util::createVector(type, size_, 0, true, getExtraParamForType(), (void*)data, containNull_);
+  copy->setForm(getForm());
+  return copy;
 }
 
 ConstantSP FastFixedLengthVector::getValue(INDEX capacity) const {
-	DATA_TYPE type = getType();
-	capacity = (std::max)(capacity, (INDEX)size_);
-	auto*	data = new unsigned char[capacity * fixedLength_];
-	memcpy(data, data_, fixedLength_ * size_);
-	Vector* copy = Util::createVector(type,size_, capacity, true, getExtraParamForType(), (void*)data, containNull_);
-	copy->setForm(getForm());
-	return copy;
+  DATA_TYPE type = getType();
+  capacity = (std::max)(capacity, (INDEX)size_);
+  auto* data = new unsigned char[capacity * fixedLength_];
+  memcpy(data, data_, fixedLength_ * size_);
+  Vector* copy = Util::createVector(type, size_, capacity, true, getExtraParamForType(), (void*)data, containNull_);
+  copy->setForm(getForm());
+  return copy;
 }
 
-bool FastFixedLengthVector::set(INDEX index, const ConstantSP& value){
-	value->getBinary(0, 1, fixedLength_, data_ + (index * fixedLength_));
-	if(!containNull_ && value->isNull())
-		containNull_=true;
-	return true;
+bool FastFixedLengthVector::set(INDEX index, const ConstantSP& value) {
+  value->getBinary(0, 1, fixedLength_, data_ + (index * fixedLength_));
+  if(!containNull_ && value->isNull()) containNull_ = true;
+  return true;
 }
 
-bool FastFixedLengthVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(value->getType() != type_)
-		return false;
+bool FastFixedLengthVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(value->getType() != type_) return false;
 
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufSize = (std::min)(len, Util::BUF_SIZE);
-		//INDEX bufIndex[bufSize];
-		std::unique_ptr<INDEX[]> bufIndex(new INDEX[bufSize]);
-		//unsigned char bufVal[bufSize * fixedLength_];
-		std::unique_ptr<unsigned char[]> bufVal(new unsigned char[bufSize * fixedLength_]);
-		const INDEX* pindex;
-		const unsigned char* pval;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=(std::min)(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex.get());
-			pval=value->getBinaryConst(start, count, fixedLength_, bufVal.get());
-			for(int i=0;i<count;i++)
-				memcpy(data_ + (pindex[i]*fixedLength_), pval + (i * fixedLength_), fixedLength_);
-			start+=count;
-		}
-		if(!containNull_ && value->getNullFlag())
-			containNull_ = true;
-	}
-	else{
-		value->getBinary(0, 1, fixedLength_, data_ + (index->getIndex() * fixedLength_));
-		if(!containNull_ && value->isNull())
-			containNull_ = true;
-	}
-	return true;
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufSize = (std::min)(len, Util::BUF_SIZE);
+    // INDEX bufIndex[bufSize];
+    std::unique_ptr<INDEX[]> bufIndex(new INDEX[bufSize]);
+    // unsigned char bufVal[bufSize * fixedLength_];
+    std::unique_ptr<unsigned char[]> bufVal(new unsigned char[bufSize * fixedLength_]);
+    const INDEX* pindex;
+    const unsigned char* pval;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = (std::min)(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex.get());
+      pval = value->getBinaryConst(start, count, fixedLength_, bufVal.get());
+      for(int i = 0; i < count; i++) memcpy(data_ + (pindex[i] * fixedLength_), pval + (i * fixedLength_), fixedLength_);
+      start += count;
+    }
+    if(!containNull_ && value->getNullFlag()) containNull_ = true;
+  } else {
+    value->getBinary(0, 1, fixedLength_, data_ + (index->getIndex() * fixedLength_));
+    if(!containNull_ && value->isNull()) containNull_ = true;
+  }
+  return true;
 }
 
-void FastFixedLengthVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(!value->getBinary(0, length, fixedLength_, data_ + (start * fixedLength_)))
-		throw RuntimeException("Failed to read binary data from the given vector.");
-	if(!containNull_){
-		if(value->getNullFlag())
-			containNull_ = true;
-	}
+void FastFixedLengthVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(!value->getBinary(0, length, fixedLength_, data_ + (start * fixedLength_)))
+    throw RuntimeException("Failed to read binary data from the given vector.");
+  if(!containNull_) {
+    if(value->getNullFlag()) containNull_ = true;
+  }
 }
 
 bool FastFixedLengthVector::append(const ConstantSP& value, INDEX start, INDEX appendSize) {
-	checkCapacity(appendSize);
-	if (!value->getBinary(start, appendSize, fixedLength_, data_ + (size_ * fixedLength_)))
-		return false;
-	size_ += appendSize;
-	if (value->getNullFlag())
-		containNull_ = true;
-	return true;
+  checkCapacity(appendSize);
+  if(!value->getBinary(start, appendSize, fixedLength_, data_ + (size_ * fixedLength_))) return false;
+  size_ += appendSize;
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastFixedLengthVector::append(const ConstantSP& value, INDEX appendSize){
-	checkCapacity(appendSize);
+bool FastFixedLengthVector::append(const ConstantSP& value, INDEX appendSize) {
+  checkCapacity(appendSize);
 
-	if(!value->getBinary(0,appendSize,fixedLength_,data_ + (size_ * fixedLength_)))
-		return false;
-	if(!containNull_){
-		if(value->getNullFlag())
-			containNull_ = true;
-	}
-	size_+=appendSize;
-	return true;
+  if(!value->getBinary(0, appendSize, fixedLength_, data_ + (size_ * fixedLength_))) return false;
+  if(!containNull_) {
+    if(value->getNullFlag()) containNull_ = true;
+  }
+  size_ += appendSize;
+  return true;
 }
 
-bool FastFixedLengthVector::remove(const ConstantSP& index){
-	INDEX sz = index->size();
-	INDEX invSize = size_ - sz;
-	if(invSize <= 0){
-		size_ = 0;
-		containNull_ = false;
-		return true;
-	}
+bool FastFixedLengthVector::remove(const ConstantSP& index) {
+  INDEX sz = index->size();
+  INDEX invSize = size_ - sz;
+  if(invSize <= 0) {
+    size_ = 0;
+    containNull_ = false;
+    return true;
+  }
 
-	INDEX* a[1];
-	INDEX** dataSeg = a;
-	INDEX segmentSize  = sz;
-	int segCount = 1;
-	if(index->isIndexArray())
-		dataSeg[0] = index->getIndexArray();
-	else
-		return false;
-	INDEX prevIndex = dataSeg[0][0];
-	INDEX cursor = prevIndex;
-	INDEX j = 1;
+  INDEX* a[1];
+  INDEX** dataSeg = a;
+  INDEX segmentSize = sz;
+  int segCount = 1;
+  if(index->isIndexArray())
+    dataSeg[0] = index->getIndexArray();
+  else
+    return false;
+  INDEX prevIndex = dataSeg[0][0];
+  INDEX cursor = prevIndex;
+  INDEX j = 1;
 
-	for(int i=0; i<segCount; ++i){
-		INDEX* delIndices = dataSeg[i];
-		INDEX count = (std::min)(segmentSize, sz - (i * segmentSize));
-		for(; j<count; ++j){
-			if(delIndices[j] > prevIndex + 1){
-				INDEX end = delIndices[j];
-				int len = end - (prevIndex + 1);
-				memmove(data_ + (cursor * fixedLength_), data_+((prevIndex+1)*fixedLength_), len*fixedLength_);
-				cursor += len;
-			}
-			prevIndex = delIndices[j];
-		}
-		j = 0;
-	}
-	int len = size_ - (prevIndex + 1);
-	memmove(data_ + (cursor * fixedLength_), data_+((prevIndex+1)*fixedLength_), len*fixedLength_);
+  for(int i = 0; i < segCount; ++i) {
+    INDEX* delIndices = dataSeg[i];
+    INDEX count = (std::min)(segmentSize, sz - (i * segmentSize));
+    for(; j < count; ++j) {
+      if(delIndices[j] > prevIndex + 1) {
+        INDEX end = delIndices[j];
+        int len = end - (prevIndex + 1);
+        memmove(data_ + (cursor * fixedLength_), data_ + ((prevIndex + 1) * fixedLength_), len * fixedLength_);
+        cursor += len;
+      }
+      prevIndex = delIndices[j];
+    }
+    j = 0;
+  }
+  int len = size_ - (prevIndex + 1);
+  memmove(data_ + (cursor * fixedLength_), data_ + ((prevIndex + 1) * fixedLength_), len * fixedLength_);
 
-	size_ = invSize;
-	if(containNull_){
-		containNull_ = hasNullInRange(data_, 0, size_);
-	}
-	return true;
+  size_ = invSize;
+  if(containNull_) {
+    containNull_ = hasNullInRange(data_, 0, size_);
+  }
+  return true;
 }
 
-bool FastFixedLengthVector::remove(INDEX count){
-	if(!sizeable() || std::abs(count)>size_)
-		return false;
-	if(count<0){
-		count=-count;
-		memmove(data_, data_+(count*fixedLength_), (size_-count)*fixedLength_);
-	}
-	size_-=count;
-	return true;
+bool FastFixedLengthVector::remove(INDEX count) {
+  if(!sizeable() || std::abs(count) > size_) return false;
+  if(count < 0) {
+    count = -count;
+    memmove(data_, data_ + (count * fixedLength_), (size_ - count) * fixedLength_);
+  }
+  size_ -= count;
+  return true;
 }
 
-void FastFixedLengthVector::next(INDEX steps){
-   	if(steps>size_ || steps<0)
-    	return;
-	memmove(data_, data_+(steps*fixedLength_), (size_-steps)*fixedLength_);
-	memset(data_ + ((size_ - steps)*fixedLength_), 0, steps * fixedLength_);
-	containNull_=true;
+void FastFixedLengthVector::next(INDEX steps) {
+  if(steps > size_ || steps < 0) return;
+  memmove(data_, data_ + (steps * fixedLength_), (size_ - steps) * fixedLength_);
+  memset(data_ + ((size_ - steps) * fixedLength_), 0, steps * fixedLength_);
+  containNull_ = true;
 }
 
-void FastFixedLengthVector::prev(INDEX steps){
-	if(steps>size_ || steps<0)
-		return;
-	memmove(data_+ (steps*fixedLength_), data_, (size_-steps)*fixedLength_);
-	memset(data_, 0, steps * fixedLength_);
-	containNull_=true;
+void FastFixedLengthVector::prev(INDEX steps) {
+  if(steps > size_ || steps < 0) return;
+  memmove(data_ + (steps * fixedLength_), data_, (size_ - steps) * fixedLength_);
+  memset(data_, 0, steps * fixedLength_);
+  containNull_ = true;
 }
 
-long long FastFixedLengthVector::getAllocatedMemory() const {
-	return fixedLength_* (std::max)(capacity_, size_);
-}
+long long FastFixedLengthVector::getAllocatedMemory() const { return fixedLength_ * (std::max)(capacity_, size_); }
 
 int FastFixedLengthVector::serialize(char* buf, int bufSize, INDEX indexStart, int offset, int& numElement, int& partial) const {
-	std::ignore = offset;
-	//assume offset==0 and bufSize>=sizeof(T)
-	if(indexStart >= size_)
-		return -1;
-	int len = fixedLength_;
-	partial = 0;
-	numElement = (std::min)(bufSize / len, size_ -indexStart);
-	memcpy(buf, data_+(indexStart * fixedLength_), len * numElement);
-	return len * numElement;
+  std::ignore = offset;
+  // assume offset==0 and bufSize>=sizeof(T)
+  if(indexStart >= size_) return -1;
+  int len = fixedLength_;
+  partial = 0;
+  numElement = (std::min)(bufSize / len, size_ - indexStart);
+  memcpy(buf, data_ + (indexStart * fixedLength_), len * numElement);
+  return len * numElement;
 }
 
-int FastFixedLengthVector::serialize(char* buf, int bufSize, INDEX indexStart, int offset, int cellCountToSerialize, int& numElement, int& partial) const {
-	std::ignore = offset;
-	if (indexStart >= size_)
-		return -1;
-	int len = fixedLength_;
-	partial = 0;
-	numElement = ((std::min))(bufSize / len, cellCountToSerialize);
-	memcpy(buf, data_ + (indexStart * fixedLength_), len * numElement);
-	return len * numElement;
+int FastFixedLengthVector::serialize(char* buf, int bufSize, INDEX indexStart, int offset, int cellCountToSerialize, int& numElement,
+                                     int& partial) const {
+  std::ignore = offset;
+  if(indexStart >= size_) return -1;
+  int len = fixedLength_;
+  partial = 0;
+  numElement = ((std::min))(bufSize / len, cellCountToSerialize);
+  memcpy(buf, data_ + (indexStart * fixedLength_), len * numElement);
+  return len * numElement;
 }
 
-bool FastFixedLengthVector::assign(const ConstantSP& value){
-	if(value->isVector()){
-		if(size_!=value->size())
-			return false;
-	}
-	fill(0,size_,value);
-	return true;
+bool FastFixedLengthVector::assign(const ConstantSP& value) {
+  if(value->isVector()) {
+    if(size_ != value->size()) return false;
+  }
+  fill(0, size_, value);
+  return true;
 }
 
-void FastFixedLengthVector::setNull(INDEX index){
-	memset(data_ + (index * fixedLength_), 0, fixedLength_);
-}
+void FastFixedLengthVector::setNull(INDEX index) { memset(data_ + (index * fixedLength_), 0, fixedLength_); }
 
-void FastFixedLengthVector::reverse(INDEX start, INDEX length){
-	INDEX len=length/2;
-	INDEX end = start + length - 1;
-	//unsigned char tmp[fixedLength_];
-	std::unique_ptr<unsigned char[]> tmp(new unsigned char[fixedLength_]);
-	unsigned char* data = data_ + (start * fixedLength_);
-	unsigned char* src = data_ + (end * fixedLength_);
-	for(INDEX i=0; i<len; ++i){
-		memcpy(tmp.get(), data, fixedLength_);
-		memcpy(data, src, fixedLength_);
-		memcpy(src, tmp.get(), fixedLength_);
-		data += fixedLength_;
-		src -= fixedLength_;
-	}
+void FastFixedLengthVector::reverse(INDEX start, INDEX length) {
+  INDEX len = length / 2;
+  INDEX end = start + length - 1;
+  // unsigned char tmp[fixedLength_];
+  std::unique_ptr<unsigned char[]> tmp(new unsigned char[fixedLength_]);
+  unsigned char* data = data_ + (start * fixedLength_);
+  unsigned char* src = data_ + (end * fixedLength_);
+  for(INDEX i = 0; i < len; ++i) {
+    memcpy(tmp.get(), data, fixedLength_);
+    memcpy(data, src, fixedLength_);
+    memcpy(src, tmp.get(), fixedLength_);
+    data += fixedLength_;
+    src -= fixedLength_;
+  }
 }
 
 bool FastFixedLengthVector::getBinary(INDEX start, int len, int unitLenght, unsigned char* buf) const {
-	std::ignore = unitLenght;
-	memcpy(buf, data_ + (start * fixedLength_), len * fixedLength_);
-	return true;
+  std::ignore = unitLenght;
+  memcpy(buf, data_ + (start * fixedLength_), len * fixedLength_);
+  return true;
 }
 
 const unsigned char* FastFixedLengthVector::getBinaryConst(INDEX start, int len, int unitLength, unsigned char* buf) const {
-	std::ignore = len;
-	std::ignore = unitLength;
-	std::ignore = buf;
-	return data_ + (start * fixedLength_);
+  std::ignore = len;
+  std::ignore = unitLength;
+  std::ignore = buf;
+  return data_ + (start * fixedLength_);
 }
 
 unsigned char* FastFixedLengthVector::getBinaryBuffer(INDEX start, int len, int unitLength, unsigned char* buf) const {
-	std::ignore = len;
-	std::ignore = unitLength;
-	std::ignore = buf;
-	return data_ + (start * fixedLength_);
+  std::ignore = len;
+  std::ignore = unitLength;
+  std::ignore = buf;
+  return data_ + (start * fixedLength_);
 }
 
 void* FastFixedLengthVector::getDataBuffer(INDEX start, int len, void* buf) const {
-	std::ignore = len;
-	std::ignore = buf;
-	return (void*)(data_ + (start * fixedLength_));
+  std::ignore = len;
+  std::ignore = buf;
+  return (void*)(data_ + (start * fixedLength_));
 }
 
-void FastFixedLengthVector::setBinary(INDEX index, int unitLength, const unsigned char* val){
-	std::ignore = unitLength;
-	memcpy(data_ + (index * fixedLength_), val, fixedLength_);
+void FastFixedLengthVector::setBinary(INDEX index, int unitLength, const unsigned char* val) {
+  std::ignore = unitLength;
+  memcpy(data_ + (index * fixedLength_), val, fixedLength_);
 }
 
-bool FastFixedLengthVector::setBinary(INDEX start, int len, int unitLength, const unsigned char* buf){
-	std::ignore = unitLength;
-	if(buf == data_ + start*fixedLength_)
-		return true;
-	memcpy(data_ + (start * fixedLength_), buf, fixedLength_ * len);
-	return true;
+bool FastFixedLengthVector::setBinary(INDEX start, int len, int unitLength, const unsigned char* buf) {
+  std::ignore = unitLength;
+  if(buf == data_ + start * fixedLength_) return true;
+  memcpy(data_ + (start * fixedLength_), buf, fixedLength_ * len);
+  return true;
 }
 
-bool FastFixedLengthVector::setData(INDEX start, int len, void* buf){
-	if(buf != (void*)(data_+(start*fixedLength_)))
-		memcpy(data_+(start*fixedLength_), buf, fixedLength_*len);
-	return true;
+bool FastFixedLengthVector::setData(INDEX start, int len, void* buf) {
+  if(buf != (void*)(data_ + (start * fixedLength_))) memcpy(data_ + (start * fixedLength_), buf, fixedLength_ * len);
+  return true;
 }
 
-FastInt128Vector::FastInt128Vector(DATA_TYPE type, int sz, int capacity, unsigned char* srcData, bool containNull) : FastRecordVector<Guid, GuidHash>(type, sz, capacity, srcData, containNull){
-
-}
+FastInt128Vector::FastInt128Vector(DATA_TYPE type, int sz, int capacity, unsigned char* srcData, bool containNull)
+    : FastRecordVector<Guid, GuidHash>(type, sz, capacity, srcData, containNull) {}
 
 Guid FastInt128Vector::getInt128() const {
-	if(size_ == 1)
-		return Guid(data_);
-	throw RuntimeException("A scalar object is expected. But the actual object is a vector.");
+  if(size_ == 1) return Guid(data_);
+  throw RuntimeException("A scalar object is expected. But the actual object is a vector.");
 }
 
-FastUuidVector::FastUuidVector(int sz, int capacity, unsigned char* srcData, bool containNull) : FastInt128Vector(DT_UUID, sz, capacity, srcData, containNull){
+FastUuidVector::FastUuidVector(int sz, int capacity, unsigned char* srcData, bool containNull)
+    : FastInt128Vector(DT_UUID, sz, capacity, srcData, containNull) {}
+
+FastIPAddrVector::FastIPAddrVector(int sz, int capacity, unsigned char* srcData, bool containNull)
+    : FastInt128Vector(DT_IP, sz, capacity, srcData, containNull) {}
+
+bool FastSymbolVector::set(INDEX index, const ConstantSP& value) {
+  data_[index] = base_->findAndInsert(value->getString());
+  if(data_[index] == nullVal_) containNull_ = true;
+  return true;
 }
 
-FastIPAddrVector::FastIPAddrVector(int sz, int capacity, unsigned char* srcData, bool containNull) : FastInt128Vector(DT_IP, sz, capacity, srcData, containNull){
+ConstantSP FastSymbolVector::get(INDEX index) const { return ConstantSP(new String(getString(index))); }
+
+ConstantSP FastSymbolVector::get(const ConstantSP& index) const {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    auto* p = new StringVector(len, len, false);
+    auto* pdata = (std::string*)p->getDataArray();
+    ConstantSP result(p);
+    if(index->isIndexArray()) {
+      auto* bufIndex = (UINDEX*)index->getIndexArray();
+      for(INDEX i = 0; i < len; ++i) pdata[i] = (int)bufIndex[i] < size_ ? base_->getSymbol(data_[bufIndex[i]]) : "";
+    } else {
+      const int bufSize = Util::BUF_SIZE;
+      UINDEX bufIndex[bufSize];
+      INDEX start = 0;
+      int count = 0;
+      int i;
+      while(start < len) {
+        count = ((std::min))(len - start, bufSize);
+        index->getIndex(start, count, (INDEX*)bufIndex);
+        for(i = 0; i < count; i++) {
+          pdata[start + i] = (int)bufIndex[i] < size_ ? base_->getSymbol(data_[bufIndex[i]]) : "";
+        }
+        start += count;
+      }
+    }
+    p->setNullFlag(containNull_ || p->hasNull());
+    return result;
+  }
+  auto idx = (UINDEX)index->getIndex();
+  if(idx < (UINDEX)this->size_) {
+    return get(idx);
+  }
+  return ConstantSP();
 }
 
-bool FastSymbolVector::set(INDEX index, const ConstantSP& value){
-	data_[index] = base_->findAndInsert(value->getString());
-	if(data_[index]==nullVal_)
-		containNull_=true;
-	return true;
-}
-
-ConstantSP  FastSymbolVector::get(INDEX index) const {
-	return ConstantSP(new String(getString(index)));
-}
-
-ConstantSP  FastSymbolVector::get(const ConstantSP& index) const {
-	if(index->isVector()){
-		INDEX len=index->size();
-		auto* p=new StringVector(len, len, false);
-		auto *pdata=(std::string*)p->getDataArray();
-		ConstantSP result(p);
-		if(index->isIndexArray()){
-			auto* bufIndex=(UINDEX*)index->getIndexArray();
-			for(INDEX i=0;i<len;++i)
-				pdata[i] = (int)bufIndex[i] < size_ ? base_->getSymbol(data_[bufIndex[i]]) : "";
-		} else{
-			const int bufSize=Util::BUF_SIZE;
-			UINDEX bufIndex[bufSize];
-			INDEX start=0;
-			int count=0;
-			int i;
-			while(start<len){
-				count=((std::min))(len-start,bufSize);
-				index->getIndex(start,count,(INDEX*)bufIndex);
-				for(i=0;i<count;i++){
-					pdata[start+i]=(int)bufIndex[i] < size_ ? base_->getSymbol(data_[bufIndex[i]]) : "";
-				}
-				start+=count;
-			}
-		}
-		p->setNullFlag(containNull_ || p->hasNull());
-		return result;
-	}
-	auto idx = (UINDEX)index->getIndex();
-	if (idx < (UINDEX)this->size_) {
-		return get(idx);
-	}
-	return ConstantSP();
-}
-
-void  FastSymbolVector::fill(INDEX start, INDEX length, const ConstantSP& value){
-	if(value->size()==1 || value->size()!=length){
-		int fillVal = base_->findAndInsert(value->getString());
-		int end=start+length;
-		for(int i=start;i<end;++i)
-			data_[i]=fillVal;
-	}
-	else{
-		if(value->getCategory() != LITERAL || value->size() < length)
-			throw RuntimeException("Failed to read int data from the given vector.");
-		for(int i = 0; i < length; i++){
-			int fillVal = base_->findAndInsert(value->getString(i));
-			data_[i + start]=fillVal;
-		}
-	}
-	if(value->getNullFlag())
-		containNull_=true;
+void FastSymbolVector::fill(INDEX start, INDEX length, const ConstantSP& value) {
+  if(value->size() == 1 || value->size() != length) {
+    int fillVal = base_->findAndInsert(value->getString());
+    int end = start + length;
+    for(int i = start; i < end; ++i) data_[i] = fillVal;
+  } else {
+    if(value->getCategory() != LITERAL || value->size() < length) throw RuntimeException("Failed to read int data from the given vector.");
+    for(int i = 0; i < length; i++) {
+      int fillVal = base_->findAndInsert(value->getString(i));
+      data_[i + start] = fillVal;
+    }
+  }
+  if(value->getNullFlag()) containNull_ = true;
 }
 
 std::string** FastSymbolVector::getStringConst(INDEX start, int len, std::string** buf) const {
-	SymbolBase* base = base_.get();
-	for (int i = 0; i<len; ++i)
-		buf[i] = (std::string*)&(base->getSymbol(data_[start + i]));
-	return buf;
+  SymbolBase* base = base_.get();
+  for(int i = 0; i < len; ++i) buf[i] = (std::string*)&(base->getSymbol(data_[start + i]));
+  return buf;
 }
 
 char** FastSymbolVector::getStringConst(INDEX start, int len, char** buf) const {
-	SymbolBase* base = base_.get();
-	for (int i = 0; i<len; ++i)
-		buf[i] = (char*)(base->getSymbol(data_[start + i]).c_str());
-	return buf;
+  SymbolBase* base = base_.get();
+  for(int i = 0; i < len; ++i) buf[i] = (char*)(base->getSymbol(data_[start + i]).c_str());
+  return buf;
 }
 
-bool  FastSymbolVector::validIndex(INDEX uplimit){
-	return validIndex(0, size_, uplimit);
+bool FastSymbolVector::validIndex(INDEX uplimit) { return validIndex(0, size_, uplimit); }
+
+bool FastSymbolVector::validIndex(INDEX start, INDEX length, INDEX uplimit) {
+  auto limit = (unsigned int)uplimit;
+  auto* data = (unsigned int*)data_;
+  INDEX end = start + length;
+  for(INDEX i = start; i < end; ++i)
+    if(data[i] > limit) return false;
+  return true;
 }
 
-bool  FastSymbolVector::validIndex(INDEX start, INDEX length, INDEX uplimit){
-	auto limit=(unsigned int)uplimit;
-	auto* data=(unsigned int*)data_;
-	INDEX end = start + length;
-	for(INDEX i=start;i<end;++i)
-		if(data[i]>limit)
-			return false;
-	return true;
+bool FastSymbolVector::set(const ConstantSP& index, const ConstantSP& value) {
+  if(index->isVector()) {
+    INDEX len = index->size();
+    INDEX bufIndex[Util::BUF_SIZE];
+    const INDEX* pindex;
+    INDEX start = 0;
+    int count;
+    while(start < len) {
+      count = ((std::min))(len - start, Util::BUF_SIZE);
+      pindex = index->getIndexConst(start, count, bufIndex);
+      for(int i = 0; i < count; i++) data_[pindex[i]] = base_->findAndInsert(value->getString(start + i));
+      start += count;
+    }
+  } else
+    data_[index->getIndex()] = base_->findAndInsert(value->getString());
+  if(value->getNullFlag()) containNull_ = true;
+  return true;
 }
 
-bool FastSymbolVector::set(const ConstantSP& index, const ConstantSP& value){
-	if(index->isVector()){
-		INDEX len=index->size();
-		INDEX bufIndex[Util::BUF_SIZE];
-		const INDEX* pindex;
-		INDEX start=0;
-		int count;
-		while(start<len){
-			count=((std::min))(len-start,Util::BUF_SIZE);
-			pindex=index->getIndexConst(start,count,bufIndex);
-			for(int i=0;i<count;i++)
-				data_[pindex[i]]=base_->findAndInsert(value->getString(start + i));
-			start+=count;
-		}
-	}
-	else
-		data_[index->getIndex()]=base_->findAndInsert(value->getString());
-	if(value->getNullFlag())
-		containNull_=true;
-	return true;
-}
-
-} // namespace dolphindb
+}  // namespace dolphindb

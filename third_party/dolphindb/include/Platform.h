@@ -12,9 +12,9 @@
 #endif
 #include <WinSock2.h>
 #include <Windows.h>
+#include <mstcpip.h>
 #include <objbase.h>
 #include <ws2tcpip.h>
-#include <mstcpip.h>
 
 #else
 

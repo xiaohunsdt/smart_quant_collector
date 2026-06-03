@@ -11,64 +11,62 @@
 #include "format.h"
 
 #ifndef FMT_MODULE
-#  include <cerrno>
-#  include <cstddef>
-#  include <cstdio>
-#  include <system_error>  // std::system_error
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <system_error>  // std::system_error
 
-#  if FMT_HAS_INCLUDE(<xlocale.h>)
-#    include <xlocale.h>  // LC_NUMERIC_MASK on macOS
-#  endif
+#if FMT_HAS_INCLUDE(<xlocale.h>)
+#include <xlocale.h>  // LC_NUMERIC_MASK on macOS
+#endif
 #endif  // FMT_MODULE
 
 #ifndef FMT_USE_FCNTL
 // UWP doesn't provide _pipe.
-#  if FMT_HAS_INCLUDE("winapifamily.h")
-#    include <winapifamily.h>
-#  endif
-#  if (FMT_HAS_INCLUDE(<fcntl.h>) || defined(__APPLE__) || \
-       defined(__linux__)) &&                              \
-      (!defined(WINAPI_FAMILY) ||                          \
-       (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP))
-#    include <fcntl.h>  // for O_RDONLY
-#    define FMT_USE_FCNTL 1
-#  else
-#    define FMT_USE_FCNTL 0
-#  endif
+#if FMT_HAS_INCLUDE("winapifamily.h")
+#include <winapifamily.h>
+#endif
+#if(FMT_HAS_INCLUDE(<fcntl.h>) || defined(__APPLE__) || defined(__linux__)) && \
+    (!defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP))
+#include <fcntl.h>  // for O_RDONLY
+#define FMT_USE_FCNTL 1
+#else
+#define FMT_USE_FCNTL 0
+#endif
 #endif
 
 #ifndef FMT_POSIX
-#  if defined(_WIN32) && !defined(__MINGW32__)
+#if defined(_WIN32) && !defined(__MINGW32__)
 // Fix warnings about deprecated symbols.
-#    define FMT_POSIX(call) _##call
-#  else
-#    define FMT_POSIX(call) call
-#  endif
+#define FMT_POSIX(call) _##call
+#else
+#define FMT_POSIX(call) call
+#endif
 #endif
 
 // Calls to system functions are wrapped in FMT_SYSTEM for testability.
 #ifdef FMT_SYSTEM
-#  define FMT_HAS_SYSTEM
-#  define FMT_POSIX_CALL(call) FMT_SYSTEM(call)
+#define FMT_HAS_SYSTEM
+#define FMT_POSIX_CALL(call) FMT_SYSTEM(call)
 #else
-#  define FMT_SYSTEM(call) ::call
-#  ifdef _WIN32
+#define FMT_SYSTEM(call) ::call
+#ifdef _WIN32
 // Fix warnings about deprecated symbols.
-#    define FMT_POSIX_CALL(call) ::_##call
-#  else
-#    define FMT_POSIX_CALL(call) ::call
-#  endif
+#define FMT_POSIX_CALL(call) ::_##call
+#else
+#define FMT_POSIX_CALL(call) ::call
+#endif
 #endif
 
 // Retries the expression while it evaluates to error_result and errno
 // equals to EINTR.
 #ifndef _WIN32
-#  define FMT_RETRY_VAL(result, expression, error_result) \
-    do {                                                  \
-      (result) = (expression);                            \
-    } while ((result) == (error_result) && errno == EINTR)
+#define FMT_RETRY_VAL(result, expression, error_result) \
+  do {                                                  \
+    (result) = (expression);                            \
+  } while((result) == (error_result) && errno == EINTR)
 #else
-#  define FMT_RETRY_VAL(result, expression, error_result) result = (expression)
+#define FMT_RETRY_VAL(result, expression, error_result) result = (expression)
 #endif
 
 #define FMT_RETRY(result, expression) FMT_RETRY_VAL(result, expression, -1)
@@ -92,7 +90,8 @@ FMT_BEGIN_EXPORT
  *
  * This class is most useful as a parameter type for functions that wrap C APIs.
  */
-template <typename Char> class basic_cstring_view {
+template <typename Char>
+class basic_cstring_view {
  private:
   const Char* data_;
 
@@ -114,12 +113,10 @@ using wcstring_view = basic_cstring_view<wchar_t>;
 FMT_API const std::error_category& system_category() noexcept;
 
 namespace detail {
-FMT_API void format_windows_error(buffer<char>& out, int error_code,
-                                  const char* message) noexcept;
+FMT_API void format_windows_error(buffer<char>& out, int error_code, const char* message) noexcept;
 }
 
-FMT_API std::system_error vwindows_error(int error_code, string_view format_str,
-                                         format_args args);
+FMT_API std::system_error vwindows_error(int error_code, string_view format_str, format_args args);
 
 /**
  * Constructs a `std::system_error` object with the description of the form
@@ -147,8 +144,7 @@ FMT_API std::system_error vwindows_error(int error_code, string_view format_str,
  *     }
  */
 template <typename... Args>
-std::system_error windows_error(int error_code, string_view message,
-                                const Args&... args) {
+std::system_error windows_error(int error_code, string_view message, const Args&... args) {
   return vwindows_error(error_code, message, fmt::make_format_args(args...));
 }
 
@@ -156,9 +152,7 @@ std::system_error windows_error(int error_code, string_view message,
 // Can be used to report errors from destructors.
 FMT_API void report_windows_error(int error_code, const char* message) noexcept;
 #else
-inline auto system_category() noexcept -> const std::error_category& {
-  return std::system_category();
-}
+inline auto system_category() noexcept -> const std::error_category& { return std::system_category(); }
 #endif  // _WIN32
 
 // std::system is not available on some platforms such as iOS (#2248).
@@ -189,9 +183,7 @@ class buffered_file {
   FMT_API ~buffered_file() noexcept;
 
  public:
-  buffered_file(buffered_file&& other) noexcept : file_(other.file_) {
-    other.file_ = nullptr;
-  }
+  buffered_file(buffered_file&& other) noexcept : file_(other.file_) { other.file_ = nullptr; }
 
   auto operator=(buffered_file&& other) -> buffered_file& {
     close();
@@ -214,8 +206,7 @@ class buffered_file {
   template <typename... T>
   inline void print(string_view fmt, const T&... args) {
     const auto& vargs = fmt::make_format_args(args...);
-    detail::is_locking<T...>() ? fmt::vprint_buffered(file_, fmt, vargs)
-                               : fmt::vprint(file_, fmt, vargs);
+    detail::is_locking<T...>() ? fmt::vprint_buffered(file_, fmt, vargs) : fmt::vprint(file_, fmt, vargs);
   }
 };
 
@@ -302,11 +293,11 @@ class FMT_API file {
   // this file object from the file.
   auto fdopen(const char* mode) -> buffered_file;
 
-#  if defined(_WIN32) && !defined(__MINGW32__)
+#if defined(_WIN32) && !defined(__MINGW32__)
   // Opens a file and constructs a file object representing this file by
   // wcstring_view filename. Windows only.
   static file open_windows_file(wcstring_view path, int oflag);
-#  endif
+#endif
 };
 
 struct FMT_API pipe {
@@ -345,17 +336,16 @@ struct ostream_params {
   }
 
   template <typename... T>
-  ostream_params(T... params, detail::buffer_size bs)
-      : ostream_params(params...) {
+  ostream_params(T... params, detail::buffer_size bs) : ostream_params(params...) {
     this->buffer_size = bs.value;
   }
 
 // Intel has a bug that results in failure to deduce a constructor
 // for empty parameter packs.
-#  if defined(__INTEL_COMPILER) && __INTEL_COMPILER < 2000
+#if defined(__INTEL_COMPILER) && __INTEL_COMPILER < 2000
   ostream_params(int new_oflag) : oflag(new_oflag) {}
   ostream_params(detail::buffer_size bs) : buffer_size(bs.value) {}
-#  endif
+#endif
 };
 
 class file_buffer final : public buffer<char> {
@@ -370,7 +360,7 @@ class file_buffer final : public buffer<char> {
   FMT_API ~file_buffer();
 
   void flush() {
-    if (size() == 0) return;
+    if(size() == 0) return;
     file_.write(data(), size() * sizeof(data()[0]));
     clear();
   }
@@ -392,8 +382,7 @@ class FMT_API ostream {
   FMT_MSC_WARNING(suppress : 4251)
   detail::file_buffer buffer_;
 
-  ostream(cstring_view path, const detail::ostream_params& params)
-      : buffer_(path, params) {}
+  ostream(cstring_view path, const detail::ostream_params& params) : buffer_(path, params) {}
 
  public:
   ostream(ostream&& other) : buffer_(std::move(other.buffer_)) {}
@@ -409,7 +398,8 @@ class FMT_API ostream {
 
   /// Formats `args` according to specifications in `fmt` and writes the
   /// output to the file.
-  template <typename... T> void print(format_string<T...> fmt, T&&... args) {
+  template <typename... T>
+  void print(format_string<T...> fmt, T&&... args) {
     vformat_to(appender(buffer_), fmt, fmt::make_format_args(args...));
   }
 };

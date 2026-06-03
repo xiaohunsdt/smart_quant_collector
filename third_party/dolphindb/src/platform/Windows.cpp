@@ -1,10 +1,9 @@
-#include "Util.h"
 #include <ctime>
+
+#include "Util.h"
 
 namespace dolphindb {
 
-bool Util::getLocalTime(time_t t, struct tm& result){
-    return localtime_s(&result, &t) == 0;
-}
+bool Util::getLocalTime(time_t t, struct tm& result) { return localtime_s(&result, &t) == 0; }
 
-} // namespace dolphindb
+}  // namespace dolphindb

@@ -26,98 +26,80 @@
 #endif
 #endif
 
-#include <string>
-#include <thread>
 #include <atomic>
 #include <stdexcept>
+#include <string>
+#include <thread>
 
-extern "C"
-{
+extern "C" {
 #include "aeronmd/aeronmd.h"
 }
 
-namespace aeron
-{
+namespace aeron {
 
-class EmbeddedMediaDriver
-{
-public:
-    ~EmbeddedMediaDriver()
-    {
-        aeron_driver_close(m_driver);
-        aeron_driver_context_close(m_context);
+class EmbeddedMediaDriver {
+ public:
+  ~EmbeddedMediaDriver() {
+    aeron_driver_close(m_driver);
+    aeron_driver_context_close(m_context);
+  }
+
+  void driverLoop() {
+    while(m_running) {
+      aeron_driver_main_idle_strategy(m_driver, aeron_driver_main_do_work(m_driver));
+    }
+  }
+
+  void stop() {
+    m_running = false;
+    if(m_thread.joinable()) {
+      m_thread.join();
+    }
+  }
+
+  void start(const char* s) {
+    if(init(s) < 0) {
+      throw std::runtime_error("failed to initialize");
+    }
+    m_thread = std::thread([&]() { driverLoop(); });
+  }
+
+ private:
+  int init(const char* s) {
+    if(aeron_driver_context_init(&m_context) < 0) {
+      fprintf(stderr, "ERROR: context init (%d) %s\n", aeron_errcode(), aeron_errmsg());
+      return -1;
+    }
+    // configs from dolphindb server
+    aeron_driver_context_set_mtu_length(m_context, 4 * 1480);
+    aeron_driver_context_set_term_buffer_length(m_context, 16 * 1024 * 1024);
+
+    aeron_driver_context_set_threading_mode(m_context, AERON_THREADING_MODE_SHARED);
+    aeron_driver_context_set_shared_idle_strategy(m_context, "backoff");
+    aeron_driver_context_set_dir_delete_on_start(m_context, true);
+    aeron_driver_context_set_dir_delete_on_shutdown(m_context, true);
+    aeron_driver_context_set_term_buffer_sparse_file(m_context, true);
+    aeron_driver_context_set_dir(m_context, s);
+    if(aeron_driver_init(&m_driver, m_context) < 0) {
+      fprintf(stderr, "ERROR: driver init (%d) %s\n", aeron_errcode(), aeron_errmsg());
+      return -1;
     }
 
-    void driverLoop()
-    {
-        while (m_running)
-        {
-            aeron_driver_main_idle_strategy(m_driver, aeron_driver_main_do_work(m_driver));
-        }
+    if(aeron_driver_start(m_driver, true) < 0) {
+      fprintf(stderr, "ERROR: driver start (%d) %s\n", aeron_errcode(), aeron_errmsg());
+      return -1;
     }
 
-    void stop()
-    {
-        m_running = false;
-        if (m_thread.joinable())
-        {
-            m_thread.join();
-        }
-    }
+    return 0;
+  }
 
-    void start(const char* s)
-    {
-        if (init(s) < 0)
-        {
-            throw std::runtime_error("failed to initialize");
-        }
-        m_thread = std::thread(
-            [&]()
-            {
-                driverLoop();
-            });
-    }
-
-private:
-    int init(const char* s)
-    {
-        if (aeron_driver_context_init(&m_context) < 0)
-        {
-            fprintf(stderr, "ERROR: context init (%d) %s\n", aeron_errcode(), aeron_errmsg());
-            return -1;
-        }
-        // configs from dolphindb server
-        aeron_driver_context_set_mtu_length(m_context, 4 * 1480);
-        aeron_driver_context_set_term_buffer_length(m_context, 16 * 1024 * 1024);
-
-        aeron_driver_context_set_threading_mode(m_context, AERON_THREADING_MODE_SHARED);
-        aeron_driver_context_set_shared_idle_strategy(m_context, "backoff");
-        aeron_driver_context_set_dir_delete_on_start(m_context, true);
-        aeron_driver_context_set_dir_delete_on_shutdown(m_context, true);
-        aeron_driver_context_set_term_buffer_sparse_file(m_context, true);
-        aeron_driver_context_set_dir(m_context,s);
-        if (aeron_driver_init(&m_driver, m_context) < 0)
-        {
-            fprintf(stderr, "ERROR: driver init (%d) %s\n", aeron_errcode(), aeron_errmsg());
-            return -1;
-        }
-
-        if (aeron_driver_start(m_driver, true) < 0)
-        {
-            fprintf(stderr, "ERROR: driver start (%d) %s\n", aeron_errcode(), aeron_errmsg());
-            return -1;
-        }
-
-        return 0;
-    }
-
-private:
-    std::atomic<bool> m_running = { true };
-    std::thread m_thread;
-    aeron_driver_context_t *m_context = nullptr;
-    aeron_driver_t *m_driver = nullptr;
+ private:
+  std::atomic<bool> m_running = {true};
+  std::thread m_thread;
+  aeron_driver_context_t* m_context = nullptr;
+  aeron_driver_t* m_driver = nullptr;
 };
 
-}
+}  // namespace aeron
 
-#endif //AERON_EMBEDDED_MEDIA_DRIVER_H
+#endif  // AERON_EMBEDDED_MEDIA_DRIVER_H

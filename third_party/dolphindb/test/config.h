@@ -1,14 +1,15 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "Logger.h"
-#include "DolphinDB.h"
 
-// single 
+#include "DolphinDB.h"
+#include "Logger.h"
+
+// single
 extern const std::string HOST, USER, PASSWD;
 extern const int PORT;
 
-// cluster 
+// cluster
 extern const std::string HOST_CLUSTER, USER_CLUSTER, PASSWD_CLUSTER;
 extern const int PORT_CONTROLLER, PORT_AGENT, PORT_DNODE1, PORT_DNODE2, PORT_DNODE3, PORT_CNODE1;
 

@@ -26,10 +26,10 @@
 namespace spdlog {
 namespace cfg {
 inline void load_env_levels() {
-    auto env_val = details::os::getenv("SPDLOG_LEVEL");
-    if (!env_val.empty()) {
-        helpers::load_levels(env_val);
-    }
+  auto env_val = details::os::getenv("SPDLOG_LEVEL");
+  if(!env_val.empty()) {
+    helpers::load_levels(env_val);
+  }
 }
 
 }  // namespace cfg

@@ -1,6 +1,7 @@
-#include "Streaming.h"
 #include <iostream>
 #include <thread>
+
+#include "Streaming.h"
 using namespace std;
 using namespace dolphindb;
 using namespace std::chrono;
@@ -8,11 +9,11 @@ using namespace std::chrono;
 class Executor : public dolphindb::Runnable {
   using Func = std::function<void()>;
 
-public:
+ public:
   explicit Executor(Func f) : func_(std::move(f)){};
   void run() override { func_(); };
 
-private:
+ private:
   Func func_;
 };
 
@@ -30,19 +31,18 @@ int main() {
     try {
       bool ret = conn.connect(host, serverport, "admin", "123456");
       cout << "connected to the server" << endl;
-      if (!ret) {
+      if(!ret) {
         cout << "Failed to connect to the server " << host << endl;
         return;
       }
-    } catch (exception &ex) {
+    } catch(exception &ex) {
       cout << "Failed to  connect  with error: " << ex.what();
       return;
     }
 
     auto handler = [&](Message msg) {
       TableSP t = (TableSP)msg;
-      cout << "received message size is " << t->size()
-           << "msg type:" << msg->getType() << endl;
+      cout << "received message size is " << t->size() << "msg type:" << msg->getType() << endl;
       cout << t->getColumn(0)->getLong(0) << endl;
       cout << t->getColumn(17)->getString(0) << endl;
       cout << t->getColumn(18)->getString(0) << endl;
@@ -54,19 +54,18 @@ int main() {
         conn.run("tableInsert{objByName(`sub1)}", args);
         // conn.run("tableInsert{loadTable('dfs://dolphindb', `demoTable)}",
         // args);
-      } catch (exception &ex) {
+      } catch(exception &ex) {
         cout << "Failed to  run  with error: " << ex.what() << endl;
       }
     };
 
-    auto t1 = client.subscribe(host, serverport, handler, "st1",
-                               "threadedClientSub", 0, true, nullptr,true);
+    auto t1 = client.subscribe(host, serverport, handler, "st1", "threadedClientSub", 0, true, nullptr, true);
     t1->join();
   }));
   t->start();
   tmp.emplace_back(t);
 
-  for (auto t : tmp) {
+  for(auto t : tmp) {
     t->join();
   }
 }
