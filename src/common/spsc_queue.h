@@ -20,10 +20,8 @@ namespace sqc {
 //   Consumer thread:  while (!q.try_pop(item)) { /* backoff */ }
 template <typename T, size_t kCapacity = 1024>
 class SPSCQueue {
-  static_assert((kCapacity & (kCapacity - 1)) == 0,
-                "SPSCQueue capacity must be a power of 2");
-  static_assert(std::is_trivially_copyable_v<T>,
-                "SPSCQueue element type must be trivially copyable");
+  static_assert((kCapacity & (kCapacity - 1)) == 0, "SPSCQueue capacity must be a power of 2");
+  static_assert(std::is_trivially_copyable_v<T>, "SPSCQueue element type must be trivially copyable");
 
  public:
   static constexpr size_t capacity = kCapacity;
@@ -40,7 +38,7 @@ class SPSCQueue {
   [[nodiscard]] bool try_push(const T& item) noexcept {
     const size_t w = write_pos_.load(std::memory_order_relaxed);
     const size_t r = read_pos_.load(std::memory_order_acquire);
-    if ((w - r) >= kCapacity) {
+    if((w - r) >= kCapacity) {
       return false;  // full
     }
     slots_[w & kMask] = item;
@@ -52,7 +50,7 @@ class SPSCQueue {
   [[nodiscard]] bool try_pop(T& out) noexcept {
     const size_t r = read_pos_.load(std::memory_order_relaxed);
     const size_t w = write_pos_.load(std::memory_order_acquire);
-    if (r == w) {
+    if(r == w) {
       return false;  // empty
     }
     out = slots_[r & kMask];

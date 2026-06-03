@@ -1,20 +1,16 @@
-#include <cstring>
-
 #include <gtest/gtest.h>
 
-#include "src/common/tick_data.h"
+#include <cstring>
+
 #include "src/common/storage_envelope.h"
+#include "src/common/tick_data.h"
 
 namespace sqc {
 namespace {
 
-TEST(TickDataTest, SizeIsExactly64) {
-  EXPECT_EQ(sizeof(TickData), 64);
-}
+TEST(TickDataTest, SizeIsExactly64) { EXPECT_EQ(sizeof(TickData), 64); }
 
-TEST(TickDataTest, AlignmentIs64) {
-  EXPECT_EQ(alignof(TickData), 64);
-}
+TEST(TickDataTest, AlignmentIs64) { EXPECT_EQ(alignof(TickData), 64); }
 
 TEST(TickDataTest, FieldsAreAccessible) {
   TickData tick{};
@@ -34,9 +30,7 @@ TEST(TickDataTest, FieldsAreAccessible) {
   EXPECT_TRUE(tick.is_buyer_maker);
 }
 
-TEST(StorageTickEnvelopeTest, SizeIsExactly72) {
-  EXPECT_TRUE(sizeof(StorageTickEnvelope) == 72 || sizeof(StorageTickEnvelope) == 128);
-}
+TEST(StorageTickEnvelopeTest, SizeIsExactly72) { EXPECT_TRUE(sizeof(StorageTickEnvelope) == 72 || sizeof(StorageTickEnvelope) == 128); }
 
 TEST(StorageTickEnvelopeTest, FieldsAreAccessible) {
   StorageTickEnvelope env{};

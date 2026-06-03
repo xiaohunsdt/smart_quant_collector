@@ -36,10 +36,7 @@ constexpr size_t kMaxTopicLen = 64;
 //
 // Returns the number of bytes written (excluding null terminator).
 // Returns -1 if the buffer is too small (truncation would occur).
-int64_t BuildTopic(char* buf, size_t buf_size,
-                   std::string_view exchange,
-                   std::string_view channel_type,
-                   std::string_view symbol,
+int64_t BuildTopic(char* buf, size_t buf_size, std::string_view exchange, std::string_view channel_type, std::string_view symbol,
                    std::string_view event_type);
 
 }  // namespace sqc

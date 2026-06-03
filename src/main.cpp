@@ -1,12 +1,11 @@
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/ssl.hpp>
 #include <chrono>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ssl.hpp>
 
 #include "common/cpu_affinity.h"
 #include "common/logger_init.h"
@@ -28,7 +27,7 @@
 int main(int argc, char* argv[]) {
   using namespace sqc;
   std::string config_path = "config/config.yaml";
-  if (argc > 1) config_path = argv[1];
+  if(argc > 1) config_path = argv[1];
 
   Config::Load(config_path);
   InitLogger();
@@ -48,34 +47,41 @@ int main(int argc, char* argv[]) {
   // 3. Telemetry
   PrometheusExposer prometheus;
   TelemetryAgent telemetry_agent(&prometheus);
-  TelemetrySlot telemetry_slot;
 
   auto num_parsers = Config::Instance().threading_matrix.parser_cores.size();
+  if(num_parsers == 0) {
+    LOG_CRITICAL(GetLogger(), "parser_cores must not be empty — modulo-by-zero on shard dispatch");
+    return EXIT_FAILURE;
+  }
+
+  // Per-shard telemetry slots — each parser thread writes its own slot,
+  // eliminating writer-writer contention on the seqlock.
+  std::vector<TelemetrySlot> telemetry_slots(num_parsers);
 
   // 4. Boost.Asio + SSL
   net::io_context io_ctx;
   net::ssl::context ssl_ctx(net::ssl::context::tlsv12_client);
-  ssl_ctx.set_verify_mode(net::ssl::verify_none);
+  ssl_ctx.set_verify_mode(net::ssl::verify_peer);
+  ssl_ctx.set_default_verify_paths();
 
   // 5. Symbol channels
   std::vector<std::shared_ptr<ShardQueue>> shard_queues;
-  for (size_t i = 0; i < num_parsers; ++i)
-    shard_queues.push_back(std::make_shared<ShardQueue>(1024));
+  for(size_t i = 0; i < num_parsers; ++i) shard_queues.push_back(std::make_shared<ShardQueue>(1024));
 
   std::vector<std::shared_ptr<SymbolChannel>> channels;
   std::vector<std::string> channel_topics;  // channel_id → topic prefix
 
-  for (const auto& ex : Config::Instance().exchanges) {
-    if (!ex.enabled) continue;
-    for (const auto& ch : ex.channels) {
+  for(const auto& ex : Config::Instance().exchanges) {
+    if(!ex.enabled) continue;
+    for(const auto& ch : ex.channels) {
       const auto* adapter = GetAdapter(ex.name, ParseChannelType(ch.type));
-      if (!adapter) {
+      if(!adapter) {
         LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
         continue;
       }
 
-      for (const auto& sym : ch.symbols) {
-        if (!sym.enabled) continue;
+      for(const auto& sym : ch.symbols) {
+        if(!sym.enabled) continue;
 
         ChannelInfo info;
         info.exchange = ex.name;
@@ -85,7 +91,7 @@ int main(int argc, char* argv[]) {
         uint32_t id = channel_registry.Register(info);
 
         // Build topic prefix: "exchange:type:symbol"
-        if (id >= channel_topics.size()) {
+        if(id >= channel_topics.size()) {
           channel_topics.resize(id + 1);
         }
         channel_topics[id] = std::string(ex.name) + ":" + ChannelTypeName(adapter->channel_type) + ":" + sym.name;
@@ -102,17 +108,16 @@ int main(int argc, char* argv[]) {
 
   // Pub/Sub
   const auto& pub_cfg = Config::Instance().pub;
-  PubWorker pub_worker(zmq_ctx, channel_topics, num_parsers,
-                       pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
+  PubWorker pub_worker(zmq_ctx, channel_topics, num_parsers, pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
 
   // Log subscription summary
   LOG_INFO(GetLogger(), "=== Subscription Summary ===");
   LOG_INFO(GetLogger(), "Channels: {}, Parser shards: {}", channels.size(), num_parsers);
-  for (const auto& ex : Config::Instance().exchanges) {
-    if (!ex.enabled) continue;
-    for (const auto& ch : ex.channels) {
-      for (const auto& sym : ch.symbols) {
-        if (!sym.enabled) continue;
+  for(const auto& ex : Config::Instance().exchanges) {
+    if(!ex.enabled) continue;
+    for(const auto& ch : ex.channels) {
+      for(const auto& sym : ch.symbols) {
+        if(!sym.enabled) continue;
         LOG_INFO(GetLogger(), "  {}:{}:{}:tick", ex.name, ch.type, sym.name);
         LOG_INFO(GetLogger(), "  {}:{}:{}:depth", ex.name, ch.type, sym.name);
         LOG_INFO(GetLogger(), "  {}:{}:{}:book_ticker", ex.name, ch.type, sym.name);
@@ -121,23 +126,29 @@ int main(int argc, char* argv[]) {
   }
   LOG_INFO(GetLogger(), "ZMQ PUB: tcp={} ipc={}", pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
 
+  // Freeze channel registrations before parser threads start.
+  storage_router.FreezeChannels();
+
   // 6. Parser workers
   std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
-  for (size_t i = 0; i < num_parsers; ++i) {
-    auto worker = std::make_unique<ShardParserWorker>(Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
-      [&](TickData tick) -> void {
+  for(size_t i = 0; i < num_parsers; ++i) {
+    auto worker = std::make_unique<ShardParserWorker>(
+        Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
+        [&, i](TickData tick) -> void {
           const auto* info = channel_registry.Lookup(tick.channel_id);
-          if (!info) return;
+          if(!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           tick.local_diff = now_ns - tick.local_diff;
           std::memset(tick.padding, 0, sizeof(tick.padding));
           storage_router.RouteTick(tick, *info);
           pub_worker.PublishTick(tick, i);
-          WriteTelemetrySlot(&telemetry_slot, 0, 0, 0, pub_worker.dropped_count());
+          // pub_worker.dropped_count() reads atomics concurrently — approximate,
+          // single-value snapshot is acceptable for a telemetry gauge.
+          WriteTelemetrySlot(&telemetry_slots[i], 0, 0, 0, pub_worker.dropped_count());
         },
         [&](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
           const auto* info = channel_registry.Lookup(channel_id);
-          if (!info) return;
+          if(!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           uint64_t latency_ns = now_ns - event.local_diff;
           storage_router.RouteOrderbook(event, latency_ns, *info);
@@ -145,7 +156,7 @@ int main(int argc, char* argv[]) {
         },
         [&](uint32_t channel_id, BookTickerEvent event) {
           const auto* info = channel_registry.Lookup(channel_id);
-          if (!info) return;
+          if(!info) return;
           uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
           event.local_diff = now_ns - event.local_diff;
           storage_router.RouteBookTicker(event, *info);
@@ -155,39 +166,31 @@ int main(int argc, char* argv[]) {
     parser_workers.push_back(std::move(worker));
   }
 
+  // Register per-shard telemetry slots before starting threads.
+  for(auto& slot : telemetry_slots) telemetry_agent.RegisterSlot("parser", &slot);
+
   // 7. Threads
   std::thread telemetry_thread([&]() {
-    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.telemetry_core);
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.telemetry_core);
     telemetry_agent.Run();
   });
 
-  std::thread storage_thread([&]() {
-    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.storage_core);
-    // Use DolphinDB flush interval only when that engine is active;
-    // otherwise a coarser poll is sufficient.
-    auto sleep_ms = (Config::Instance().storage.use_engine == "dolphindb")
-                        ? Config::Instance().storage.dolphindb.flush_interval_ms
-                        : 100u;
-    while (!SignalHandler::IsShutdownRequested())
-      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-  });
-
   std::vector<std::thread> parser_threads;
-  for (size_t i = 0; i < num_parsers; ++i)
+  for(size_t i = 0; i < num_parsers; ++i)
     parser_threads.emplace_back([&, i]() {
-      if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
+      if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
       parser_workers[i]->Run();
     });
 
   std::thread network_thread([&]() {
-    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.network_core);
-    for (auto& ch : channels) ch->Start();
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.network_core);
+    for(auto& ch : channels) ch->Start();
     auto work_guard = net::make_work_guard(io_ctx);
     io_ctx.run();
   });
 
   std::thread pub_thread([&]() {
-    if (Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.pub_core);
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.pub_core);
     pub_worker.Run();
   });
 
@@ -197,22 +200,21 @@ int main(int argc, char* argv[]) {
   SignalHandler::WaitForShutdown();
   LOG_INFO(GetLogger(), "Shutdown signal received");
 
-  for (auto& ch : channels) ch->Stop();
+  for(auto& ch : channels) ch->Stop();
   io_ctx.stop();
 
-  for (auto& q : shard_queues) q->PushPoisonPill();
-  for (auto& t : parser_threads)
-    if (t.joinable()) t.join();
-  if (network_thread.joinable()) network_thread.join();
+  for(auto& q : shard_queues) q->PushPoisonPill();
+  for(auto& t : parser_threads)
+    if(t.joinable()) t.join();
+  if(network_thread.joinable()) network_thread.join();
 
   storage_router.FlushAndClose();
 
   telemetry_agent.Stop();
-  if (telemetry_thread.joinable()) telemetry_thread.join();
+  if(telemetry_thread.joinable()) telemetry_thread.join();
   pub_worker.Stop();
-  if (pub_thread.joinable()) pub_thread.join();
+  if(pub_thread.joinable()) pub_thread.join();
   zmq_ctx.shutdown();
-  if (storage_thread.joinable()) storage_thread.join();
 
   LOG_INFO(GetLogger(), "smart_quant_collector shutdown complete");
   return 0;

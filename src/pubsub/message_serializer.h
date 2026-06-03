@@ -35,11 +35,8 @@ struct MessageSerializer {
 };
 
 // ── Type aliases — one per message type ───────────────────────────
-using TickSerializer =
-    MessageSerializer<PubMsgType::kTick, TickData>;
-using DepthSerializer =
-    MessageSerializer<PubMsgType::kDepth, DepthUpdateEvent>;
-using BookTickerSerializer =
-    MessageSerializer<PubMsgType::kBookTicker, BookTickerEvent>;
+using TickSerializer = MessageSerializer<PubMsgType::kTick, TickData>;
+using DepthSerializer = MessageSerializer<PubMsgType::kDepth, DepthUpdateEvent>;
+using BookTickerSerializer = MessageSerializer<PubMsgType::kBookTicker, BookTickerEvent>;
 
 }  // namespace sqc

@@ -1,12 +1,5 @@
 #pragma once
 
-#include <functional>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <utility>
-#include <vector>
-
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
@@ -14,6 +7,12 @@
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/beast/ssl/ssl_stream.hpp>
 #include <boost/beast/websocket/stream.hpp>
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace sqc {
 
@@ -40,8 +39,7 @@ class WsClient {
   void AddHeader(std::string name, std::string value);
 
   // Connect to host:port at the given WebSocket path
-  void Connect(std::string_view host, std::string_view port, std::string_view path,
-               ConnectHandler on_connect = {});
+  void Connect(std::string_view host, std::string_view port, std::string_view path, ConnectHandler on_connect = {});
 
   // Set handler called when the connection drops after successful connect
   void SetDisconnectHandler(DisconnectHandler handler);

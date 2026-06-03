@@ -24,12 +24,20 @@ storage:
   persist_to_disk: true
   use_engine: "csv"
   dolphindb:
-    host: "127.0.0.1"
+    host: "192.168.11.139"
     port: 8848
     user: "admin"
-    password: "123"
+    password: "123456"
     buffer_size: 2000
     flush_interval_ms: 10
+    mtw_batch_size: 20000
+    mtw_throttle_sec: 1.0
+    mtw_thread_count: 4
+    auto_init_schema: true
+    health_check_interval_ms: 5000
+    dfs_db_path: "dfs://trade_db"
+    hash_buckets: 20
+    partition_granularity: "day"  # "day" | "month" | "year"
   mmap:
     output_path: "./mmap_cache/"
     sync_interval_records: 10000

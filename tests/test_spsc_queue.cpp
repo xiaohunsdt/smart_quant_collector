@@ -21,10 +21,14 @@ TEST(SPSCQueueTest, BasicPushPop) {
   EXPECT_TRUE(q.try_push(4));
   EXPECT_FALSE(q.try_push(99));  // full (all 4 slots used)
 
-  EXPECT_TRUE(q.try_pop(val)); EXPECT_EQ(val, 1);
-  EXPECT_TRUE(q.try_pop(val)); EXPECT_EQ(val, 2);
-  EXPECT_TRUE(q.try_pop(val)); EXPECT_EQ(val, 3);
-  EXPECT_TRUE(q.try_pop(val)); EXPECT_EQ(val, 4);
+  EXPECT_TRUE(q.try_pop(val));
+  EXPECT_EQ(val, 1);
+  EXPECT_TRUE(q.try_pop(val));
+  EXPECT_EQ(val, 2);
+  EXPECT_TRUE(q.try_pop(val));
+  EXPECT_EQ(val, 3);
+  EXPECT_TRUE(q.try_pop(val));
+  EXPECT_EQ(val, 4);
   EXPECT_FALSE(q.try_pop(val));  // empty
 }
 
@@ -32,12 +36,11 @@ TEST(SPSCQueueTest, WrapAroundPreservesData) {
   SPSCQueue<int, 4> q;
   int val;
 
-  for (int cycle = 0; cycle < 5; ++cycle) {
-    for (int i = 0; i < 4; ++i)
-      ASSERT_TRUE(q.try_push(cycle * 100 + i));
+  for(int cycle = 0; cycle < 5; ++cycle) {
+    for(int i = 0; i < 4; ++i) ASSERT_TRUE(q.try_push(cycle * 100 + i));
     ASSERT_FALSE(q.try_push(-1));  // full
 
-    for (int i = 0; i < 4; ++i) {
+    for(int i = 0; i < 4; ++i) {
       ASSERT_TRUE(q.try_pop(val));
       EXPECT_EQ(val, cycle * 100 + i);
     }
@@ -50,18 +53,20 @@ TEST(SPSCQueueTest, FullDetectionAfterWrap) {
   int val;
 
   // Advance counters well past kCapacity via multiple fill/drain cycles.
-  for (int cycle = 0; cycle < 3; ++cycle) {
-    for (int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_push(i));
-    for (int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_pop(val));
+  for(int cycle = 0; cycle < 3; ++cycle) {
+    for(int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_push(i));
+    for(int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_pop(val));
   }
 
   // Queue is empty. Fill again — must detect full after 4 pushes.
-  for (int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_push(i + 10));
+  for(int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_push(i + 10));
   EXPECT_FALSE(q.try_push(99));
 }
 
 TEST(SPSCQueueTest, TriviallyCopyableType) {
-  struct Point { double x, y; };
+  struct Point {
+    double x, y;
+  };
   static_assert(std::is_trivially_copyable_v<Point>);
 
   SPSCQueue<Point, 8> q;
@@ -78,16 +83,18 @@ TEST(SPSCQueueTest, SingleProducerSingleConsumer) {
   std::atomic<bool> producer_done{false};
 
   std::thread producer([&]() {
-    for (size_t i = 0; i < kCount; ++i)
-      while (!q.try_push(i)) { /* spin */ }
+    for(size_t i = 0; i < kCount; ++i)
+      while(!q.try_push(i)) { /* spin */
+      }
     producer_done.store(true, std::memory_order_release);
   });
 
   std::thread consumer([&]() {
     uint64_t expected = 0;
     uint64_t val;
-    for (size_t i = 0; i < kCount; ++i) {
-      while (!q.try_pop(val)) { /* spin */ }
+    for(size_t i = 0; i < kCount; ++i) {
+      while(!q.try_pop(val)) { /* spin */
+      }
       EXPECT_EQ(val, expected++);
     }
   });

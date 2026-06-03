@@ -14,11 +14,10 @@ class PrometheusExposer;
 // Polls POSIX shared memory slots and aggregates into Prometheus.
 class TelemetryAgent {
  public:
-  TelemetryAgent(PrometheusExposer* exposer);
+  explicit TelemetryAgent(PrometheusExposer* exposer);
 
   void RegisterSlot(const std::string& name, TelemetrySlot* slot);
   void PollAll();
-  void IncrementZmqDropped(uint32_t channel_id);
 
   // Run loop: polls slots periodically until stopped
   void Run();
@@ -34,7 +33,7 @@ class TelemetryAgent {
   uint32_t report_interval_ms_;
   std::vector<SlotEntry> slots_;
   uint64_t total_zmq_dropped_ = 0;
-  bool running_ = false;
+  std::atomic<bool> running_{false};
 };
 
 }  // namespace sqc

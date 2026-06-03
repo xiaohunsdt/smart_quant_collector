@@ -1,0 +1,111 @@
+// ============================================================
+// DolphinDB TSDB + Streaming Architecture — smart_quant_collector
+//
+// ⚠️  REFERENCE ONLY — schema is auto-created by the C++ client
+//     at startup (DolphinDBClient::InitSchema()).
+//     You do NOT need to run this script manually.
+//     See config: storage.dolphindb.auto_init_schema
+//
+// Design Principles:
+//   1. Storage engine:  TSDB (COMP_TSDB)
+//   2. Partition L1:    trade_date (RANGE, daily)
+//   3. Partition L2:    symbol    (HASH, 20 buckets)
+//   4. sortColumns:     [symbol, exchange_timestamp]
+//   5. LOB storage:     Array Vector (DOUBLE[]) for bid/ask prices & sizes
+//   6. Real-time write: memory stream table → subscribeTable async persist
+//      batchSize=20000, throttle=1s
+// ============================================================
+
+// --- Database path ---
+dbPath = "dfs://trade_db"
+
+// --- Recreate if exists (FOR MANUAL USE ONLY) ---
+if (existsDatabase(dbPath)) {
+    dropDatabase(dbPath)
+}
+
+// --- Create TSDB composite-partition database ---
+// L1: trade_date → RANGE (daily)
+// L2: symbol    → HASH 20 buckets
+db = database(dbPath, COMPO, [
+    database("", RANGE, 2026.01.01..2027.01.01),
+    database("", HASH, [SYMBOL, 20])
+], , "TSDB")
+
+// ============================================================
+// 1. trades DFS table
+// ============================================================
+tradeCols = `exchange_timestamp`local_diff`trade_id`price`quantity`direction`is_buyer_maker`symbol`exchange`market_type`trade_date
+tradeTypes = [LONG, LONG, LONG, DOUBLE, DOUBLE, INT, BOOL, SYMBOL, SYMBOL, SYMBOL, DATE]
+
+trades = db.createPartitionedTable(
+    table(1:0, tradeCols, tradeTypes),
+    "trades",
+    `trade_date`symbol,
+    ,                                   // compressMethods
+    `symbol`exchange_timestamp          // sortColumns
+)
+print("DFS table 'trades' created (TSDB, sortColumns=[symbol, exchange_timestamp]).")
+
+// ============================================================
+// 2. orderbook DFS table (Array Vector for multi-level LOB)
+// ============================================================
+obCols = `exchange_timestamp`local_diff`symbol`exchange`market_type`trade_date`bid_prices`bid_sizes`ask_prices`ask_sizes
+obTypes = [LONG, LONG, SYMBOL, SYMBOL, SYMBOL, DATE, DOUBLE[], DOUBLE[], DOUBLE[], DOUBLE[]]
+
+orderbook = db.createPartitionedTable(
+    table(1:0, obCols, obTypes),
+    "orderbook",
+    `trade_date`symbol,
+    ,
+    `symbol`exchange_timestamp
+)
+print("DFS table 'orderbook' created (Array Vector for bid/ask prices & sizes).")
+
+// ============================================================
+// 3. bookticker DFS table
+// ============================================================
+btCols = `exchange_timestamp`local_diff`best_bid_price`best_bid_qty`best_ask_price`best_ask_qty`symbol`exchange`market_type`trade_date
+btTypes = [LONG, LONG, DOUBLE, DOUBLE, DOUBLE, DOUBLE, SYMBOL, SYMBOL, SYMBOL, DATE]
+
+bookticker = db.createPartitionedTable(
+    table(1:0, btCols, btTypes),
+    "bookticker",
+    `trade_date`symbol,
+    ,
+    `symbol`exchange_timestamp
+)
+print("DFS table 'bookticker' created (TSDB).")
+
+// ============================================================
+// 4. In-memory stream tables (API write buffer)
+// ============================================================
+trades_stream = streamTable(1:0, tradeCols, tradeTypes)
+share trades_stream as trades_stream
+
+ob_stream = streamTable(1:0, obCols, obTypes)
+share ob_stream as orderbook_stream
+
+bt_stream = streamTable(1:0, btCols, btTypes)
+share bt_stream as bookticker_stream
+
+print("Stream tables created in memory.")
+
+// ============================================================
+// 5. Stream subscriptions → async batch persist to DFS
+//    batchSize=20000, throttle=1s
+// ============================================================
+subscribeTable(tableName="trades_stream", actionName="persist_trades",
+    handler=loadTable("dfs://trade_db", "trades"),
+    msgAsTable=true, batchSize=20000, throttle=1)
+
+subscribeTable(tableName="orderbook_stream", actionName="persist_orderbook",
+    handler=loadTable("dfs://trade_db", "orderbook"),
+    msgAsTable=true, batchSize=20000, throttle=1)
+
+subscribeTable(tableName="bookticker_stream", actionName="persist_bookticker",
+    handler=loadTable("dfs://trade_db", "bookticker"),
+    msgAsTable=true, batchSize=20000, throttle=1)
+
+print("All stream tables subscribed to DFS with batchSize=20000, throttle=1.")
+print("Schema initialization finished.")

@@ -1,5 +1,7 @@
 #include <benchmark/benchmark.h>
+
 #include <cstring>
+
 #include "simdjson.h"
 #include "src/common/tick_data.h"
 #include "src/exchange/binance/binance_spot.h"
@@ -35,10 +37,10 @@ static void BM_BinanceParseTrade(benchmark::State& state) {
   padded.resize(len + simdjson::SIMDJSON_PADDING, '\0');
   simdjson::ondemand::parser parser;
 
-  for (auto _ : state) {
+  for(auto _ : state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
-    if (err) state.SkipWithError("iterate failed");
+    if(err) state.SkipWithError("iterate failed");
     auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::TICK);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
@@ -53,10 +55,10 @@ static void BM_GateioParseTicker(benchmark::State& state) {
   padded.resize(len + simdjson::SIMDJSON_PADDING, '\0');
   simdjson::ondemand::parser parser;
 
-  for (auto _ : state) {
+  for(auto _ : state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
-    if (err) state.SkipWithError("iterate failed");
+    if(err) state.SkipWithError("iterate failed");
     auto result = gateio_spot::Parse(doc, 2, "BTC_USDT", EventType::BOOK_TICKER);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();

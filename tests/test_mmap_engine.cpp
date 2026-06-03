@@ -2,8 +2,8 @@
 
 #include <cstdio>
 
-#include "src/common/tick_data.h"
 #include "src/common/storage_envelope.h"
+#include "src/common/tick_data.h"
 #include "src/storage/mmap_engine.h"
 
 namespace sqc {
@@ -26,9 +26,7 @@ class MmapEngineTest : public ::testing::Test {
   std::string test_path_;
 };
 
-TEST_F(MmapEngineTest, OpenAndClose) {
-  EXPECT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));
-}
+TEST_F(MmapEngineTest, OpenAndClose) { EXPECT_TRUE(engine_.OpenOrCreate(test_path_, "tick")); }
 
 TEST_F(MmapEngineTest, AppendAndReadBack) {
   ASSERT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));

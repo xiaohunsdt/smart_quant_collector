@@ -6,14 +6,13 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
 #include <zmq.hpp>
 
 #include "pub_message.h"
-#include "zmq_buffer_pool.h"
 #include "src/common/spsc_queue.h"
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
+#include "zmq_buffer_pool.h"
 
 namespace sqc {
 
@@ -38,11 +37,7 @@ struct ShardQueues {
 
 class PubWorker {
  public:
-  PubWorker(zmq::context_t& ctx,
-            std::vector<std::string> topic_prefixes,
-            size_t num_shards,
-            std::string tcp_endpoint,
-            std::string ipc_endpoint);
+  PubWorker(zmq::context_t& ctx, std::vector<std::string> topic_prefixes, size_t num_shards, std::string tcp_endpoint, std::string ipc_endpoint);
 
   PubWorker(const PubWorker&) = delete;
   PubWorker& operator=(const PubWorker&) = delete;
@@ -61,22 +56,16 @@ class PubWorker {
 
   // ── Telemetry ──────────────────────────────────────────────────
   uint64_t dropped_count() const {
-    return dropped_queue_count_.load(std::memory_order_relaxed) +
-           dropped_buffer_count_.load(std::memory_order_relaxed) +
+    return dropped_queue_count_.load(std::memory_order_relaxed) + dropped_buffer_count_.load(std::memory_order_relaxed) +
            dropped_hwm_count_.load(std::memory_order_relaxed);
   }
-  uint64_t dropped_hwm_count() const {
-    return dropped_hwm_count_.load(std::memory_order_relaxed);
-  }
-  uint64_t dropped_buffer_count() const {
-    return dropped_buffer_count_.load(std::memory_order_relaxed);
-  }
+  uint64_t dropped_hwm_count() const { return dropped_hwm_count_.load(std::memory_order_relaxed); }
+  uint64_t dropped_buffer_count() const { return dropped_buffer_count_.load(std::memory_order_relaxed); }
 
  private:
   // Serialize + buffer-pool acquire + ZMQ multi-part send.
   template <typename Serializer>
-  bool SendTyped(uint32_t channel_id, std::string_view event_suffix,
-                 const typename Serializer::value_type& data);
+  bool SendTyped(uint32_t channel_id, std::string_view event_suffix, const typename Serializer::value_type& data);
 
   // Pop and send exactly one item from the queue at position idx.
   bool TrySendOne(size_t shard, size_t queue_type);

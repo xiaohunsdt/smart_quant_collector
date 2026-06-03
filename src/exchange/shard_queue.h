@@ -18,16 +18,16 @@ struct RawMessage {
   const char* buffer() const { return heap_ ? heap_.get() : inline_; }
   size_t capacity() const { return heap_ ? heap_size_ : kInlineSize; }
 
-  bool allocate(size_t needed) noexcept {
+  [[nodiscard]] bool allocate(size_t needed) noexcept {
     const size_t total = needed + kSimdjsonPadding;
-    if (total <= kInlineSize) {
+    if(total <= kInlineSize) {
       heap_.reset();
       heap_size_ = 0;
       return true;
     }
     try {
       heap_ = std::make_unique<char[]>(total);
-    } catch (const std::bad_alloc&) {
+    } catch(const std::bad_alloc&) {
       return false;
     }
     heap_size_ = total;
@@ -40,12 +40,10 @@ struct RawMessage {
   size_t size = 0;
   uint32_t channel_id = 0;
   uint64_t recv_timestamp = 0;
-  char exchange[16] = {};
-  char symbol[12] = {};
+  char symbol[32] = {};  // accommodates long symbols with suffix (e.g. BTCUSDT_PERP)
   EventType event_type = EventType::TICK;
 
-  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id,
-                          std::string_view symbol, EventType event_type) = nullptr;
+  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type) = nullptr;
 };
 
 class ShardQueue {
@@ -63,12 +61,12 @@ class ShardQueue {
   void PushPoisonPill();
 
  private:
+  alignas(64) std::atomic<size_t> write_pos_{0};  // hot — producer (own cache line)
   size_t capacity_;
   size_t mask_;
   std::vector<RawMessage> slots_;
-  std::mutex push_mtx_;
-  alignas(64) std::atomic<size_t> write_pos_{0};
-  alignas(64) std::atomic<size_t> read_pos_{0};
+  std::mutex push_mtx_;                            // cold — only on producer contention
+  alignas(64) std::atomic<size_t> read_pos_{0};    // hot — consumer (own cache line)
 };
 
 }  // namespace sqc

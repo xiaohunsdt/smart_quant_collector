@@ -4,8 +4,8 @@
 #include <functional>
 #include <memory>
 
-#include "simdjson.h"
 #include "shard_queue.h"
+#include "simdjson.h"
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
 
@@ -17,9 +17,7 @@ class ShardParserWorker {
   using DepthHandler = std::function<void(uint32_t channel_id, const DepthUpdateEvent&)>;
   using BookTickerHandler = std::function<void(uint32_t channel_id, BookTickerEvent)>;
 
-  ShardParserWorker(uint32_t core_id, ShardQueue& input_queue,
-                    TickHandler tick_handler = {},
-                    DepthHandler depth_handler = {},
+  ShardParserWorker(uint32_t core_id, ShardQueue& input_queue, TickHandler tick_handler = {}, DepthHandler depth_handler = {},
                     BookTickerHandler book_ticker_handler = {});
 
   ShardParserWorker(const ShardParserWorker&) = delete;

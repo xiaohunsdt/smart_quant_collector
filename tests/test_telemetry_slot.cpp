@@ -7,9 +7,7 @@
 namespace sqc {
 namespace {
 
-TEST(TelemetrySlotTest, SizeAlignment) {
-  EXPECT_EQ(alignof(TelemetrySlot), 64);
-}
+TEST(TelemetrySlotTest, SizeAlignment) { EXPECT_EQ(alignof(TelemetrySlot), 64); }
 
 TEST(TelemetrySlotTest, WriteAndReadConsistency) {
   TelemetrySlot slot{};
@@ -32,7 +30,7 @@ TEST(TelemetrySlotTest, ConcurrentWriteReadNoTornReads) {
   constexpr int kIterations = 50000;
 
   std::thread writer([&]() {
-    for (int i = 0; i < kIterations; ++i) {
+    for(int i = 0; i < kIterations; ++i) {
       WriteTelemetrySlot(&slot, i, i * 2, i * 3, i * 4);
     }
     done = true;
@@ -40,7 +38,7 @@ TEST(TelemetrySlotTest, ConcurrentWriteReadNoTornReads) {
 
   std::thread reader([&]() {
     TelemetrySlot snap{};
-    while (!done) {
+    while(!done) {
       ReadTelemetrySlot(&slot, snap);
       // After a consistent read, all fields should have values
       // Check for torn reads: if market_data matches a pattern inconsistent with queue_depth
@@ -49,7 +47,7 @@ TEST(TelemetrySlotTest, ConcurrentWriteReadNoTornReads) {
       uint64_t depth = snap.queue_depth;
       // If they don't match the pattern delay*2==depth, it could be a torn read
       // or an intermediate state. We just verify no crash and the version mechanism works.
-      if (delay > 0 && depth != delay * 2) {
+      if(delay > 0 && depth != delay * 2) {
         torn_reads++;
       }
     }

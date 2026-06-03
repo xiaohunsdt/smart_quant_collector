@@ -1,6 +1,7 @@
 #pragma once
 
-#include <algorithm>
+#include <openssl/crypto.h>
+
 #include <string>
 #include <utility>
 
@@ -8,8 +9,10 @@ namespace sqc {
 
 /// Minimal secure string wrapper for credentials.
 ///
-/// Wraps a std::string and zeroes the buffer on destruction. Move is safe
-/// (transfers ownership); copy is deliberately disabled.
+/// Wraps a std::string and zeroes the buffer on destruction using
+/// OPENSSL_cleanse (which cannot be optimized away by the compiler).
+/// Move is safe (transfers ownership, source is cleansed); copy is
+/// deliberately disabled.
 ///
 /// Usage:
 ///   SecureString pw = SecureString::FromPlain("s3cret");
@@ -31,15 +34,21 @@ struct SecureString {
   SecureString(const SecureString&) = delete;
   SecureString& operator=(const SecureString&) = delete;
 
-  // Movable.
+  // Movable — cleanses the source object after transfer.
   SecureString(SecureString&& other) noexcept : data_(std::move(other.data_)) {
-    other.data_.clear();
+    if(!other.data_.empty()) {
+      OPENSSL_cleanse(const_cast<char*>(other.data_.data()), other.data_.size());
+      other.data_.clear();
+    }
   }
   SecureString& operator=(SecureString&& other) noexcept {
-    if (this != &other) {
+    if(this != &other) {
       Destroy();
       data_ = std::move(other.data_);
-      other.data_.clear();
+      if(!other.data_.empty()) {
+        OPENSSL_cleanse(const_cast<char*>(other.data_.data()), other.data_.size());
+        other.data_.clear();
+      }
     }
     return *this;
   }
@@ -49,8 +58,8 @@ struct SecureString {
 
   /// Explicitly zero and free the stored password.
   void Destroy() {
-    if (!data_.empty()) {
-      std::fill(data_.begin(), data_.end(), '\0');
+    if(!data_.empty()) {
+      OPENSSL_cleanse(data_.data(), data_.size());
       data_.clear();
     }
   }

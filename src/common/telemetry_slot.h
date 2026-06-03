@@ -15,9 +15,7 @@ struct alignas(64) TelemetrySlot {
 };
 
 // Child-process writer (Core 3/4 high-frequency write)
-inline void WriteTelemetrySlot(TelemetrySlot* slot, uint64_t delay_ns,
-                               uint64_t q_depth, uint64_t gap_count,
-                               uint64_t zmq_dropped) {
+inline void WriteTelemetrySlot(TelemetrySlot* slot, uint64_t delay_ns, uint64_t q_depth, uint64_t gap_count, uint64_t zmq_dropped) {
   slot->version.fetch_add(1, std::memory_order_relaxed);  // odd = writing
   slot->market_data_delay_ns = delay_ns;
   slot->queue_depth = q_depth;
@@ -36,7 +34,7 @@ inline void ReadTelemetrySlot(TelemetrySlot* slot, TelemetrySlot& snapshot) {
     snapshot.sequence_gap_count = slot->sequence_gap_count;
     snapshot.zmq_dropped_count = slot->zmq_dropped_count;
     v2 = slot->version.load(std::memory_order_acquire);
-  } while ((v1 & 1) || (v1 != v2));  // retry if odd or version changed during read
+  } while((v1 & 1) || (v1 != v2));  // retry if odd or version changed during read
 }
 
 }  // namespace sqc

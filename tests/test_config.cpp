@@ -36,7 +36,7 @@ TEST(ConfigLoaderTest, LoadsValidConfig) {
   EXPECT_EQ(config.pub.ipc_endpoint, "ipc:///tmp/collector_pub.ipc");
 
   EXPECT_EQ(config.storage.use_engine, "csv");
-  EXPECT_EQ(config.storage.dolphindb.host, "127.0.0.1");
+  EXPECT_EQ(config.storage.dolphindb.host, "192.168.11.139");
   EXPECT_EQ(config.storage.dolphindb.port, 8848);
 
   EXPECT_GE(config.exchanges.size(), 1);
@@ -46,8 +46,8 @@ TEST(ConfigLoaderTest, BinanceIsDisabled) {
   auto config = LoadConfig(ConfigPath());
 
   bool found_binance = false;
-  for (const auto& ex : config.exchanges) {
-    if (ex.name == "binance") {
+  for(const auto& ex : config.exchanges) {
+    if(ex.name == "binance") {
       found_binance = true;
       EXPECT_TRUE(ex.enabled);
     }
@@ -59,12 +59,12 @@ TEST(ConfigLoaderTest, GateioPerpetualHasSymbols) {
   auto config = LoadConfig(ConfigPath());
 
   bool found_gateio = false;
-  for (const auto& ex : config.exchanges) {
-    if (ex.name == "gateio") {
+  for(const auto& ex : config.exchanges) {
+    if(ex.name == "gateio") {
       found_gateio = true;
       EXPECT_TRUE(ex.enabled);
-      for (const auto& ch : ex.channels) {
-        if (ch.type == "perpetual") {
+      for(const auto& ch : ex.channels) {
+        if(ch.type == "perpetual") {
           EXPECT_GE(ch.symbols.size(), 2);
           EXPECT_EQ(ch.symbols[0].name, "BTC_USDT");
         }

@@ -12,8 +12,7 @@
 namespace sqc {
 namespace {
 
-TickData MakeTestTick(uint32_t channel_id, uint64_t ts,
-                      const char* symbol, double price, double qty) {
+TickData MakeTestTick(uint32_t channel_id, uint64_t ts, const char* symbol, double price, double qty) {
   TickData t{};
   t.channel_id = channel_id;
   t.exchange_timestamp = ts;
@@ -26,8 +25,7 @@ TickData MakeTestTick(uint32_t channel_id, uint64_t ts,
   return t;
 }
 
-ChannelInfo MakeChannelInfo(uint32_t id, const std::string& ex,
-                            ChannelType type, const std::string& sym) {
+ChannelInfo MakeChannelInfo(uint32_t id, const std::string& ex, ChannelType type, const std::string& sym) {
   ChannelInfo info;
   info.id = id;
   info.exchange = ex;
@@ -68,26 +66,21 @@ TEST(StorageRouterTest, ConcurrentRouteTick) {
   constexpr uint32_t kChannels = 4;
   constexpr size_t kPerThread = 1000;
 
-  for (uint32_t i = 0; i < kChannels; ++i) {
-    auto info = MakeChannelInfo(
-        i, "test", ChannelType::Spot,
-        std::string("SYM") + std::to_string(i));
+  for(uint32_t i = 0; i < kChannels; ++i) {
+    auto info = MakeChannelInfo(i, "test", ChannelType::Spot, std::string("SYM") + std::to_string(i));
     router.RegisterChannel(i, info, true);
   }
 
   std::vector<std::thread> threads;
-  for (uint32_t t = 0; t < kChannels; ++t) {
+  for(uint32_t t = 0; t < kChannels; ++t) {
     threads.emplace_back([&router, t]() {
-      auto info = MakeChannelInfo(
-          t, "test", ChannelType::Spot,
-          std::string("SYM") + std::to_string(t));
-      for (size_t j = 0; j < kPerThread; ++j) {
-        router.RouteTick(
-            MakeTestTick(t, j, info.symbol.c_str(), 100.0 + j, 1.0), info);
+      auto info = MakeChannelInfo(t, "test", ChannelType::Spot, std::string("SYM") + std::to_string(t));
+      for(size_t j = 0; j < kPerThread; ++j) {
+        router.RouteTick(MakeTestTick(t, j, info.symbol.c_str(), 100.0 + j, 1.0), info);
       }
     });
   }
-  for (auto& th : threads) th.join();
+  for(auto& th : threads) th.join();
   router.FlushAndClose();
 }
 

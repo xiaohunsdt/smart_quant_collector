@@ -41,6 +41,20 @@ struct DolphinDBConfig {
   SecureString password;
   uint32_t buffer_size = 2000;
   uint32_t flush_interval_ms = 10;
+
+  // MTW writer parameters
+  int mtw_batch_size = 20000;
+  float mtw_throttle_sec = 1.0f;
+  int mtw_thread_count = 4;
+
+  // Auto-schema initialization
+  bool auto_init_schema = true;
+  uint32_t health_check_interval_ms = 5000;  // 0 = disable
+
+  // DFS partition config
+  std::string dfs_db_path = "dfs://trade_db";
+  int hash_buckets = 20;
+  std::string partition_granularity = "day";  // "day" | "month" | "year"
 };
 
 struct MmapConfig {

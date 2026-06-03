@@ -43,8 +43,7 @@ TEST(CsvWriterTest, OpenValidDirectory) {
 
 TEST(CsvWriterTest, EnsureDirExistsFailure) {
   CsvWriter writer;
-  EXPECT_FALSE(writer.Open("/proc/readonly_nonexistent/foo",
-                            "ex", "spot", "BTCUSDT"));
+  EXPECT_FALSE(writer.Open("/proc/readonly_nonexistent/foo", "ex", "spot", "BTCUSDT"));
 }
 
 TEST(CsvWriterTest, AppendTickWritesCorrectFormat) {
@@ -66,8 +65,7 @@ TEST(CsvWriterTest, AppendTickWritesCorrectFormat) {
   writer.AppendTick(tick);
   writer.Close();
 
-  std::string file_path =
-      dir.path() + "/ex/spot/BTCUSDT/trades_2024-06-01.csv";
+  std::string file_path = dir.path() + "/ex/spot/BTCUSDT/trades_2024-06-01.csv";
   std::ifstream file(file_path);
   ASSERT_TRUE(file.is_open());
 
@@ -75,8 +73,7 @@ TEST(CsvWriterTest, AppendTickWritesCorrectFormat) {
   std::getline(file, header);
   std::getline(file, data);
 
-  EXPECT_EQ(header,
-            "exchange_timestamp,local_diff,price,quantity,direction");
+  EXPECT_EQ(header, "exchange_timestamp,local_diff,price,quantity,direction");
   EXPECT_EQ(data, "1717200000000000,12345,50000.5,0.123,-1");
 }
 
@@ -99,8 +96,7 @@ TEST(CsvWriterTest, AppendBookTickerWritesCorrectFormat) {
   writer.AppendBookTicker(event);
   writer.Close();
 
-  std::string file_path =
-      dir.path() + "/ex/spot/BTCUSDT/bookticker_2024-06-01.csv";
+  std::string file_path = dir.path() + "/ex/spot/BTCUSDT/bookticker_2024-06-01.csv";
   std::ifstream file(file_path);
   ASSERT_TRUE(file.is_open());
 

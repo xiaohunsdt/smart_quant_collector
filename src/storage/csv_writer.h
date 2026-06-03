@@ -19,14 +19,12 @@ class CsvWriter {
   CsvWriter(CsvWriter&&) = default;
   CsvWriter& operator=(CsvWriter&&) = default;
 
-  bool Open(const std::string& trade_root, std::string_view exchange,
-            std::string_view type, std::string_view symbol);
+  bool Open(const std::string& trade_root, std::string_view exchange, std::string_view type, std::string_view symbol);
 
   void AppendTick(const TickData& tick);
 
   // Append orderbook LOBSTER snapshot row directly from depth event.
-  void AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts,
-                       uint32_t depth_level);
+  void AppendOrderbook(const DepthUpdateEvent& event, uint64_t local_ts, uint32_t depth_level);
 
   void AppendBookTicker(const BookTickerEvent& event);
 

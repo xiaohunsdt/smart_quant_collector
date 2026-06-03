@@ -140,7 +140,15 @@ storage:
   dolphindb:              # Linux only
     host: "127.0.0.1"
     port: 8848
-    buffer_size: 2000
+    buffer_size: 2000         # TickData double-buffer (rows)
+    flush_interval_ms: 10     # Storage thread sleep interval
+    mtw_batch_size: 20000     # MTW internal batch size
+    mtw_throttle_sec: 1.0     # MTW flush throttle (seconds)
+    mtw_thread_count: 4       # MTW worker threads per writer
+    auto_init_schema: true    # Auto-create DB/tables/streams on connect
+    health_check_interval_ms: 5000  # Ping interval (0=disable)
+    dfs_db_path: "dfs://trade_db"
+    hash_buckets: 20          # HASH partition buckets for symbol
 
 exchanges:
   - name: "binance"
@@ -149,8 +157,22 @@ exchanges:
       - type: spot
         symbols:
           - name: "BTCUSDT"
-            depth_level: 10
+            depth_level: 10    # Per-symbol orderbook depth from config
 ```
+
+### DolphinDB Setup
+
+The collector auto-initializes the DolphinDB schema on first connect (`auto_init_schema: true`):
+
+1. **Database**: `dfs://trade_db` — TSDB engine, composite partitioned by `trade_date` (RANGE daily) + `symbol` (HASH 20 buckets), `sortColumns=[symbol, exchange_timestamp]`
+2. **DFS Tables**: `trades`, `orderbook` (Array Vector `DOUBLE[]` for bid/ask prices & sizes), `bookticker`
+3. **Stream Tables**: `trades_stream`, `orderbook_stream`, `bookticker_stream` — in-memory write buffers
+4. **Subscriptions**: Each stream subscribes to its DFS table via `subscribeTable` (async batch persist)
+
+No manual `.dos` script execution needed. See `dolphindb_schema.dos` for the reference DDL.
+
+**Migration from old schema** (VALUE exchange + RANGE day, exploded orderbook columns):
+- Stop collector → export data from DolphinDB → `dropDatabase("dfs://trade_db")` → restart collector with `auto_init_schema: true` → re-import historical data via `import_trade_data.py`
 
 ## Design Principles
 
