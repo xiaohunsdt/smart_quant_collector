@@ -24,20 +24,20 @@ struct ParseResult {
   BookTickerEvent book_ticker{};
 };
 
-enum class ChannelType : uint8_t { Spot, Perpetual };
+enum class ChannelType : uint8_t { Spot, Perpetual, Futures };
 
 inline ChannelType ParseChannelType(std::string_view s) {
   if(s == "spot") return ChannelType::Spot;
   if(s == "perpetual") return ChannelType::Perpetual;
+  if(s == "futures") return ChannelType::Futures;
   throw std::invalid_argument(std::string("unknown channel_type: ") + std::string(s));
 }
 
 inline const char* ChannelTypeName(ChannelType t) {
   switch(t) {
-    case ChannelType::Spot:
-      return "spot";
-    case ChannelType::Perpetual:
-      return "perpetual";
+    case ChannelType::Spot:   return "spot";
+    case ChannelType::Perpetual: return "perpetual";
+    case ChannelType::Futures: return "futures";
   }
   return "unknown";
 }

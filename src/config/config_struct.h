@@ -87,10 +87,21 @@ struct ChannelConfig {
   std::vector<SymbolConfig> symbols;
 };
 
+struct RithmicPerExchangeConfig {
+  bool enabled = false;
+  std::string mode = "paper";
+  std::string user;
+  SecureString password;
+  uint32_t engine_core = 8;
+  uint32_t forwarder_core = 9;
+  uint32_t depth_level = 10;
+};
+
 struct ExchangeConfig {
   std::string name;
   bool enabled = false;
   std::vector<ChannelConfig> channels;
+  RithmicPerExchangeConfig rithmic;
 };
 
 struct RootConfig {

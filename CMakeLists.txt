@@ -23,6 +23,8 @@ find_package(prometheus-cpp CONFIG REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
 find_package(libuuid REQUIRED CONFIG)
 
+add_subdirectory(third_party/rithmic)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(aeron CONFIG REQUIRED)
     add_subdirectory(third_party/dolphindb)

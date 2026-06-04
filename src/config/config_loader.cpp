@@ -2,6 +2,7 @@
 
 #include <fmt/format.h>
 
+#include <cstdlib>
 #include <stdexcept>
 
 #include "src/orderbook/orderbook_event.h"
@@ -43,6 +44,43 @@ ChannelConfig ParseChannel(const YAML::Node& node) {
   return c;
 }
 
+RithmicPerExchangeConfig ParseRithmicConfig(const YAML::Node& node) {
+  RithmicPerExchangeConfig r;
+  if (!node) return r;
+
+  r.enabled = node["enabled"] ? node["enabled"].as<bool>() : false;
+  if (node["mode"]) r.mode = node["mode"].as<std::string>();
+  if (node["user"]) {
+    std::string user = node["user"].as<std::string>();
+    if (user.size() > 2 && user[0] == '$' && user[1] == '{' && user.back() == '}') {
+      const char* val = std::getenv(user.substr(2, user.size() - 3).c_str());
+      if (val) r.user = val;
+    } else {
+      r.user = std::move(user);
+    }
+  }
+  if (node["password"]) {
+    std::string pwd = node["password"].as<std::string>();
+    if (pwd.size() > 2 && pwd[0] == '$' && pwd[1] == '{' && pwd.back() == '}') {
+      const char* val = std::getenv(pwd.substr(2, pwd.size() - 3).c_str());
+      if (val) r.password = SecureString::FromPlain(val);
+    } else {
+      r.password = SecureString::FromPlain(std::move(pwd));
+    }
+  }
+  if (node["engine_core"]) r.engine_core = node["engine_core"].as<uint32_t>();
+  if (node["forwarder_core"]) r.forwarder_core = node["forwarder_core"].as<uint32_t>();
+  if (node["depth_level"]) r.depth_level = node["depth_level"].as<uint32_t>();
+
+  if (r.enabled && r.user.empty()) {
+    throw std::runtime_error("Rithmic: 'user' is required when enabled=true");
+  }
+  if (r.mode != "paper" && r.mode != "production") {
+    throw std::runtime_error("Rithmic: 'mode' must be 'paper' or 'production'");
+  }
+  return r;
+}
+
 ExchangeConfig ParseExchange(const YAML::Node& node) {
   ExchangeConfig e;
   e.name = node["name"].as<std::string>();
@@ -51,6 +89,9 @@ ExchangeConfig ParseExchange(const YAML::Node& node) {
     for(const auto& ch : node["channels"]) {
       e.channels.push_back(ParseChannel(ch));
     }
+  }
+  if (e.name == "rithmic" && node["rithmic"]) {
+    e.rithmic = ParseRithmicConfig(node["rithmic"]);
   }
   return e;
 }

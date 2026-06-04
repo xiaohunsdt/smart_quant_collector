@@ -25,6 +25,7 @@ add_library(collector_objects OBJECT
     pubsub/pub_worker.cpp
     telemetry/prometheus_exposer.cpp
     telemetry/telemetry_agent.cpp
+    exchange/rithmic/rithmic_forwarder.cpp
 )
 
 target_include_directories(collector_objects PUBLIC
@@ -43,12 +44,21 @@ target_link_libraries(collector_objects PUBLIC
     quill::quill
     prometheus-cpp::core
     prometheus-cpp::pull
+    rithmic_api
 )
 
 if(SQC_WITH_DOLPHINDB)
     target_sources(collector_objects PRIVATE storage/dolphindb_client.cpp)
     target_compile_definitions(collector_objects PUBLIC SQC_WITH_DOLPHINDB)
     target_link_libraries(collector_objects PUBLIC DolphinDBAPI)
+endif()
+
+if(SQC_WITH_RITHMIC)
+    target_sources(collector_objects PRIVATE
+        exchange/rithmic/rithmic_callbacks.cpp
+        exchange/rithmic/rithmic_engine.cpp
+    )
+    target_compile_definitions(collector_objects PUBLIC SQC_WITH_RITHMIC)
 endif()
 
 # Main executable

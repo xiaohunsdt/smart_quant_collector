@@ -18,6 +18,8 @@ cmake-build-*/
 # IDE
 .vscode/
 .idea/
+.vs/
+*.ipch
 *.swp
 *.swo
 

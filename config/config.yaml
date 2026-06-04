@@ -84,15 +84,20 @@ exchanges:
           - name: "SOL_USDT"
             depth_level: 10
             record_tick: true
-      - type: perpetual
+  - name: "rithmic"
+    enabled: false
+    rithmic:
+      mode: "paper"
+      user: "${RITHMIC_USER}"
+      password: "${RITHMIC_PASSWORD}"
+      engine_core: 8
+      forwarder_core: 9
+      depth_level: 10
+    channels:
+      - type: futures
         symbols:
-          - name: "BTC_USDT"
-            enabled: true
+          - name: "ES"
             depth_level: 10
-            record_tick: true
-          - name: "ETH_USDT"
+          - name: "NQ"
             depth_level: 10
-            record_tick: true
-          - name: "SOL_USDT"
-            depth_level: 10
-            record_tick: true
+

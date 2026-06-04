@@ -1,0 +1,22 @@
+This zip file contains connection parameters for various Rithmic systems and
+their gateways.  The version number corresponds to the configuration associated
+with a particular version of R | Trader / R | Trader Pro.
+
+Each file contains settings for one gateway of a Rithmic system.  The file
+naming format is
+<RithmicSystem>_<Gateway>_connection_params.<RTraderProVersion>.txt.
+
+Not all systems/gateways have an aggregated market data connect point.
+
+Please note that these files will provide you with connection parameters you
+will need to connect an R | API application to various systems like Rithmic 01
+or Rithmic Paper Trading.  However, they do not include credentials to log in.
+
+To log in successfully, you will need to have valid credentials for the
+particular system.
+
+In addition, please note that Rithmic systems do not always permit
+applications to connect.  If you find that you unexpectedly cannot log in to a
+particular system, please contact the administrators of that system as the
+login failures may be due to permission restrictions at a higher level than
+the login id.

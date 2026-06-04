@@ -120,6 +120,7 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
 const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type) {
   if(exchange_name == "binance") return channel_type == ChannelType::Spot ? &kBinanceSpotAdapter : &kBinancePerpetualAdapter;
   if(exchange_name == "gateio") return channel_type == ChannelType::Spot ? &kGateioSpotAdapter : &kGateioPerpetualAdapter;
+  // "rithmic" handled via rithmic::RithmicEngine in main.cpp (callback-driven, not WebSocket)
   return nullptr;
 }
 
