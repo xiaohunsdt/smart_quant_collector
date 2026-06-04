@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string>
-
 #include "quill/Logger.h"
 
 namespace sqc {

@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 
 #include "shard_queue.h"
 #include "simdjson.h"

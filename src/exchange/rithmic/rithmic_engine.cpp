@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "RApiPlus.h"
+
 #include "quill/LogMacros.h"
 #include "src/common/logger_init.h"
 #include "src/exchange/channel_mapping.h"
@@ -74,35 +75,45 @@ void RithmicEngine::Cleanup() {
 void RithmicEngine::RunLoop() {
   LOG_INFO(GetLogger(), "RithmicEngine: starting login (mode={})", config_.mode);
 
-  if (!LoginRepository()) {
-    LOG_ERROR(GetLogger(), "RithmicEngine: repository login failed");
+  try {
+    if (!LoginRepository()) {
+      LOG_ERROR(GetLogger(), "RithmicEngine: repository login failed");
+      Cleanup();
+      return;
+    }
+    if (!CheckAgreements()) {
+      LOG_WARNING(GetLogger(), "RithmicEngine: agreement check had issues");
+    }
+    if (!LoginMarketData()) {
+      LOG_ERROR(GetLogger(), "RithmicEngine: market data login failed");
+      Cleanup();
+      return;
+    }
+
+    LOG_INFO(GetLogger(), "RithmicEngine: login complete, {} symbols",
+             channel_map_.Size());
+
+    if (!SubscribeAll()) {
+      LOG_ERROR(GetLogger(), "RithmicEngine: subscription failed");
+      Cleanup();
+      return;
+    }
+
+    while (running_.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    LOG_INFO(GetLogger(), "RithmicEngine: shutting down");
     Cleanup();
-    return;
-  }
-  if (!CheckAgreements()) {
-    LOG_WARNING(GetLogger(), "RithmicEngine: agreement check had issues");
-  }
-  if (!LoginMarketData()) {
-    LOG_ERROR(GetLogger(), "RithmicEngine: market data login failed");
+  } catch (OmneException& e) {
+    LOG_ERROR(GetLogger(), "RithmicEngine: RApi OmneException code={} msg=\"{}\" — "
+              "check license server, network, and credentials",
+              e.getErrorCode(), e.getErrorString());
     Cleanup();
-    return;
-  }
-
-  LOG_INFO(GetLogger(), "RithmicEngine: login complete, {} symbols",
-           channel_map_.Size());
-
-  if (!SubscribeAll()) {
-    LOG_ERROR(GetLogger(), "RithmicEngine: subscription failed");
+  } catch (const std::exception& e) {
+    LOG_ERROR(GetLogger(), "RithmicEngine: unhandled exception: {}", e.what());
     Cleanup();
-    return;
   }
-
-  while (running_.load(std::memory_order_acquire)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-
-  LOG_INFO(GetLogger(), "RithmicEngine: shutting down");
-  Cleanup();
 }
 
 bool RithmicEngine::WaitForLogin(std::atomic<int>& status, int timeout_sec) {
@@ -149,10 +160,12 @@ bool RithmicEngine::LoginRepository() {
     env_strings_.push_back("MML_SSL_CLNT_AUTH_FILE=etc/rithmic_ssl_cert_auth_params");
   }
 
-  // Build null-terminated envp array from member strings
-  std::vector<const char*> envp;
+  // Build null-terminated envp array from member strings.
+  // RApi SDK expects char** (legacy C API); const_cast is safe here
+  // because envp is read-only by the REngine.
+  std::vector<char*> envp;
   envp.reserve(env_strings_.size() + 1);
-  for (const auto& s : env_strings_) envp.push_back(s.c_str());
+  for (const auto& s : env_strings_) envp.push_back(const_cast<char*>(s.c_str()));
   envp.push_back(nullptr);
 
   callbacks_ = std::make_unique<RithmicCallbacks>(
@@ -161,11 +174,11 @@ bool RithmicEngine::LoginRepository() {
       config_.depth_level);
 
   RApi::REngineParams params;
-  params.sAppName.pData = const_cast<char*>("SmartQuantCollector");
-  params.sAppName.iDataLen = static_cast<int>(std::strlen("SmartQuantCollector"));
+  params.sAppName.pData = const_cast<char*>("jewa:SmartQuant");
+  params.sAppName.iDataLen = static_cast<int>(std::strlen("jewa:SmartQuant"));
   params.sAppVersion.pData = const_cast<char*>("1.0.0");
   params.sAppVersion.iDataLen = static_cast<int>(std::strlen("1.0.0"));
-  params.envp = (const char**)envp.data();
+  params.envp = envp.data();
   params.pAdmCallbacks = callbacks_->AsAdmCallbacks();
   params.sLogFilePath.pData = const_cast<char*>("log/rithmic.log");
   params.sLogFilePath.iDataLen = static_cast<int>(std::strlen("log/rithmic.log"));

@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <string_view>
 
-#include "binance_common.h"
 #include "simdjson.h"
 #include "src/exchange/exchange_adapter.h"
 #include "src/orderbook/orderbook_event.h"

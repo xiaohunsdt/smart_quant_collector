@@ -46,7 +46,7 @@ storage:
 
 exchanges:
   - name: "binance"
-    enabled: true
+    enabled: false
     channels:
       - type: spot
         symbols:
@@ -71,7 +71,7 @@ exchanges:
             depth_level: 10
             record_tick: true
   - name: "gateio"
-    enabled: true
+    enabled: false
     channels:
       - type: spot
         symbols:
@@ -85,11 +85,11 @@ exchanges:
             depth_level: 10
             record_tick: true
   - name: "rithmic"
-    enabled: false
+    enabled: true
     rithmic:
       mode: "paper"
-      user: "${RITHMIC_USER}"
-      password: "${RITHMIC_PASSWORD}"
+      user: "slumber1122@amp.com"
+      password: "a4IgI64cRvm"
       engine_core: 8
       forwarder_core: 9
       depth_level: 10

@@ -3,22 +3,15 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <shared_mutex>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "csv_writer.h"
 #include "mmap_engine.h"
 #include "src/common/tick_data.h"
-#include "src/config/config_struct.h"
 #include "src/exchange/channel_mapping.h"
-#include "src/exchange/exchange_adapter.h"
 #include "src/orderbook/orderbook_event.h"
-#ifdef SQC_WITH_DOLPHINDB
-#include "dolphindb_client.h"
-#endif
 
 namespace sqc {
 
@@ -52,13 +45,10 @@ class StorageRouter {
   void WriteBookTickerToMmap(const BookTickerEvent& event);
 
   std::string use_engine_;
-#ifdef SQC_WITH_DOLPHINDB
-  DolphinDBClient dolphindb_;
-#endif
+
   uint32_t buffer_size_;
   std::atomic<bool> degraded_{false};
   std::atomic<bool> reconnecting_{false};        // CAS gate — only one thread runs Reconnect()
-  std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
 
   std::string csv_output_path_;
   std::string mmap_output_path_;

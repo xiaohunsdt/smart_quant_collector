@@ -6,7 +6,6 @@
 
 #include "src/common/tick_data.h"
 #include "src/exchange/rithmic/rithmic_queue.h"
-#include "src/exchange/rithmic/rithmic_types.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {

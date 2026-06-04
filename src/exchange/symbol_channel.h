@@ -7,7 +7,6 @@
 #include <memory>
 #include <simdjson.h>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "exchange/exchange_adapter.h"

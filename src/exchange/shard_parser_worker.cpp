@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <exception>
+#include <utility>
 
 #include "common/logger_init.h"
 #include "quill/LogMacros.h"

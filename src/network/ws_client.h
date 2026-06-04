@@ -8,7 +8,6 @@
 #include <boost/beast/ssl/ssl_stream.hpp>
 #include <boost/beast/websocket/stream.hpp>
 #include <functional>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>

@@ -1,5 +1,7 @@
 #include "src/exchange/rithmic/rithmic_forwarder.h"
 
+#include "src/exchange/rithmic/rithmic_types.h"
+
 namespace sqc {
 namespace rithmic {
 

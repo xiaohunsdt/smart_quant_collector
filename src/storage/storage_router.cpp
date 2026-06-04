@@ -1,12 +1,18 @@
 #include "storage_router.h"
 
 #include <cstring>
+#include <shared_mutex>
 #include <thread>
 
 #include "common/logger_init.h"
 #include "common/signal_handler.h"
 #include "config/config_loader.h"
+#include "src/exchange/exchange_adapter.h"
 #include "quill/LogMacros.h"
+
+#ifdef SQC_WITH_DOLPHINDB
+#include "dolphindb_client.h"
+#endif
 
 namespace sqc {
 namespace {
@@ -20,6 +26,11 @@ struct alignas(8) OrderbookRecordHeader {
   uint32_t bid_count;
   uint32_t ask_count;
 };
+
+#ifdef SQC_WITH_DOLPHINDB
+  DolphinDBClient dolphindb_;
+  std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
+#endif
 
 }  // namespace
 

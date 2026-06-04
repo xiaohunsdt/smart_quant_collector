@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 
+#include "binance_common.h"
 #include "common/logger_init.h"
 #include "common/string_utils.h"
 #include "quill/LogMacros.h"
