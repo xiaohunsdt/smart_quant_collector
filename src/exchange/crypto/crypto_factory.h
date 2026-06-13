@@ -27,22 +27,26 @@ const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType ch
 // ---------------------------------------------------------------------------
 
 struct CryptoChannels {
-  std::vector<std::shared_ptr<ShardQueue>>    shard_queues;
+  std::vector<std::shared_ptr<ShardQueue>> shard_queues;
   std::vector<std::shared_ptr<SymbolChannel>> channels;
 
-  void Start() { for (auto& ch : channels) ch->Start(); }
-  void Stop()  { for (auto& ch : channels) ch->Stop();  }
+  void Start() {
+    for(auto& ch : channels) ch->Start();
+  }
+  void Stop() {
+    for(auto& ch : channels) ch->Stop();
+  }
 
   /// Push a poison pill into every shard queue to signal parser workers to stop.
-  void DrainQueues() { for (auto& q : shard_queues) q->PushPoisonPill(); }
+  void DrainQueues() {
+    for(auto& q : shard_queues) q->PushPoisonPill();
+  }
 };
 
 /// Reads Config::Instance(), registers all enabled crypto symbols into
 /// ChannelRegistry and StorageRouter, creates SymbolChannels and ShardQueues.
 /// Must be called during single-threaded init before any parser threads start.
-CryptoChannels BuildCryptoChannels(size_t num_parsers,
-                                   net::io_context& io_ctx,
-                                   net::ssl::context& ssl_ctx);
+CryptoChannels BuildCryptoChannels(size_t num_parsers, net::io_context& io_ctx, net::ssl::context& ssl_ctx);
 
 // ---------------------------------------------------------------------------
 // CryptoParserPool — owns the parser worker threads and their telemetry slots.
@@ -51,10 +55,10 @@ CryptoChannels BuildCryptoChannels(size_t num_parsers,
 struct CryptoParserPool {
   // Fixed-size array: TelemetrySlot contains std::atomic members (not movable),
   // so std::vector cannot be used here — use a heap array instead.
-  std::unique_ptr<TelemetrySlot[]>                telemetry_slots;
-  size_t                                          num_slots = 0;
+  std::unique_ptr<TelemetrySlot[]> telemetry_slots;
+  size_t num_slots = 0;
   std::vector<std::unique_ptr<ShardParserWorker>> workers;
-  std::vector<std::thread>                        threads;
+  std::vector<std::thread> threads;
 
   /// Start one OS thread per worker. Must be called after BuildParserPool()
   /// and before any shard queues receive messages.
@@ -77,10 +81,10 @@ CryptoParserPool BuildParserPool(const CryptoChannels& crypto);
 // ---------------------------------------------------------------------------
 
 struct CryptoSubsystem {
-  std::unique_ptr<net::io_context>   io_ctx;
+  std::unique_ptr<net::io_context> io_ctx;
   std::unique_ptr<net::ssl::context> ssl_ctx;
-  CryptoChannels                     channels;
-  CryptoParserPool                   parser_pool;
+  CryptoChannels channels;
+  CryptoParserPool parser_pool;
 
   // Spawn one parser thread per shard.  Call once during startup.
   void RunParsers();

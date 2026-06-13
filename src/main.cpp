@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
 
   // 3-4. Crypto subsystem — validates config, owns io_ctx/ssl_ctx/channels/parser_pool
   auto crypto = BuildCryptoSubsystem();
-  if (!crypto) return EXIT_FAILURE;
+  if(!crypto) return EXIT_FAILURE;
 
   // 5. Pub/Sub — reads endpoints and shard count from Config internally
   PubWorker::Init();
@@ -50,7 +50,6 @@ int main(int argc, char* argv[]) {
 
   PubWorker::Instance().Start();
 
-
   LOG_INFO(GetLogger(), "All moudle started, waiting for shutdown");
 
   // 8. Shutdown
@@ -60,7 +59,7 @@ int main(int argc, char* argv[]) {
   crypto->StopNetwork();
 
   // Rithmic shutdown
-  if (rithmic_mgr) rithmic_mgr->Shutdown();
+  if(rithmic_mgr) rithmic_mgr->Shutdown();
 
   crypto->DrainQueues();
   crypto->Shutdown();

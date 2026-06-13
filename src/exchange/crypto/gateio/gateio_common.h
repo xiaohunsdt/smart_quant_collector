@@ -15,8 +15,7 @@ EventType PeekEventType(simdjson::ondemand::document& doc, std::string_view pref
 
 // Parse a book-ticker message.  Identical layout in both spot and perpetual.
 // symbol is NOT accepted; ShardParserWorker stamps it after the call.
-bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out,
-                          uint32_t channel_id);
+bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id);
 
 }  // namespace gateio
 }  // namespace sqc

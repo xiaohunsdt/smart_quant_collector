@@ -111,7 +111,8 @@ bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
     return false;
   }
   bookticker_file_.seekp(0, std::ios::end);
-  if(bookticker_file_.tellp() == 0) bookticker_file_ << "exchange_timestamp,local_diff,symbol,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty\n";
+  if(bookticker_file_.tellp() == 0)
+    bookticker_file_ << "exchange_timestamp,local_diff,symbol,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty\n";
 
   return true;
 }

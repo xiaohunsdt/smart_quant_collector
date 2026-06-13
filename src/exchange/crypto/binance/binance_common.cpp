@@ -34,8 +34,8 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
   try {
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64());
     out.trade_id = static_cast<uint64_t>(doc["a"].get_int64());
-    if (!SvToDouble(doc["p"].get_string(), out.price)) return false;
-    if (!SvToDouble(doc["q"].get_string(), out.quantity)) return false;
+    if(!SvToDouble(doc["p"].get_string(), out.price)) return false;
+    if(!SvToDouble(doc["q"].get_string(), out.quantity)) return false;
     out.is_buyer_maker = doc["m"].get_bool();
     out.channel_id = channel_id;
     return true;
@@ -50,10 +50,10 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id) {
   try {
-    if (!SvToDouble(doc["b"].get_string(), out.best_bid_price)) return false;
-    if (!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
-    if (!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
-    if (!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
+    if(!SvToDouble(doc["b"].get_string(), out.best_bid_price)) return false;
+    if(!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
+    if(!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
+    if(!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
     out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64()) * 1000ULL;
     out.channel_id = channel_id;
     return true;
@@ -68,13 +68,12 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
 
 bool ParseSpotBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id) {
   try {
-    if (!SvToDouble(doc["b"].get_string(), out.best_bid_price)) return false;
-    if (!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
-    if (!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
-    if (!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
+    if(!SvToDouble(doc["b"].get_string(), out.best_bid_price)) return false;
+    if(!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
+    if(!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
+    if(!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
     out.exchange_timestamp =
-        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     out.channel_id = channel_id;
     return true;
   } catch(const simdjson::simdjson_error& e) {

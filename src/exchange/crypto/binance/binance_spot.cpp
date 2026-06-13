@@ -47,8 +47,7 @@ bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out,
   try {
     out.last_update_id = static_cast<uint64_t>(doc["lastUpdateId"].get_uint64());
     out.exchange_timestamp =
-        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     out.channel_id = channel_id;
 
     out.bid_count = 0;
@@ -57,10 +56,10 @@ bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out,
       auto it = bid_level.begin();
       if(it == bid_level.end()) continue;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble((*it).get_string(), p)) continue;
+      if(!SvToDouble((*it).get_string(), p)) continue;
       ++it;
       if(it == bid_level.end()) continue;
-      if (!SvToDouble((*it).get_string(), q)) continue;
+      if(!SvToDouble((*it).get_string(), q)) continue;
       out.bids[out.bid_count++] = {p, q};
     }
     out.ask_count = 0;
@@ -69,10 +68,10 @@ bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out,
       auto it = ask_level.begin();
       if(it == ask_level.end()) continue;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble((*it).get_string(), p)) continue;
+      if(!SvToDouble((*it).get_string(), p)) continue;
       ++it;
       if(it == ask_level.end()) continue;
-      if (!SvToDouble((*it).get_string(), q)) continue;
+      if(!SvToDouble((*it).get_string(), q)) continue;
       out.asks[out.ask_count++] = {p, q};
     }
     return true;
@@ -90,7 +89,7 @@ bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out,
 namespace {
 static std::vector<SubscriptionGroup> BinanceSpotBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
   std::string name(symbol);
-  for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  for(auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   return {
       {"wss://stream.binance.com/ws?timeUnit=MICROSECOND",
        {

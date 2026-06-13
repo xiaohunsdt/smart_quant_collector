@@ -1,11 +1,12 @@
 #pragma once
 
+#include <simdjson.h>
+
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <cstdint>
 #include <memory>
-#include <simdjson.h>
 #include <string>
 #include <vector>
 

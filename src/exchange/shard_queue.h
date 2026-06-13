@@ -79,7 +79,7 @@ class ShardQueue {
   size_t capacity_;
   size_t mask_;
   std::vector<RawMessage> slots_;
-  alignas(64) std::atomic<size_t> read_pos_{0};    // hot — consumer (own cache line)
+  alignas(64) std::atomic<size_t> read_pos_{0};  // hot — consumer (own cache line)
 };
 
 }  // namespace sqc

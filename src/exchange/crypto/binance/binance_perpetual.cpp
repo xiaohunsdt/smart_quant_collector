@@ -82,7 +82,7 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
 namespace {
 static std::vector<SubscriptionGroup> BinancePerpetualBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
   std::string name(symbol);
-  for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  for(auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   std::string dl = std::to_string(depth_level);
   // Perpetual: @bookTicker + @depth on /public, @aggTrade on /market.
   // Perpetual timestamps are in milliseconds (futures API does not support timeUnit=MICROSECOND).

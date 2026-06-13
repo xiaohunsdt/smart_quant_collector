@@ -37,13 +37,18 @@ class RithmicChannelMap {
 
   [[nodiscard]] uint32_t Lookup(std::string_view exchange, std::string_view ticker) const noexcept {
     uint32_t id = sqc::ComputeChannelId(exchange, "futures", ticker);
-    if (registered_ids_.count(id) == 0) return kNotFound;
+    if(registered_ids_.count(id) == 0) return kNotFound;
     return id;
   }
 
   [[nodiscard]] size_t Size() const noexcept { return sub_list_.size(); }
 
-  struct SubEntry { bool enabled = false; std::string exchange; std::string ticker; uint32_t channel_id; };
+  struct SubEntry {
+    bool enabled = false;
+    std::string exchange;
+    std::string ticker;
+    uint32_t channel_id;
+  };
   [[nodiscard]] const std::vector<SubEntry>& Subscriptions() const noexcept { return sub_list_; }
 
  private:
@@ -79,8 +84,7 @@ namespace sqc {
 namespace rithmic {
 
 inline uint64_t SsboeConverter::ToEpochMicros(int ssboe, int usecs) noexcept {
-  return static_cast<uint64_t>(ssboe) * 1000000ULL +
-         static_cast<uint64_t>(usecs);
+  return static_cast<uint64_t>(ssboe) * 1000000ULL + static_cast<uint64_t>(usecs);
 }
 
 }  // namespace rithmic

@@ -13,7 +13,9 @@
 
 namespace sqc {
 
-namespace rithmic { class RithmicProcessManager; }
+namespace rithmic {
+class RithmicProcessManager;
+}
 
 enum class ParsedType { NONE, TICK, DEPTH, BOOK_TICKER };
 
@@ -37,9 +39,12 @@ inline ChannelType ParseChannelType(std::string_view s) {
 
 inline const char* ChannelTypeName(ChannelType t) {
   switch(t) {
-    case ChannelType::Spot:   return "spot";
-    case ChannelType::Perpetual: return "perpetual";
-    case ChannelType::Futures: return "futures";
+    case ChannelType::Spot:
+      return "spot";
+    case ChannelType::Perpetual:
+      return "perpetual";
+    case ChannelType::Futures:
+      return "futures";
   }
   return "unknown";
 }
@@ -76,7 +81,6 @@ struct ExchangeAdapter {
 /// Create and start the Rithmic cross-process pipeline.
 /// Returns nullptr if no futures exchanges are configured (Setup() returns false).
 /// The caller owns the returned manager and must call Shutdown() before destruction.
-std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
-    std::string_view config_path);
+std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(std::string_view config_path);
 
 }  // namespace sqc

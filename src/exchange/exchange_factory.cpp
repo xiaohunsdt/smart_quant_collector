@@ -6,8 +6,7 @@
 
 namespace sqc {
 
-std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
-    std::string_view config_path) {
+std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(std::string_view config_path) {
   const auto& rcfg = Config::Instance().rithmic;
 
   rithmic::RithmicProcessManager::Config proc_cfg;
@@ -17,7 +16,7 @@ std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
   proc_cfg.cpu_affinity = Config::Instance().global.cpu_affinity;
 
   auto mgr = std::make_unique<rithmic::RithmicProcessManager>(proc_cfg);
-  if (!mgr->Setup()) return nullptr;
+  if(!mgr->Setup()) return nullptr;
   return mgr;
 }
 

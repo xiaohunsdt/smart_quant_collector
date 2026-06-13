@@ -25,9 +25,7 @@ PubWorker& PubWorker::Init() {
   return *g_instance;
 }
 
-PubWorker& PubWorker::Instance() {
-  return *g_instance;
-}
+PubWorker& PubWorker::Instance() { return *g_instance; }
 
 // ── Construction ──────────────────────────────────────────────────
 
@@ -79,7 +77,7 @@ template <typename Serializer>
 bool PubWorker::SendTyped(uint32_t channel_id, std::string_view event_suffix, const typename Serializer::value_type& data) {
   // Resolve topic prefix from ChannelRegistry singleton.
   const auto* info = ChannelRegistry::Instance().Lookup(channel_id);
-  if (!info || info->topic_prefix.empty()) return false;
+  if(!info || info->topic_prefix.empty()) return false;
   const auto& prefix = info->topic_prefix;
 
   // Build topic string: "prefix:event_suffix"
@@ -180,8 +178,7 @@ void PubWorker::DrainAll() {
 
 void PubWorker::Start() {
   thread_ = std::thread([this]() {
-    if(Config::Instance().global.cpu_affinity)
-      PinToCore(Config::Instance().threading_matrix.pub_core);
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.pub_core);
     Run();
   });
 }

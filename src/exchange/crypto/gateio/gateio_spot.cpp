@@ -10,9 +10,7 @@
 namespace sqc {
 namespace gateio_spot {
 
-EventType PeekEventType(simdjson::ondemand::document& doc) {
-  return gateio::PeekEventType(doc, "spot");
-}
+EventType PeekEventType(simdjson::ondemand::document& doc) { return gateio::PeekEventType(doc, "spot"); }
 
 ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type) {
   ParseResult result;
@@ -55,12 +53,12 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     out.trade_id = result["id"].get_uint64();
     (void)result["create_time"].get_uint64();
     double create_time_ms = 0.0;
-    if (!SvToDouble(result["create_time_ms"].get_string(), create_time_ms)) return false;
+    if(!SvToDouble(result["create_time_ms"].get_string(), create_time_ms)) return false;
     out.exchange_timestamp = static_cast<uint64_t>(create_time_ms * 1000.0);
-    if (!SvToDouble(result["price"].get_string(), out.price)) return false;
+    if(!SvToDouble(result["price"].get_string(), out.price)) return false;
     std::string_view side = result["side"].get_string();
     double qty = 0.0;
-    if (!SvToDouble(result["amount"].get_string(), qty)) return false;
+    if(!SvToDouble(result["amount"].get_string(), qty)) return false;
     out.quantity = qty < 0 ? -qty : qty;
     out.is_buyer_maker = (side == "sell");
     out.channel_id = channel_id;
@@ -95,10 +93,10 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
       auto it = lv.begin();
       if(it == lv.end()) continue;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble((*it).get_string(), p)) continue;
+      if(!SvToDouble((*it).get_string(), p)) continue;
       ++it;
       if(it == lv.end()) continue;
-      if (!SvToDouble((*it).get_string(), q)) continue;
+      if(!SvToDouble((*it).get_string(), q)) continue;
       out.bids[out.bid_count++] = {p, q};
     }
     out.ask_count = 0;
@@ -107,10 +105,10 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
       auto it = lv.begin();
       if(it == lv.end()) continue;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble((*it).get_string(), p)) continue;
+      if(!SvToDouble((*it).get_string(), p)) continue;
       ++it;
       if(it == lv.end()) continue;
-      if (!SvToDouble((*it).get_string(), q)) continue;
+      if(!SvToDouble((*it).get_string(), q)) continue;
       out.asks[out.ask_count++] = {p, q};
     }
     return true;
@@ -133,16 +131,18 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
 
 namespace {
 static std::vector<SubscriptionGroup> GateioSpotBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
-  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
   std::string dl = std::to_string(depth_level);
   return {
       {"wss://api.gateio.ws/ws/v4/",
        {
            {R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
-           {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl + "\",\"100ms\"]}", 500, EventType::DEPTH},
-           {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
+           {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl +
+                "\",\"100ms\"]}",
+            500, EventType::DEPTH},
+           {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700,
+            EventType::BOOK_TICKER},
        }}};
 }
 }  // namespace

@@ -10,9 +10,7 @@
 namespace sqc {
 namespace gateio_perpetual {
 
-EventType PeekEventType(simdjson::ondemand::document& doc) {
-  return gateio::PeekEventType(doc, "futures");
-}
+EventType PeekEventType(simdjson::ondemand::document& doc) { return gateio::PeekEventType(doc, "futures"); }
 
 ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type) {
   ParseResult result;
@@ -58,10 +56,10 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     out.trade_id = item["id"].get_uint64();
     (void)item["create_time"].get_uint64();
     out.exchange_timestamp = item["create_time_ms"].get_uint64() * 1000ULL;
-    if (!SvToDouble(item["price"].get_string(), out.price)) return false;
+    if(!SvToDouble(item["price"].get_string(), out.price)) return false;
     double size_val = 0.0;
     std::string_view size_sv;
-    if (item["size"].get_string().get(size_sv) == simdjson::SUCCESS)
+    if(item["size"].get_string().get(size_sv) == simdjson::SUCCESS)
       SvToDouble(size_sv, size_val);
     else
       size_val = static_cast<double>(item["size"].get_int64());
@@ -97,20 +95,24 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
     for(auto lv : result["bids"]) {
       if(out.bid_count >= kMaxOrderbookLevels) break;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble(lv["p"].get_string(), p)) continue;
+      if(!SvToDouble(lv["p"].get_string(), p)) continue;
       auto s_str = lv["s"].get_string();
-      if (s_str.error() == simdjson::SUCCESS) SvToDouble(s_str.value_unsafe(), q);
-      else q = static_cast<double>(lv["s"].get_int64());
+      if(s_str.error() == simdjson::SUCCESS)
+        SvToDouble(s_str.value_unsafe(), q);
+      else
+        q = static_cast<double>(lv["s"].get_int64());
       out.bids[out.bid_count++] = {p, q};
     }
     out.ask_count = 0;
     for(auto lv : result["asks"]) {
       if(out.ask_count >= kMaxOrderbookLevels) break;
       double p = 0.0, q = 0.0;
-      if (!SvToDouble(lv["p"].get_string(), p)) continue;
+      if(!SvToDouble(lv["p"].get_string(), p)) continue;
       auto s_str = lv["s"].get_string();
-      if (s_str.error() == simdjson::SUCCESS) SvToDouble(s_str.value_unsafe(), q);
-      else q = static_cast<double>(lv["s"].get_int64());
+      if(s_str.error() == simdjson::SUCCESS)
+        SvToDouble(s_str.value_unsafe(), q);
+      else
+        q = static_cast<double>(lv["s"].get_int64());
       out.asks[out.ask_count++] = {p, q};
     }
     return true;
@@ -133,15 +135,18 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
 
 namespace {
 static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string_view symbol, uint32_t depth_level) {
-  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+  auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   std::string ts = std::to_string(now_sec);
   std::string dl = std::to_string(depth_level);
   return {{"wss://fx-ws.gateio.ws/v4/ws/usdt",
            {
-               {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
-               {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl + "\",\"0\"]}", 500, EventType::DEPTH},
-               {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700, EventType::BOOK_TICKER},
+               {R"({"time":)" + ts + R"(,"channel":"futures.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0,
+                EventType::TICK},
+               {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl +
+                    "\",\"0\"]}",
+                500, EventType::DEPTH},
+               {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700,
+                EventType::BOOK_TICKER},
            }}};
 }
 }  // namespace

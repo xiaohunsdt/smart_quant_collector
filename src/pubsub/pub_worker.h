@@ -83,7 +83,7 @@ class PubWorker {
   void Run();
 
   // ── Members ────────────────────────────────────────────────────
-  zmq::context_t zmq_ctx_;   // owned ZMQ context; declared before pub_socket_
+  zmq::context_t zmq_ctx_;  // owned ZMQ context; declared before pub_socket_
   zmq::socket_t pub_socket_;
   std::string tcp_endpoint_;
   std::string ipc_endpoint_;

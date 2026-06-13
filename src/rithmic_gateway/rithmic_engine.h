@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "RApiPlus.h"
-
 #include "src/config/config_struct.h"
 #include "src/exchange/rithmic/rithmic_shm.h"
 #include "src/exchange/rithmic/rithmic_types.h"
@@ -35,12 +34,8 @@ class RithmicEngine {
     uint32_t channel_id;
   };
 
-  RithmicEngine(const Config& config,
-                shm_layout::TickQueue& tick_queue,
-                shm_layout::DepthQueue& depth_queue,
-                shm_layout::BookTickerQueue& book_ticker_queue,
-                const RithmicChannelMap& channel_map,
-                SsboeConverter& converter,
+  RithmicEngine(const Config& config, shm_layout::TickQueue& tick_queue, shm_layout::DepthQueue& depth_queue,
+                shm_layout::BookTickerQueue& book_ticker_queue, const RithmicChannelMap& channel_map, SsboeConverter& converter,
                 const std::vector<SubEntry>& subscriptions);
 
   ~RithmicEngine();

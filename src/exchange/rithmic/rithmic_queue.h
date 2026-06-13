@@ -22,8 +22,7 @@ namespace rithmic {
 
 template <typename T, size_t Capacity = 8192>
 class MpscRithmicQueue {
-  static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0,
-                "Capacity must be a power of 2");
+  static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
 
  public:
   using value_type = T;
@@ -62,9 +61,7 @@ class MpscRithmicQueue {
     return w - r;
   }
 
-  [[nodiscard]] uint64_t dropped_count() const noexcept {
-    return dropped_count_.load(std::memory_order_relaxed);
-  }
+  [[nodiscard]] uint64_t dropped_count() const noexcept { return dropped_count_.load(std::memory_order_relaxed); }
 
   [[nodiscard]] constexpr size_t capacity() const noexcept { return Capacity; }
 
@@ -93,7 +90,7 @@ class MpscRithmicQueue {
 
 template <typename T, size_t Capacity>
 MpscRithmicQueue<T, Capacity>::MpscRithmicQueue() {
-  for (size_t i = 0; i < Capacity; ++i) {
+  for(size_t i = 0; i < Capacity; ++i) {
     slots_[i].sequence.store(i, std::memory_order_relaxed);
   }
 }
@@ -104,10 +101,10 @@ bool MpscRithmicQueue<T, Capacity>::TryPush(const T& event) noexcept {
   Slot& slot = slots_[pos & kMask];
 
   uint64_t seq = slot.sequence.load(std::memory_order_acquire);
-  if (seq != pos) {
+  if(seq != pos) {
     int spin = 0;
-    while (slot.sequence.load(std::memory_order_acquire) != pos) {
-      if (++spin > 10000) {
+    while(slot.sequence.load(std::memory_order_acquire) != pos) {
+      if(++spin > 10000) {
         write_pos_.fetch_sub(1, std::memory_order_relaxed);
         dropped_count_.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -130,7 +127,7 @@ void MpscRithmicQueue<T, Capacity>::Push(const T& event) noexcept {
   size_t pos = write_pos_.fetch_add(1, std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
-  while (slot.sequence.load(std::memory_order_acquire) != pos) {
+  while(slot.sequence.load(std::memory_order_acquire) != pos) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     __builtin_ia32_pause();
 #elif defined(__aarch64__) || defined(_M_ARM64)
@@ -147,7 +144,7 @@ bool MpscRithmicQueue<T, Capacity>::TryPop(T& out) noexcept {
   size_t pos = read_pos_.load(std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
-  if (slot.sequence.load(std::memory_order_acquire) != pos + 1) {
+  if(slot.sequence.load(std::memory_order_acquire) != pos + 1) {
     return false;
   }
 
@@ -159,9 +156,9 @@ bool MpscRithmicQueue<T, Capacity>::TryPop(T& out) noexcept {
 
 template <typename T, size_t Capacity>
 T MpscRithmicQueue<T, Capacity>::PopBlocking() noexcept {
-  while (true) {
+  while(true) {
     T out;
-    if (TryPop(out)) {
+    if(TryPop(out)) {
       return out;
     }
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)

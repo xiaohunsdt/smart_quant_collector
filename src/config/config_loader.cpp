@@ -16,9 +16,8 @@ SymbolConfig ParseSymbol(const YAML::Node& node) {
   SymbolConfig s;
   s.name = node["name"].as<std::string>();
   if(s.name.size() > 11) {
-    throw std::runtime_error(fmt::format(
-        "Symbol '{}' is {} chars (max 11). sizeof(TickData)==64 (1 cache line) requires symbol <= 11 chars.", s.name,
-        s.name.size()));
+    throw std::runtime_error(
+        fmt::format("Symbol '{}' is {} chars (max 11). sizeof(TickData)==64 (1 cache line) requires symbol <= 11 chars.", s.name, s.name.size()));
   }
   if(node["enabled"]) s.enabled = node["enabled"].as<bool>();
   if(node["depth_level"]) {
@@ -46,30 +45,30 @@ ChannelConfig ParseChannel(const YAML::Node& node) {
 
 RithmicConfig ParseRithmicConfig(const YAML::Node& node) {
   RithmicConfig r;
-  if (!node) return r;
+  if(!node) return r;
 
-  if (node["user"]) r.user = node["user"].as<std::string>();
-  if (node["password"]) r.password = SecureString::FromPlain(node["password"].as<std::string>());
-  if (node["shm_name"]) r.shm_name = node["shm_name"].as<std::string>();
-  if (node["engine_core"]) r.engine_core = node["engine_core"].as<uint32_t>();
-  if (node["forwarder_core"]) r.forwarder_core = node["forwarder_core"].as<uint32_t>();
-  if (node["ssl_cert_file"]) r.ssl_cert_file = node["ssl_cert_file"].as<std::string>();
-  if (node["domain_servers"]) r.domain_servers = node["domain_servers"].as<std::string>();
-  if (node["domain_name"]) r.domain_name = node["domain_name"].as<std::string>();
-  if (node["license_servers"]) r.license_servers = node["license_servers"].as<std::string>();
-  if (node["local_broker"]) r.local_broker = node["local_broker"].as<std::string>();
-  if (node["logger_servers"]) r.logger_servers = node["logger_servers"].as<std::string>();
+  if(node["user"]) r.user = node["user"].as<std::string>();
+  if(node["password"]) r.password = SecureString::FromPlain(node["password"].as<std::string>());
+  if(node["shm_name"]) r.shm_name = node["shm_name"].as<std::string>();
+  if(node["engine_core"]) r.engine_core = node["engine_core"].as<uint32_t>();
+  if(node["forwarder_core"]) r.forwarder_core = node["forwarder_core"].as<uint32_t>();
+  if(node["ssl_cert_file"]) r.ssl_cert_file = node["ssl_cert_file"].as<std::string>();
+  if(node["domain_servers"]) r.domain_servers = node["domain_servers"].as<std::string>();
+  if(node["domain_name"]) r.domain_name = node["domain_name"].as<std::string>();
+  if(node["license_servers"]) r.license_servers = node["license_servers"].as<std::string>();
+  if(node["local_broker"]) r.local_broker = node["local_broker"].as<std::string>();
+  if(node["logger_servers"]) r.logger_servers = node["logger_servers"].as<std::string>();
 
-  if (node["app_name"]) r.app_name = node["app_name"].as<std::string>();
-  if (node["app_version"]) r.app_version = node["app_version"].as<std::string>();
+  if(node["app_name"]) r.app_name = node["app_name"].as<std::string>();
+  if(node["app_version"]) r.app_version = node["app_version"].as<std::string>();
 
-  if (node["repository_connect_pt"]) r.repository_connect_pt = node["repository_connect_pt"].as<std::string>();
-  if (node["md_connect_pt"]) r.md_connect_pt = node["md_connect_pt"].as<std::string>();
-  if (node["md_connect_pt_agg"]) r.md_connect_pt_agg = node["md_connect_pt_agg"].as<std::string>();
-  if (node["use_aggregated_md"]) r.use_aggregated_md = node["use_aggregated_md"].as<bool>();
-  if (node["ih_connect_pt"]) r.ih_connect_pt = node["ih_connect_pt"].as<std::string>();
-  if (node["ts_connect_pt"]) r.ts_connect_pt = node["ts_connect_pt"].as<std::string>();
-  if (node["pnl_connect_pt"]) r.pnl_connect_pt = node["pnl_connect_pt"].as<std::string>();
+  if(node["repository_connect_pt"]) r.repository_connect_pt = node["repository_connect_pt"].as<std::string>();
+  if(node["md_connect_pt"]) r.md_connect_pt = node["md_connect_pt"].as<std::string>();
+  if(node["md_connect_pt_agg"]) r.md_connect_pt_agg = node["md_connect_pt_agg"].as<std::string>();
+  if(node["use_aggregated_md"]) r.use_aggregated_md = node["use_aggregated_md"].as<bool>();
+  if(node["ih_connect_pt"]) r.ih_connect_pt = node["ih_connect_pt"].as<std::string>();
+  if(node["ts_connect_pt"]) r.ts_connect_pt = node["ts_connect_pt"].as<std::string>();
+  if(node["pnl_connect_pt"]) r.pnl_connect_pt = node["pnl_connect_pt"].as<std::string>();
 
   return r;
 }

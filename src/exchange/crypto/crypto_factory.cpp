@@ -16,31 +16,26 @@
 namespace sqc {
 
 const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type) {
-  if (exchange_name == "binance")
-    return channel_type == ChannelType::Spot ? &kBinanceSpotAdapter : &kBinancePerpetualAdapter;
-  if (exchange_name == "gateio")
-    return channel_type == ChannelType::Spot ? &kGateioSpotAdapter : &kGateioPerpetualAdapter;
+  if(exchange_name == "binance") return channel_type == ChannelType::Spot ? &kBinanceSpotAdapter : &kBinancePerpetualAdapter;
+  if(exchange_name == "gateio") return channel_type == ChannelType::Spot ? &kGateioSpotAdapter : &kGateioPerpetualAdapter;
   // "rithmic" is handled via CreateRithmicManager() (callback-driven, not WebSocket)
   return nullptr;
 }
 
-CryptoChannels BuildCryptoChannels(size_t num_parsers,
-                                   net::io_context& io_ctx,
-                                   net::ssl::context& ssl_ctx) {
+CryptoChannels BuildCryptoChannels(size_t num_parsers, net::io_context& io_ctx, net::ssl::context& ssl_ctx) {
   CryptoChannels result;
-  for (size_t i = 0; i < num_parsers; ++i)
-    result.shard_queues.push_back(std::make_shared<ShardQueue>(4096));
+  for(size_t i = 0; i < num_parsers; ++i) result.shard_queues.push_back(std::make_shared<ShardQueue>(4096));
 
-  for (const auto& ex : Config::Instance().exchanges) {
-    if (!ex.enabled) continue;
-    for (const auto& ch : ex.channels) {
+  for(const auto& ex : Config::Instance().exchanges) {
+    if(!ex.enabled) continue;
+    for(const auto& ch : ex.channels) {
       const auto* adapter = GetAdapter(ex.name, ParseChannelType(ch.type));
-      if (!adapter) {
+      if(!adapter) {
         LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
         continue;
       }
-      for (const auto& sym : ch.symbols) {
-        if (!sym.enabled) continue;
+      for(const auto& sym : ch.symbols) {
+        if(!sym.enabled) continue;
 
         ChannelInfo info;
         info.exchange = ex.name;
@@ -53,8 +48,7 @@ CryptoChannels BuildCryptoChannels(size_t num_parsers,
         // keyed by uint32_t channel_id for zero-allocation hot-path lookup.
         StorageRouter::Instance().RegisterChannel(id, info, sym.persist_to_disk);
 
-        result.channels.push_back(std::make_shared<SymbolChannel>(
-            adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, result.shard_queues));
+        result.channels.push_back(std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, result.shard_queues));
       }
     }
   }
@@ -69,12 +63,10 @@ CryptoParserPool BuildParserPool(const CryptoChannels& crypto) {
   pool.telemetry_slots = std::make_unique<TelemetrySlot[]>(n);
   pool.num_slots = n;
 
-  for (size_t i = 0; i < n; ++i) {
-    DataDispatcher dispatcher{&pool.telemetry_slots[i],
-                              crypto.shard_queues[i].get(), i};
+  for(size_t i = 0; i < n; ++i) {
+    DataDispatcher dispatcher{&pool.telemetry_slots[i], crypto.shard_queues[i].get(), i};
     pool.workers.push_back(std::make_unique<ShardParserWorker>(
-        Config::Instance().threading_matrix.parser_cores[i],
-        *crypto.shard_queues[i],
+        Config::Instance().threading_matrix.parser_cores[i], *crypto.shard_queues[i],
         [dispatcher](TickData tick) { dispatcher.OnTick(std::move(tick)); },
         [dispatcher](uint32_t cid, const DepthUpdateEvent& ev) { dispatcher.OnDepth(cid, ev); },
         [dispatcher](uint32_t cid, BookTickerEvent ev) { dispatcher.OnBookTicker(cid, std::move(ev)); }));
@@ -85,21 +77,20 @@ CryptoParserPool BuildParserPool(const CryptoChannels& crypto) {
 }
 
 void CryptoParserPool::Run() {
-  for (size_t i = 0; i < workers.size(); ++i) {
+  for(size_t i = 0; i < workers.size(); ++i) {
     // Capture raw pointer: safe because workers live in the pool's unique_ptr
     // vector, which outlives all threads (Shutdown() joins before destruction).
     auto* worker = workers[i].get();
     threads.emplace_back([worker, i]() {
-      if (Config::Instance().global.cpu_affinity)
-        PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
+      if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
       worker->Run();
     });
   }
 }
 
 void CryptoParserPool::Shutdown() {
-  for (auto& t : threads)
-    if (t.joinable()) t.join();
+  for(auto& t : threads)
+    if(t.joinable()) t.join();
   threads.clear();
 }
 
@@ -108,32 +99,27 @@ void CryptoParserPool::Shutdown() {
 // ---------------------------------------------------------------------------
 
 std::optional<CryptoSubsystem> BuildCryptoSubsystem() {
-  const size_t num_parsers =
-      Config::Instance().threading_matrix.parser_cores.size();
-  if (num_parsers == 0) {
-    LOG_CRITICAL(GetLogger(),
-                 "parser_cores must not be empty — modulo-by-zero on shard dispatch");
+  const size_t num_parsers = Config::Instance().threading_matrix.parser_cores.size();
+  if(num_parsers == 0) {
+    LOG_CRITICAL(GetLogger(), "parser_cores must not be empty — modulo-by-zero on shard dispatch");
     return std::nullopt;
   }
 
   CryptoSubsystem sys;
-  sys.io_ctx  = std::make_unique<net::io_context>();
+  sys.io_ctx = std::make_unique<net::io_context>();
   sys.ssl_ctx = std::make_unique<net::ssl::context>(net::ssl::context::tlsv12_client);
   sys.ssl_ctx->set_verify_mode(net::ssl::verify_peer);
   sys.ssl_ctx->set_default_verify_paths();
-  sys.channels    = BuildCryptoChannels(num_parsers, *sys.io_ctx, *sys.ssl_ctx);
+  sys.channels = BuildCryptoChannels(num_parsers, *sys.io_ctx, *sys.ssl_ctx);
   sys.parser_pool = BuildParserPool(sys.channels);
   return sys;
 }
 
-void CryptoSubsystem::RunParsers() {
-  parser_pool.Run();
-}
+void CryptoSubsystem::RunParsers() { parser_pool.Run(); }
 
 void CryptoSubsystem::RunNetwork() {
   network_thread_ = std::thread([this]() {
-    if (Config::Instance().global.cpu_affinity)
-      PinToCore(Config::Instance().threading_matrix.network_core);
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.network_core);
     channels.Start();
     auto work_guard = net::make_work_guard(*io_ctx);
     io_ctx->run();
@@ -145,12 +131,10 @@ void CryptoSubsystem::StopNetwork() {
   io_ctx->stop();
 }
 
-void CryptoSubsystem::DrainQueues() {
-  channels.DrainQueues();
-}
+void CryptoSubsystem::DrainQueues() { channels.DrainQueues(); }
 
 void CryptoSubsystem::Shutdown() {
-  if (network_thread_.joinable()) network_thread_.join();
+  if(network_thread_.joinable()) network_thread_.join();
   parser_pool.Shutdown();
 }
 

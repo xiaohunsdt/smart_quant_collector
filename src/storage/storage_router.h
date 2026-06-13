@@ -55,7 +55,7 @@ class StorageRouter {
 
   uint32_t buffer_size_;
   std::atomic<bool> degraded_{false};
-  std::atomic<bool> reconnecting_{false};        // CAS gate — only one thread runs Reconnect()
+  std::atomic<bool> reconnecting_{false};  // CAS gate — only one thread runs Reconnect()
 
   std::string csv_output_path_;
   std::string mmap_output_path_;

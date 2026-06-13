@@ -7,36 +7,33 @@
 #include "common/logger_init.h"
 #include "common/signal_handler.h"
 #include "config/config_loader.h"
-#include "src/exchange/exchange_adapter.h"
-#include "quill/LogMacros.h"
-
 #include "dolphindb_client.h"
-
+#include "quill/LogMacros.h"
+#include "src/exchange/exchange_adapter.h"
 
 namespace {
 
-  // Binary record header for orderbook mmap persistence.
-  // Both RouteOrderbook (direct mmap) and WriteOrderbookToMmap (degradation fallback) use this.
-  struct alignas(8) OrderbookRecordHeader {
-    uint64_t exchange_timestamp;
-    uint64_t local_diff;
-    char symbol[32];
-    uint32_t bid_count;
-    uint32_t ask_count;
-  };
-  
-    sqc::DolphinDBClient dolphindb_;
-    std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
-  
-}  // namespace
+// Binary record header for orderbook mmap persistence.
+// Both RouteOrderbook (direct mmap) and WriteOrderbookToMmap (degradation fallback) use this.
+struct alignas(8) OrderbookRecordHeader {
+  uint64_t exchange_timestamp;
+  uint64_t local_diff;
+  char symbol[32];
+  uint32_t bid_count;
+  uint32_t ask_count;
+};
 
+sqc::DolphinDBClient dolphindb_;
+std::shared_mutex dolphindb_mtx_;  // protects dolphindb_ writer access across threads
+
+}  // namespace
 
 namespace sqc {
 
 StorageRouter* StorageRouter::instance_ = nullptr;
 
 StorageRouter& StorageRouter::Instance() {
-  if (!instance_) instance_ = new StorageRouter();
+  if(!instance_) instance_ = new StorageRouter();
   return *instance_;
 }
 
@@ -59,9 +56,7 @@ StorageRouter::StorageRouter()
   }
 }
 
-void StorageRouter::FreezeChannels() {
-  dolphindb_.FreezeChannels();
-}
+void StorageRouter::FreezeChannels() { dolphindb_.FreezeChannels(); }
 
 // ============================================================
 // RegisterChannel
@@ -128,22 +123,19 @@ void StorageRouter::RouteTick(const TickData& tick, const ChannelInfo& /*info*/)
       // Flush on buffer threshold OR every 1s to avoid stale data in low-frequency feeds
       bool threshold_reached = buf.size() >= buffer_size_;
       bool time_elapsed = false;
-      if (!threshold_reached && !buf.empty()) {
-        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+      if(!threshold_reached && !buf.empty()) {
+        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         uint64_t last = last_flush_ns_.load(std::memory_order_relaxed);
-        if (now_ns - last > 1'000'000'000ULL) {
+        if(now_ns - last > 1'000'000'000ULL) {
           time_elapsed = true;
         }
       }
 
-      if (threshold_reached || time_elapsed) {
+      if(threshold_reached || time_elapsed) {
         to_flush.swap(buf);
         SwapBuffer();
-        last_flush_ns_.store(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count(),
-            std::memory_order_relaxed);
+        last_flush_ns_.store(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+                             std::memory_order_relaxed);
       }
     }
     if(!to_flush.empty()) {

@@ -13,9 +13,9 @@ namespace sqc {
 namespace rithmic {
 namespace {
 
-using TickQueue      = MpscRithmicQueue<TickData, 64>;
-using DepthQueue     = MpscRithmicQueue<DepthUpdateEvent, 64>;
-using BookTickQueue  = MpscRithmicQueue<BookTickerEvent, 64>;
+using TickQueue = MpscRithmicQueue<TickData, 64>;
+using DepthQueue = MpscRithmicQueue<DepthUpdateEvent, 64>;
+using BookTickQueue = MpscRithmicQueue<BookTickerEvent, 64>;
 
 // Helper: create a tick
 TickData MakeTick(uint32_t channel_id, double price, double quantity) {
@@ -36,8 +36,7 @@ DepthUpdateEvent MakeDepth(uint32_t channel_id, uint32_t bids, uint32_t asks) {
 }
 
 // Helper: create a book ticker event
-BookTickerEvent MakeBookTicker(uint32_t channel_id, double bid_p, double bid_q,
-                               double ask_p, double ask_q) {
+BookTickerEvent MakeBookTicker(uint32_t channel_id, double bid_p, double bid_q, double ask_p, double ask_q) {
   BookTickerEvent bt{};
   bt.channel_id = channel_id;
   bt.best_bid_price = bid_p;
@@ -66,10 +65,9 @@ TEST(RithmicQueueTest, TickPushPopManyFifoOrder) {
   LargeTickQueue q;
   constexpr int kN = 100;
 
-  for (int i = 0; i < kN; ++i)
-    ASSERT_TRUE(q.TryPush(MakeTick(i, i * 1.0, i * 2.0)));
+  for(int i = 0; i < kN; ++i) ASSERT_TRUE(q.TryPush(MakeTick(i, i * 1.0, i * 2.0)));
 
-  for (int i = 0; i < kN; ++i) {
+  for(int i = 0; i < kN; ++i) {
     TickData out;
     ASSERT_TRUE(q.TryPop(out));
     EXPECT_EQ(out.channel_id, static_cast<uint32_t>(i));
@@ -111,24 +109,23 @@ TEST(RithmicQueueTest, MpscMultiProducerNoLoss) {
   constexpr int kTotal = kProducers * kEach;
 
   auto produce = [&](int base) {
-    for (int i = 0; i < kEach; ++i) {
-      while (!q.TryPush(MakeTick(base * 1000 + i, base * 1.0, i * 1.0)))
-        std::this_thread::yield();
+    for(int i = 0; i < kEach; ++i) {
+      while(!q.TryPush(MakeTick(base * 1000 + i, base * 1.0, i * 1.0))) std::this_thread::yield();
     }
   };
 
   std::vector<std::thread> threads;
-  for (int p = 0; p < kProducers; ++p) threads.emplace_back(produce, p);
+  for(int p = 0; p < kProducers; ++p) threads.emplace_back(produce, p);
 
   int got = 0;
-  while (got < kTotal) {
+  while(got < kTotal) {
     TickData out;
-    if (q.TryPop(out)) {
+    if(q.TryPop(out)) {
       ++got;
     }
   }
 
-  for (auto& t : threads) t.join();
+  for(auto& t : threads) t.join();
   EXPECT_EQ(got, kTotal);
 }
 
@@ -138,8 +135,7 @@ TEST(RithmicQueueTest, MpscMultiProducerNoLoss) {
 
 TEST(RithmicQueueTest, TickTryPushFailsWhenFull) {
   TickQueue q;
-  for (size_t i = 0; i < 64; ++i)
-    ASSERT_TRUE(q.TryPush(MakeTick(i, 1.0, 1.0)));
+  for(size_t i = 0; i < 64; ++i) ASSERT_TRUE(q.TryPush(MakeTick(i, 1.0, 1.0)));
 
   EXPECT_GE(q.size(), 60u);
   EXPECT_FALSE(q.TryPush(MakeTick(999, 1.0, 1.0)));
@@ -148,17 +144,15 @@ TEST(RithmicQueueTest, TickTryPushFailsWhenFull) {
 
 TEST(RithmicQueueTest, TickDropCountAccurate) {
   TickQueue q;
-  for (size_t i = 0; i < 64; ++i)
-    (void)q.TryPush(MakeTick(i, 1.0, 1.0));
+  for(size_t i = 0; i < 64; ++i) (void)q.TryPush(MakeTick(i, 1.0, 1.0));
 
-  for (int i = 0; i < 10; ++i)
-    (void)q.TryPush(MakeTick(i, 1.0, 1.0));
+  for(int i = 0; i < 10; ++i) (void)q.TryPush(MakeTick(i, 1.0, 1.0));
 
   EXPECT_GE(q.dropped_count(), 10u);
 
   int got = 0;
   TickData out;
-  while (q.TryPop(out)) ++got;
+  while(q.TryPop(out)) ++got;
   EXPECT_EQ(got, 64);
 }
 

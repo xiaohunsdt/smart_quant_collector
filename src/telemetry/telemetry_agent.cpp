@@ -23,8 +23,7 @@ TelemetryAgent& TelemetryAgent::Init() {
 TelemetryAgent& TelemetryAgent::Instance() { return *g_instance; }
 
 TelemetryAgent::TelemetryAgent()
-    : exposer_(std::make_unique<PrometheusExposer>()),
-      report_interval_ms_(Config::Instance().telemetry.report_interval_ms) {}
+    : exposer_(std::make_unique<PrometheusExposer>()), report_interval_ms_(Config::Instance().telemetry.report_interval_ms) {}
 
 void TelemetryAgent::RegisterSlot(TelemetrySlot* slot) { slots_.push_back(slot); }
 
@@ -39,8 +38,7 @@ void TelemetryAgent::PollAll() {
 
 void TelemetryAgent::Start() {
   thread_ = std::thread([this]() {
-    if(Config::Instance().global.cpu_affinity)
-      PinToCore(Config::Instance().threading_matrix.telemetry_core);
+    if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.telemetry_core);
     Run();
   });
 }

@@ -19,11 +19,11 @@ PriceLevel MakeLevel(double price, double qty) {
 
 void VerifySorted(const RithmicOrderBook& book) {
   const auto* bids = book.bids();
-  for (uint32_t i = 1; i < book.bid_count(); ++i) {
+  for(uint32_t i = 1; i < book.bid_count(); ++i) {
     EXPECT_GT(bids[i - 1].price, bids[i].price) << "bids not descending at " << i;
   }
   const auto* asks = book.asks();
-  for (uint32_t i = 1; i < book.ask_count(); ++i) {
+  for(uint32_t i = 1; i < book.ask_count(); ++i) {
     EXPECT_LT(asks[i - 1].price, asks[i].price) << "asks not ascending at " << i;
   }
 }
@@ -358,7 +358,7 @@ TEST(RithmicOrderBookTest, SnapshotToEmptyBook) {
 TEST(RithmicOrderBookTest, OverflowDropsExcess) {
   RithmicOrderBook book;
   book.Init(0, "TEST");
-  for (int i = 0; i < static_cast<int>(kMaxOrderbookLevels) + 10; ++i) {
+  for(int i = 0; i < static_cast<int>(kMaxOrderbookLevels) + 10; ++i) {
     book.ApplyLevel(100.0 + i * 0.25, 1.0, /*is_ask=*/true);
   }
   EXPECT_EQ(book.ask_count(), kMaxOrderbookLevels);
@@ -374,14 +374,14 @@ TEST(RithmicOrderBookTest, RandomInsertMaintainsSortedOrder) {
   RithmicOrderBook book;
   book.Init(0, "TEST");
   double bid_p[] = {99.0, 101.0, 100.0, 98.0, 102.0};
-  for (double p : bid_p) book.ApplyLevel(p, 1.0, /*is_ask=*/false);
+  for(double p : bid_p) book.ApplyLevel(p, 1.0, /*is_ask=*/false);
   VerifySorted(book);
   const auto* bids = book.bids();
   EXPECT_DOUBLE_EQ(bids[0].price, 102.0);
   EXPECT_DOUBLE_EQ(bids[4].price, 98.0);
 
   double ask_p[] = {101.0, 99.0, 100.0, 102.0, 98.0};
-  for (double p : ask_p) book.ApplyLevel(p, 1.0, /*is_ask=*/true);
+  for(double p : ask_p) book.ApplyLevel(p, 1.0, /*is_ask=*/true);
   VerifySorted(book);
   EXPECT_DOUBLE_EQ(book.asks()[0].price, 98.0);
   EXPECT_DOUBLE_EQ(book.asks()[4].price, 102.0);

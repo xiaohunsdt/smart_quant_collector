@@ -1,9 +1,9 @@
 #include "dolphindb_client.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <ctime>
-
-#include <fmt/format.h>
 
 #include "common/logger_init.h"
 #include "config/config_loader.h"
@@ -132,15 +132,15 @@ bool DolphinDBClient::TryExtendPartitionRange(int start_year, int end_year, cons
     // We access it via exec and index into sub-domains.
     // NOTE: DolphinDB uses '.' for member access; avoid 'domain' as a variable
     // name since it can conflict with the domain keyword in some contexts.
-    auto result = conn_->run(fmt::format(
-        "db = database(\"{0}\");"
-        "compDom = exec domain from schema(db);"
-        "firstDom = compDom[0].getChildren()[0];"
-        "str = firstDom.getString();"
-        "boundaries = firstDom.getRange().getString();"
-        "dict(`type`str`boundaries, "
-        "[firstDom.getType(), str, boundaries])",
-        db_path));
+    auto result =
+        conn_->run(fmt::format("db = database(\"{0}\");"
+                               "compDom = exec domain from schema(db);"
+                               "firstDom = compDom[0].getChildren()[0];"
+                               "str = firstDom.getString();"
+                               "boundaries = firstDom.getRange().getString();"
+                               "dict(`type`str`boundaries, "
+                               "[firstDom.getType(), str, boundaries])",
+                               db_path));
 
     auto type_key = dolphindb::Util::createString("type");
     auto boundaries_key = dolphindb::Util::createString("boundaries");
@@ -345,8 +345,7 @@ bool DolphinDBClient::InitSchema() {
           // TODO: Replace fragile substring matching with DolphinDB error codes
           // once the API exposes structured error codes. Current approach may
           // produce false positives on unrelated error messages.
-          if(err.find("already") != std::string::npos || err.find("exist") != std::string::npos ||
-             err.find("duplicate") != std::string::npos) {
+          if(err.find("already") != std::string::npos || err.find("exist") != std::string::npos || err.find("duplicate") != std::string::npos) {
             LOG_WARNING(GetLogger(), "DolphinDB: subscribe {} skipped (already subscribed by another instance)", stream_name);
           } else {
             throw;  // Re-throw unexpected errors
@@ -377,14 +376,14 @@ bool DolphinDBClient::InitWriters() {
     // password_.get() returns const std::string&; MTW copies it into internal pswd_ member.
     const auto& pw = password_.get();
     trades_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "trades_stream", false, false, nullptr,
-                                                                           cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date",
-                                                                           nullptr, dolphindb::MultithreadedTableWriter::M_Append);
+                                                                           cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count,
+                                                                           "trade_date", nullptr, dolphindb::MultithreadedTableWriter::M_Append);
     ob_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "orderbook_stream", false, false, nullptr,
-                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date", nullptr,
-                                                                       dolphindb::MultithreadedTableWriter::M_Append);
+                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date",
+                                                                       nullptr, dolphindb::MultithreadedTableWriter::M_Append);
     bt_writer_ = std::make_unique<dolphindb::MultithreadedTableWriter>(host_, port_, user_, pw, "", "bookticker_stream", false, false, nullptr,
-                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date", nullptr,
-                                                                       dolphindb::MultithreadedTableWriter::M_Append);
+                                                                       cfg.mtw_batch_size, cfg.mtw_throttle_sec, cfg.mtw_thread_count, "trade_date",
+                                                                       nullptr, dolphindb::MultithreadedTableWriter::M_Append);
     return true;
   } catch(const std::exception& e) {
     LOG_ERROR(GetLogger(), "DolphinDB: MTW init exception: {}", e.what());
@@ -602,9 +601,7 @@ bool DolphinDBClient::ValidateSchema() {
 
       // Check subscription is active (skip if no subscriptions expected — e.g. fresh startup)
       {
-        auto result = conn_->run(fmt::format(
-            "exec count(*) from getStreamingStat().pubTables where tableName = \"{}\"",
-            stream_name));
+        auto result = conn_->run(fmt::format("exec count(*) from getStreamingStat().pubTables where tableName = \"{}\"", stream_name));
         int sub_count = 0;
         try {
           sub_count = result->getInt();
@@ -647,8 +644,7 @@ bool DolphinDBClient::TableInsertTrades(const std::vector<TickData>& batch) {
     }
     int trade_date = UsecToDateInt(t.exchange_timestamp);
     if(!IsValidTradeDate(trade_date)) {
-      LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for trade symbol={} ts={}",
-                trade_date, symbol, t.exchange_timestamp);
+      LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for trade symbol={} ts={}", trade_date, symbol, t.exchange_timestamp);
       return false;
     }
     int direction = t.is_buyer_maker ? -1 : 1;
@@ -699,8 +695,7 @@ bool DolphinDBClient::TableInsertOrderbook(const DepthUpdateEvent& event, uint64
   }
   int trade_date = UsecToDateInt(event.exchange_timestamp);
   if(!IsValidTradeDate(trade_date)) {
-    LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for orderbook symbol={} ts={}",
-              trade_date, symbol, event.exchange_timestamp);
+    LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for orderbook symbol={} ts={}", trade_date, symbol, event.exchange_timestamp);
     return false;
   }
 
@@ -777,16 +772,15 @@ bool DolphinDBClient::TableInsertBookTicker(const BookTickerEvent& event) {
   }
   int trade_date = UsecToDateInt(event.exchange_timestamp);
   if(!IsValidTradeDate(trade_date)) {
-    LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for bookticker symbol={} ts={}",
-              trade_date, symbol, event.exchange_timestamp);
+    LOG_ERROR(GetLogger(), "DolphinDB: invalid trade_date {} for bookticker symbol={} ts={}", trade_date, symbol, event.exchange_timestamp);
     return false;
   }
 
   dolphindb::ErrorCodeInfo errorInfo;
   try {
-    bool ok =
-        bt_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(event.local_diff), event.best_bid_price,
-                           event.best_bid_qty, event.best_ask_price, event.best_ask_qty, symbol, exchange, market_type, trade_date);
+    bool ok = bt_writer_->insert(errorInfo, static_cast<long long>(event.exchange_timestamp), static_cast<long long>(event.local_diff),
+                                 event.best_bid_price, event.best_bid_qty, event.best_ask_price, event.best_ask_qty, symbol, exchange, market_type,
+                                 trade_date);
     if(!ok) {
       LOG_ERROR(GetLogger(), "DolphinDB: MTW bookticker insert failed: {}", errorInfo.errorInfo);
       return false;

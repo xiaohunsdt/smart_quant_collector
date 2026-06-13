@@ -1,36 +1,35 @@
 #ifndef RITHMIC_CALLBACKS_H
 #define RITHMIC_CALLBACKS_H
 
-#include "RApiPlus.h"
-
 #include <atomic>
 #include <cstdint>
 #include <unordered_map>
+
+#include "RApiPlus.h"
 
 // Note: 'using namespace RApi' is kept here because all 50+ virtual method
 // signatures must exactly match the base class types.
 using namespace RApi;
 
-#include "src/exchange/rithmic/rithmic_shm.h"
-#include "src/exchange/rithmic/rithmic_types.h"
-#include "rithmic_orderbook.h"
 #include "quill/Logger.h"
 #include "quill/SimpleSetup.h"
-
+#include "rithmic_orderbook.h"
+#include "src/exchange/rithmic/rithmic_shm.h"
+#include "src/exchange/rithmic/rithmic_types.h"
 
 // ============================================================================
 // Global login state atomics (exactly matching rithmic_md_saver pattern)
 // ============================================================================
 
-extern std::atomic<int>  g_iRepLoginStatus;
+extern std::atomic<int> g_iRepLoginStatus;
 extern std::atomic<bool> g_bRcvdUnacceptedAgreements;
-extern std::atomic<int>  g_iUnacceptedMandatoryAgreements;
-extern std::atomic<int>  g_iMdLoginStatus;
+extern std::atomic<int> g_iUnacceptedMandatoryAgreements;
+extern std::atomic<int> g_iMdLoginStatus;
 
-constexpr int LoginStatus_NotLoggedIn     = 0;
+constexpr int LoginStatus_NotLoggedIn = 0;
 constexpr int LoginStatus_AwaitingResults = 1;
-constexpr int LoginStatus_Failed          = 2;
-constexpr int LoginStatus_Complete        = 3;
+constexpr int LoginStatus_Failed = 2;
+constexpr int LoginStatus_Complete = 3;
 
 // ============================================================================
 // MyAdmCallbacks
@@ -49,12 +48,9 @@ class MyAdmCallbacks : public AdmCallbacks {
 
 class MyCallbacks : public RCallbacks {
  public:
-  MyCallbacks(sqc::rithmic::shm_layout::TickQueue& tick_queue,
-              sqc::rithmic::shm_layout::DepthQueue& depth_queue,
-              sqc::rithmic::shm_layout::BookTickerQueue& book_ticker_queue,
-              const sqc::rithmic::RithmicChannelMap& channel_map,
-              sqc::rithmic::SsboeConverter& converter,
-              uint32_t max_depth_levels);
+  MyCallbacks(sqc::rithmic::shm_layout::TickQueue& tick_queue, sqc::rithmic::shm_layout::DepthQueue& depth_queue,
+              sqc::rithmic::shm_layout::BookTickerQueue& book_ticker_queue, const sqc::rithmic::RithmicChannelMap& channel_map,
+              sqc::rithmic::SsboeConverter& converter, uint32_t max_depth_levels);
 
   ~MyCallbacks() override = default;
 
@@ -144,8 +140,7 @@ class MyCallbacks : public RCallbacks {
   std::unordered_map<uint32_t, uint8_t> m_channelToBook;  // channel_id → m_books index
   uint32_t m_bookCount = 0;
 
-  sqc::rithmic::RithmicOrderBook* FindBook(std::string_view exchange,
-                                           std::string_view ticker);
+  sqc::rithmic::RithmicOrderBook* FindBook(std::string_view exchange, std::string_view ticker);
   void PushSnapshot(sqc::rithmic::RithmicOrderBook& book, uint64_t exchange_ts);
 };
 

@@ -13,9 +13,9 @@ struct alignas(64) TickData {
   double quantity;
   uint32_t channel_id;  // channel/symbol mapping ID
   char symbol[12];      // symbol name (max 11 chars + null). sizeof(TickData)==64 requires
-                         // symbol <= 12 bytes (1 cache line on hot path).
-                         // Symbols longer than 11 chars are rejected at config load time
-                         // (see config_loader.cpp ParseSymbol).
+                        // symbol <= 12 bytes (1 cache line on hot path).
+                        // Symbols longer than 11 chars are rejected at config load time
+                        // (see config_loader.cpp ParseSymbol).
   bool is_buyer_maker;  // true = Sell (maker is buyer), false = Buy
   char padding[3];      // explicit padding for natural alignment
 };

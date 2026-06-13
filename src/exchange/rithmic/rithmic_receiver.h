@@ -25,13 +25,8 @@ class RithmicReceiver {
   using DepthHandler = std::function<void(uint32_t channel_id, const DepthUpdateEvent&)>;
   using BookTickerHandler = std::function<void(uint32_t channel_id, BookTickerEvent)>;
 
-  RithmicReceiver(shm_layout::TickQueue* tick_queue,
-                  shm_layout::DepthQueue* depth_queue,
-                  shm_layout::BookTickerQueue* book_ticker_queue,
-                  uint32_t core_id,
-                  TickHandler tick_handler,
-                  DepthHandler depth_handler,
-                  BookTickerHandler book_ticker_handler);
+  RithmicReceiver(shm_layout::TickQueue* tick_queue, shm_layout::DepthQueue* depth_queue, shm_layout::BookTickerQueue* book_ticker_queue,
+                  uint32_t core_id, TickHandler tick_handler, DepthHandler depth_handler, BookTickerHandler book_ticker_handler);
 
   ~RithmicReceiver() = default;
 
