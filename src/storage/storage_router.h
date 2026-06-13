@@ -68,6 +68,7 @@ class StorageRouter {
   std::vector<TickData> buffer_a_;
   std::vector<TickData> buffer_b_;
   std::atomic<size_t> active_index_{0};
+  std::atomic<uint64_t> last_flush_ns_{0};
   std::mutex buffer_mtx_;
 };
 

@@ -87,21 +87,40 @@ struct ChannelConfig {
   std::vector<SymbolConfig> symbols;
 };
 
-struct RithmicPerExchangeConfig {
-  bool enabled = false;
-  std::string mode = "paper";
+// Sync with ~/Documents/rithmic_md_saver/config.json
+struct RithmicConfig {
   std::string user;
   SecureString password;
+  std::string shm_name = "/sqc_rithmic";
   uint32_t engine_core = 8;
   uint32_t forwarder_core = 9;
-  uint32_t depth_level = 10;
+
+  // Environment injection (MML_* vars)
+  std::string ssl_cert_file = "etc/rithmic_ssl_cert_auth_params";
+  std::string domain_servers;
+  std::string domain_name;
+  std::string license_servers;
+  std::string local_broker;
+  std::string logger_servers;
+
+  // REngineParams
+  std::string app_name = "jewa:SmartQuant";
+  std::string app_version = "1.0.0.0";
+
+  // Login connect points
+  std::string repository_connect_pt = "login_agent_repositoryc";
+  std::string md_connect_pt = "login_agent_tpc";
+  std::string md_connect_pt_agg;
+  bool use_aggregated_md = false;
+  std::string ih_connect_pt;
+  std::string ts_connect_pt = "login_agent_opc";
+  std::string pnl_connect_pt;
 };
 
 struct ExchangeConfig {
   std::string name;
   bool enabled = false;
   std::vector<ChannelConfig> channels;
-  RithmicPerExchangeConfig rithmic;
 };
 
 struct RootConfig {
@@ -110,6 +129,7 @@ struct RootConfig {
   TelemetryConfig telemetry;
   PubConfig pub;
   StorageConfig storage;
+  RithmicConfig rithmic;
   std::vector<ExchangeConfig> exchanges;
 };
 

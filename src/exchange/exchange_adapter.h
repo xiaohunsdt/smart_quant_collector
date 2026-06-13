@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -11,6 +12,11 @@
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
+
+class ChannelRegistry;
+class PubWorker;
+class StorageRouter;
+namespace rithmic { class RithmicProcessManager; }
 
 enum class ParsedType { NONE, TICK, DEPTH, BOOK_TICKER };
 
@@ -69,5 +75,15 @@ struct ExchangeAdapter {
 };
 
 const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type);
+
+/// Create and start the Rithmic cross-process pipeline.
+/// Returns nullptr if no futures exchanges are configured (Setup() returns false).
+/// The caller owns the returned manager and must call Shutdown() before destruction.
+std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
+    std::string_view config_path,
+    ChannelRegistry& channel_registry,
+    StorageRouter& storage_router,
+    PubWorker& pub_worker,
+    std::vector<std::string>& channel_topics);
 
 }  // namespace sqc

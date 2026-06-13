@@ -13,7 +13,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64
 	set(RITHMIC_PRIMARY_LIB "${RITHMIC_LIB_ARCH_DIR}/libRApiPlus-optimize.a")
 
 	if(EXISTS "${RITHMIC_PRIMARY_LIB}")
-		set(SQC_WITH_RITHMIC ON CACHE INTERNAL "Rithmic static libraries available")
 		message(STATUS "Rithmic SDK: Linux x86_64 — static libraries enabled")
 
 		add_library(rithmic_api STATIC IMPORTED GLOBAL)
@@ -28,13 +27,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64
 			"${RITHMIC_LIB_ARCH_DIR}/lib_api-optimize.a"
 			"${RITHMIC_LIB_ARCH_DIR}/lib_apipoll-stubs-optimize.a"
 			"${RITHMIC_LIB_ARCH_DIR}/lib_kit-optimize.a"
-			# libcrypto.a / libssl.a are NOT listed here —
-			# the project already links OpenSSL::Crypto / OpenSSL::SSL from Conan,
-			# and linking the Rithmic-bundled copies causes duplicate symbol errors.
+			"${RITHMIC_LIB_ARCH_DIR}/libcrypto.a"
+			"${RITHMIC_LIB_ARCH_DIR}/libssl.a"
 			pthread dl rt z
 		)
 	else()
-		set(SQC_WITH_RITHMIC OFF CACHE INTERNAL "Rithmic static libraries available")
 		message(STATUS "Rithmic SDK: Linux x86_64 — static libraries NOT found at ${RITHMIC_PRIMARY_LIB} (headers only)")
 
 		add_library(rithmic_api INTERFACE)
@@ -45,7 +42,6 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x
 	set(RITHMIC_PRIMARY_LIB "${RITHMIC_LIB_ARCH_DIR}/libRApiPlus-optimize.a")
 
 	if(EXISTS "${RITHMIC_PRIMARY_LIB}")
-		set(SQC_WITH_RITHMIC ON CACHE INTERNAL "Rithmic static libraries available")
 		message(STATUS "Rithmic SDK: macOS x86_64 — static libraries enabled")
 
 		add_library(rithmic_api STATIC IMPORTED GLOBAL)
@@ -62,14 +58,12 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x
 			pthread dl z
 		)
 	else()
-		set(SQC_WITH_RITHMIC OFF CACHE INTERNAL "Rithmic static libraries available")
 		message(STATUS "Rithmic SDK: macOS x86_64 — static libraries NOT found at ${RITHMIC_PRIMARY_LIB} (headers only)")
 
 		add_library(rithmic_api INTERFACE)
 		target_include_directories(rithmic_api INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 	endif()
 else()
-	set(SQC_WITH_RITHMIC OFF CACHE INTERNAL "Rithmic static libraries available")
 	message(STATUS "Rithmic SDK: ${CMAKE_SYSTEM_PROCESSOR} — static libraries NOT available (headers only)")
 
 	# Header-only INTERFACE target — allows compilation but won't link.

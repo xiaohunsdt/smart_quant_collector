@@ -10,6 +10,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
+
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
@@ -29,33 +30,18 @@ find_package(benchmark CONFIG REQUIRED)
 find_package(libuuid REQUIRED CONFIG)
 
 add_subdirectory(third_party/rithmic)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    find_package(aeron CONFIG REQUIRED)
-    add_subdirectory(third_party/dolphindb)
-    set(SQC_WITH_DOLPHINDB ON CACHE INTERNAL "Build with vendored DolphinDB C++ API")
-else()
-    set(SQC_WITH_DOLPHINDB OFF CACHE INTERNAL "Build with vendored DolphinDB C++ API")
-endif()
-
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    add_compile_options(
-        -march=native
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(-O3 -DNDEBUG)
-    endif()
-endif()
-
-if(APPLE)
-    add_compile_definitions(__APPLE__=1)
-endif()
+add_subdirectory(third_party/dolphindb)
 
 add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
 add_subdirectory(benchmarks)
+
+# Copy config/ next to executables so default paths (config/config.yaml) work when cwd is bin/.
+add_custom_target(copy_runtime_config ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/config"
+        "${CMAKE_BINARY_DIR}/bin/config"
+    COMMENT "Copying config/ → ${CMAKE_BINARY_DIR}/bin/config"
+)

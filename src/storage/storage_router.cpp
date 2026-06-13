@@ -10,9 +10,7 @@
 #include "src/exchange/exchange_adapter.h"
 #include "quill/LogMacros.h"
 
-#ifdef SQC_WITH_DOLPHINDB
 #include "dolphindb_client.h"
-#endif
 
 namespace sqc {
 namespace {
@@ -27,10 +25,8 @@ struct alignas(8) OrderbookRecordHeader {
   uint32_t ask_count;
 };
 
-#ifdef SQC_WITH_DOLPHINDB
   DolphinDBClient dolphindb_;
   std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
-#endif
 
 }  // namespace
 
@@ -43,22 +39,13 @@ StorageRouter::StorageRouter()
   buffer_b_.reserve(buffer_size_);
 
   if(use_engine_ == "dolphindb") {
-#ifdef SQC_WITH_DOLPHINDB
     dolphindb_.Connect(Config::Instance().storage.dolphindb.host, Config::Instance().storage.dolphindb.port,
                        Config::Instance().storage.dolphindb.user, Config::Instance().storage.dolphindb.password.get());
-#else
-    LOG_ERROR(GetLogger(),
-              "StorageRouter: storage.use_engine=dolphindb requires a Linux build "
-              "(SQC_WITH_DOLPHINDB); use csv or mmap on this platform");
-    degraded_.store(true, std::memory_order_relaxed);
-#endif
   }
 }
 
 void StorageRouter::FreezeChannels() {
-#ifdef SQC_WITH_DOLPHINDB
   dolphindb_.FreezeChannels();
-#endif
 }
 
 // ============================================================
@@ -68,11 +55,9 @@ void StorageRouter::FreezeChannels() {
 void StorageRouter::RegisterChannel(uint32_t channel_id, const ChannelInfo& info, bool persist_to_disk) {
   if(!Config::Instance().storage.persist_to_disk || !persist_to_disk) return;
 
-#ifdef SQC_WITH_DOLPHINDB
   if(use_engine_ == "dolphindb") {
     dolphindb_.RegisterChannel(channel_id, std::string(info.exchange), ChannelTypeName(info.type), std::string(info.symbol), info.depth_level);
   }
-#endif
 
   if(use_engine_ == "csv") {
     CsvWriter w;
@@ -124,9 +109,26 @@ void StorageRouter::RouteTick(const TickData& tick, const ChannelInfo& /*info*/)
       std::lock_guard<std::mutex> lock(buffer_mtx_);
       auto& buf = ActiveBuffer();
       buf.push_back(tick);
-      if(buf.size() >= buffer_size_) {
+
+      // Flush on buffer threshold OR every 1s to avoid stale data in low-frequency feeds
+      bool threshold_reached = buf.size() >= buffer_size_;
+      bool time_elapsed = false;
+      if (!threshold_reached && !buf.empty()) {
+        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        uint64_t last = last_flush_ns_.load(std::memory_order_relaxed);
+        if (now_ns - last > 1'000'000'000ULL) {
+          time_elapsed = true;
+        }
+      }
+
+      if (threshold_reached || time_elapsed) {
         to_flush.swap(buf);
         SwapBuffer();
+        last_flush_ns_.store(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count(),
+            std::memory_order_relaxed);
       }
     }
     if(!to_flush.empty()) {
@@ -147,7 +149,6 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
       it->second.AppendOrderbook(event, local_ts, info.depth_level);
     }
   } else if(use_engine_ == "dolphindb") {
-#ifdef SQC_WITH_DOLPHINDB
     // Phase 1: attempt insert under shared lock.
     {
       std::shared_lock lock(dolphindb_mtx_);
@@ -175,7 +176,6 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
       }
     }
     WriteOrderbookToMmap(event, local_ts);
-#endif
   } else if(use_engine_ == "mmap") {
     auto it = ob_mmap_.find(event.channel_id);
     if(it == ob_mmap_.end()) return;
@@ -230,7 +230,6 @@ void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelI
     std::lock_guard<std::mutex> lock(storage_mtx_);
     it->second->AppendRaw(&rec, sizeof(rec));
   } else if(use_engine_ == "dolphindb") {
-#ifdef SQC_WITH_DOLPHINDB
     {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
@@ -256,7 +255,6 @@ void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelI
       }
     }
     WriteBookTickerToMmap(event);
-#endif
   }
 }
 
@@ -393,7 +391,6 @@ void StorageRouter::FlushActiveBuffer() {
 void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
   if(batch.empty()) return;
 
-#ifdef SQC_WITH_DOLPHINDB
   {
     std::shared_lock lock(dolphindb_mtx_);
     if(!degraded_.load(std::memory_order_relaxed)) {
@@ -419,7 +416,6 @@ void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
     }
     return;
   }
-#endif
 
   if(degraded_.load(std::memory_order_relaxed)) {
     EnsureFallbackMmap();
@@ -460,9 +456,7 @@ void StorageRouter::FlushAndClose() {
     fallback_mmap_->Close();
   }
 
-#ifdef SQC_WITH_DOLPHINDB
   dolphindb_.Disconnect();
-#endif
 }
 
 }  // namespace sqc

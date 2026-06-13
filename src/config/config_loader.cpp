@@ -44,40 +44,33 @@ ChannelConfig ParseChannel(const YAML::Node& node) {
   return c;
 }
 
-RithmicPerExchangeConfig ParseRithmicConfig(const YAML::Node& node) {
-  RithmicPerExchangeConfig r;
+RithmicConfig ParseRithmicConfig(const YAML::Node& node) {
+  RithmicConfig r;
   if (!node) return r;
 
-  r.enabled = node["enabled"] ? node["enabled"].as<bool>() : false;
-  if (node["mode"]) r.mode = node["mode"].as<std::string>();
-  if (node["user"]) {
-    std::string user = node["user"].as<std::string>();
-    if (user.size() > 2 && user[0] == '$' && user[1] == '{' && user.back() == '}') {
-      const char* val = std::getenv(user.substr(2, user.size() - 3).c_str());
-      if (val) r.user = val;
-    } else {
-      r.user = std::move(user);
-    }
-  }
-  if (node["password"]) {
-    std::string pwd = node["password"].as<std::string>();
-    if (pwd.size() > 2 && pwd[0] == '$' && pwd[1] == '{' && pwd.back() == '}') {
-      const char* val = std::getenv(pwd.substr(2, pwd.size() - 3).c_str());
-      if (val) r.password = SecureString::FromPlain(val);
-    } else {
-      r.password = SecureString::FromPlain(std::move(pwd));
-    }
-  }
+  if (node["user"]) r.user = node["user"].as<std::string>();
+  if (node["password"]) r.password = SecureString::FromPlain(node["password"].as<std::string>());
+  if (node["shm_name"]) r.shm_name = node["shm_name"].as<std::string>();
   if (node["engine_core"]) r.engine_core = node["engine_core"].as<uint32_t>();
   if (node["forwarder_core"]) r.forwarder_core = node["forwarder_core"].as<uint32_t>();
-  if (node["depth_level"]) r.depth_level = node["depth_level"].as<uint32_t>();
+  if (node["ssl_cert_file"]) r.ssl_cert_file = node["ssl_cert_file"].as<std::string>();
+  if (node["domain_servers"]) r.domain_servers = node["domain_servers"].as<std::string>();
+  if (node["domain_name"]) r.domain_name = node["domain_name"].as<std::string>();
+  if (node["license_servers"]) r.license_servers = node["license_servers"].as<std::string>();
+  if (node["local_broker"]) r.local_broker = node["local_broker"].as<std::string>();
+  if (node["logger_servers"]) r.logger_servers = node["logger_servers"].as<std::string>();
 
-  if (r.enabled && r.user.empty()) {
-    throw std::runtime_error("Rithmic: 'user' is required when enabled=true");
-  }
-  if (r.mode != "paper" && r.mode != "production") {
-    throw std::runtime_error("Rithmic: 'mode' must be 'paper' or 'production'");
-  }
+  if (node["app_name"]) r.app_name = node["app_name"].as<std::string>();
+  if (node["app_version"]) r.app_version = node["app_version"].as<std::string>();
+
+  if (node["repository_connect_pt"]) r.repository_connect_pt = node["repository_connect_pt"].as<std::string>();
+  if (node["md_connect_pt"]) r.md_connect_pt = node["md_connect_pt"].as<std::string>();
+  if (node["md_connect_pt_agg"]) r.md_connect_pt_agg = node["md_connect_pt_agg"].as<std::string>();
+  if (node["use_aggregated_md"]) r.use_aggregated_md = node["use_aggregated_md"].as<bool>();
+  if (node["ih_connect_pt"]) r.ih_connect_pt = node["ih_connect_pt"].as<std::string>();
+  if (node["ts_connect_pt"]) r.ts_connect_pt = node["ts_connect_pt"].as<std::string>();
+  if (node["pnl_connect_pt"]) r.pnl_connect_pt = node["pnl_connect_pt"].as<std::string>();
+
   return r;
 }
 
@@ -89,9 +82,6 @@ ExchangeConfig ParseExchange(const YAML::Node& node) {
     for(const auto& ch : node["channels"]) {
       e.channels.push_back(ParseChannel(ch));
     }
-  }
-  if (e.name == "rithmic" && node["rithmic"]) {
-    e.rithmic = ParseRithmicConfig(node["rithmic"]);
   }
   return e;
 }
@@ -180,6 +170,10 @@ RootConfig LoadConfig(const std::string& path) {
       auto csv_node = s["csv"];
       if(csv_node["output_path"]) config.storage.csv.output_path = csv_node["output_path"].as<std::string>();
     }
+  }
+
+  if(root["rithmic"]) {
+    config.rithmic = ParseRithmicConfig(root["rithmic"]);
   }
 
   if(root["exchanges"] && root["exchanges"].IsSequence())

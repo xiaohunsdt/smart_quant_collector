@@ -3,16 +3,14 @@
 #include <atomic>
 #include <cstdint>
 
-#include "src/exchange/rithmic/rithmic_types.h"
-
 namespace sqc {
 namespace rithmic {
 
 // ============================================================================
-// MpscRithmicQueue — bounded lock-free MPSC queue for RithmicEvent.
+// MpscRithmicQueue<T, Capacity> — bounded lock-free MPSC queue.
 //
 // Dmitry Vyukov-style design:
-//   - Fixed-size array of Slot{atomic<uint64_t> sequence, RithmicEvent data}
+//   - Fixed-size array of Slot{atomic<uint64_t> sequence, T data}
 //   - Multi-producer: CAS (fetch_add) on write_pos_, spin-wait for slot ready,
 //     write data, publish sequence
 //   - Single consumer: owns read_pos_, checks sequence == read_pos + 1
@@ -22,12 +20,14 @@ namespace rithmic {
 // atomic dropped_count_).
 // ============================================================================
 
-template <size_t Capacity = 8192>
+template <typename T, size_t Capacity = 8192>
 class MpscRithmicQueue {
   static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0,
                 "Capacity must be a power of 2");
 
  public:
+  using value_type = T;
+
   MpscRithmicQueue();
   ~MpscRithmicQueue() = default;
 
@@ -39,24 +39,20 @@ class MpscRithmicQueue {
   /// Try to push an event. Returns true on success.
   /// Returns false if the queue is full (event is DROPPED).
   /// Non-blocking — safe to call from REngine callback threads.
-  [[nodiscard]] bool TryPush(const RithmicEvent& event) noexcept;
+  [[nodiscard]] bool TryPush(const T& event) noexcept;
 
   /// Push with spin-wait. Blocks the caller until space is available.
   /// Not for hot path; use TryPush on hot path.
-  void Push(const RithmicEvent& event) noexcept;
-
-  /// Push a poison pill to signal shutdown to the consumer.
-  void PushPoisonPill() noexcept;
+  void Push(const T& event) noexcept;
 
   // ---- Consumer API (single-thread only) ----
 
   /// Try to pop an event. Returns true on success.
   /// Returns false if the queue is empty.
-  [[nodiscard]] bool TryPop(RithmicEvent& out) noexcept;
+  [[nodiscard]] bool TryPop(T& out) noexcept;
 
   /// Pop with spin-wait. Blocks until an event is available.
-  /// Returns poison pill as EventType::NONE with channel_id==UINT32_MAX.
-  RithmicEvent PopBlocking() noexcept;
+  T PopBlocking() noexcept;
 
   // ---- Telemetry ----
 
@@ -73,11 +69,9 @@ class MpscRithmicQueue {
   [[nodiscard]] constexpr size_t capacity() const noexcept { return Capacity; }
 
  private:
-  static constexpr uint32_t kPoisonPillChannelId = UINT32_MAX;
-
   struct Slot {
     std::atomic<uint64_t> sequence;
-    RithmicEvent data;
+    T data;
   };
 
   static constexpr size_t kMask = Capacity - 1;
@@ -97,15 +91,15 @@ class MpscRithmicQueue {
 // Inline implementations
 // ============================================================================
 
-template <size_t Capacity>
-MpscRithmicQueue<Capacity>::MpscRithmicQueue() {
+template <typename T, size_t Capacity>
+MpscRithmicQueue<T, Capacity>::MpscRithmicQueue() {
   for (size_t i = 0; i < Capacity; ++i) {
     slots_[i].sequence.store(i, std::memory_order_relaxed);
   }
 }
 
-template <size_t Capacity>
-bool MpscRithmicQueue<Capacity>::TryPush(const RithmicEvent& event) noexcept {
+template <typename T, size_t Capacity>
+bool MpscRithmicQueue<T, Capacity>::TryPush(const T& event) noexcept {
   size_t pos = write_pos_.fetch_add(1, std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
@@ -131,8 +125,8 @@ bool MpscRithmicQueue<Capacity>::TryPush(const RithmicEvent& event) noexcept {
   return true;
 }
 
-template <size_t Capacity>
-void MpscRithmicQueue<Capacity>::Push(const RithmicEvent& event) noexcept {
+template <typename T, size_t Capacity>
+void MpscRithmicQueue<T, Capacity>::Push(const T& event) noexcept {
   size_t pos = write_pos_.fetch_add(1, std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
@@ -148,16 +142,8 @@ void MpscRithmicQueue<Capacity>::Push(const RithmicEvent& event) noexcept {
   slot.sequence.store(pos + 1, std::memory_order_release);
 }
 
-template <size_t Capacity>
-void MpscRithmicQueue<Capacity>::PushPoisonPill() noexcept {
-  RithmicEvent poison;
-  poison.type = EventType::NONE;
-  poison.channel_id = kPoisonPillChannelId;
-  Push(poison);
-}
-
-template <size_t Capacity>
-bool MpscRithmicQueue<Capacity>::TryPop(RithmicEvent& out) noexcept {
+template <typename T, size_t Capacity>
+bool MpscRithmicQueue<T, Capacity>::TryPop(T& out) noexcept {
   size_t pos = read_pos_.load(std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
@@ -171,10 +157,10 @@ bool MpscRithmicQueue<Capacity>::TryPop(RithmicEvent& out) noexcept {
   return true;
 }
 
-template <size_t Capacity>
-RithmicEvent MpscRithmicQueue<Capacity>::PopBlocking() noexcept {
+template <typename T, size_t Capacity>
+T MpscRithmicQueue<T, Capacity>::PopBlocking() noexcept {
   while (true) {
-    RithmicEvent out;
+    T out;
     if (TryPop(out)) {
       return out;
     }

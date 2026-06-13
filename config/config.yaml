@@ -1,6 +1,6 @@
 global:
   environment: "production"
-  log_level: "info"
+  log_level: "debug"
   cpu_affinity: true
   log_file_path: "./log/collector.log"
 
@@ -44,6 +44,34 @@ storage:
   csv:
     output_path: "./trade_data/"
 
+rithmic:
+  user: "slumber1122@amp.com"
+  password: "a4IgI64cRvm"
+  shm_name: "/sqc_rithmic"
+  engine_core: 8
+  forwarder_core: 9
+
+  # ---- REngine connection parameters (sync with rithmic_md_saver/config.json) ----
+  ssl_cert_file: "etc/rithmic_ssl_cert_auth_params"
+  app_name: "jewa:SmartQuant"
+  app_version: "1.0.0.0"
+
+  # UAT (paper) environment — override for production
+  domain_servers: "ritpz01001.01.rithmic.com:65000~ritpz01000.01.rithmic.com:65000~ritpz01001.01.rithmic.net:65000~ritpz01000.01.rithmic.net:65000~ritpz01001.01.theomne.net:65000~ritpz01000.01.theomne.net:65000~ritpz01001.01.theomne.com:65000~ritpz01000.01.theomne.com:65000"
+  domain_name: "rithmic_prod_aws_jp_domain"
+  license_servers: "ritpz15001.rithmic.com:56000~ritpz01000.01.rithmic.com:56000~ritpz01001.01.rithmic.com:56000~ritpz01000.01.rithmic.net:56000~ritpz01001.01.rithmic.net:56000~ritpz01000.01.theomne.net:56000~ritpz01001.01.theomne.net:56000~ritpz01000.01.theomne.com:56000~ritpz01001.01.theomne.com:56000~ritpz24050.rithmic.com:56000~ritpz24050.rithmic.net:56000~ritpz24050.theomne.net:56000~ritpz24050.theomne.com:56000~ritpz23010.rithmic.com:56000~ritpz23010.rithmic.net:56000~ritpz23010.theomne.net:56000~ritpz23010.theomne.com:56000~ritpz23011.rithmic.com:56000~ritpz23011.rithmic.net:56000~ritpz23011.theomne.net:56000~ritpz23011.theomne.com:56000~ritpz24013.rithmic.com:56000~ritpz24013.rithmic.net:56000~ritpz24013.theomne.net:56000~ritpz24013.theomne.com:56000"
+  local_broker: "ritpz15001.rithmic.com:64100"
+  logger_servers: "ritpz01000.01.rithmic.com:45454~ritpz01000.01.rithmic.net:45454~ritpz01000.01.theomne.net:45454~ritpz01000.01.theomne.com:45454"
+
+  # Login connect points
+  repository_connect_pt: "login_agent_repository_aws_tokyoc"
+  md_connect_pt: "login_agent_tp_aws_tokyoc"
+  md_connect_pt_agg: "login_agent_tp_agg_palogin_agent_tp_agg_aws_tokyocper_tokyoc"  # production only
+  use_aggregated_md: false
+  ih_connect_pt: "login_agent_history_aws_tokyoc"      # optional: history
+  ts_connect_pt: "login_agent_op_aws_tokyoc"
+  pnl_connect_pt: "login_agent_pnl_aws_tokyoc"         # optional: PnL
+
 exchanges:
   - name: "binance"
     enabled: false
@@ -84,20 +112,23 @@ exchanges:
           - name: "SOL_USDT"
             depth_level: 10
             record_tick: true
-  - name: "rithmic"
+  # - name: "CME"
+  #   enabled: false
+  #   channels:
+  #     - type: futures
+  #       symbols:
+  #         - name: "ES"
+  #           depth_level: 10
+  #           record_tick: true
+  #         - name: "NQ"
+  #           depth_level: 10
+  #           record_tick: true
+  - name: "COMEX"
     enabled: true
-    rithmic:
-      mode: "paper"
-      user: "slumber1122@amp.com"
-      password: "a4IgI64cRvm"
-      engine_core: 8
-      forwarder_core: 9
-      depth_level: 10
     channels:
       - type: futures
         symbols:
-          - name: "ES"
+          - name: "GC"
             depth_level: 10
-          - name: "NQ"
-            depth_level: 10
+            record_tick: true
 

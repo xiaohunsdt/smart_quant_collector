@@ -1,11 +1,15 @@
 #include <chrono>
+#include <memory>
 #include <string>
 
+#include "config/config_loader.h"
+#include "exchange/binance/binance_common.h"
 #include "exchange/binance/binance_perpetual.h"
 #include "exchange/binance/binance_spot.h"
 #include "exchange/exchange_adapter.h"
 #include "exchange/gateio/gateio_perpetual.h"
 #include "exchange/gateio/gateio_spot.h"
+#include "exchange/rithmic/rithmic_process_manager.h"
 
 namespace sqc {
 namespace {
@@ -120,8 +124,30 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
 const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type) {
   if(exchange_name == "binance") return channel_type == ChannelType::Spot ? &kBinanceSpotAdapter : &kBinancePerpetualAdapter;
   if(exchange_name == "gateio") return channel_type == ChannelType::Spot ? &kGateioSpotAdapter : &kGateioPerpetualAdapter;
-  // "rithmic" handled via rithmic::RithmicEngine in main.cpp (callback-driven, not WebSocket)
+  // "rithmic" handled via CreateRithmicManager() (callback-driven, not WebSocket)
   return nullptr;
+}
+
+std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
+    std::string_view config_path,
+    ChannelRegistry& channel_registry,
+    StorageRouter& storage_router,
+    PubWorker& pub_worker,
+    std::vector<std::string>& channel_topics) {
+  const auto& rcfg = Config::Instance().rithmic;
+
+  rithmic::RithmicProcessManager::Config proc_cfg;
+  proc_cfg.config_path = config_path;
+  proc_cfg.engine_core = rcfg.engine_core;
+  proc_cfg.forwarder_core = rcfg.forwarder_core;
+  proc_cfg.cpu_affinity = Config::Instance().global.cpu_affinity;
+
+  rithmic::RithmicProcessManager::Dependencies rithmic_deps{
+      channel_registry, storage_router, pub_worker, channel_topics};
+
+  auto mgr = std::make_unique<rithmic::RithmicProcessManager>(proc_cfg, rithmic_deps);
+  if (!mgr->Setup()) return nullptr;
+  return mgr;
 }
 
 }  // namespace sqc

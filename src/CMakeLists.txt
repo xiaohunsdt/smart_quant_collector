@@ -25,7 +25,6 @@ add_library(collector_objects OBJECT
     pubsub/pub_worker.cpp
     telemetry/prometheus_exposer.cpp
     telemetry/telemetry_agent.cpp
-    exchange/rithmic/rithmic_forwarder.cpp
 )
 
 target_include_directories(collector_objects PUBLIC
@@ -44,23 +43,23 @@ target_link_libraries(collector_objects PUBLIC
     quill::quill
     prometheus-cpp::core
     prometheus-cpp::pull
-    rithmic_api
 )
 
-if(SQC_WITH_DOLPHINDB)
-    target_sources(collector_objects PRIVATE storage/dolphindb_client.cpp)
-    target_compile_definitions(collector_objects PUBLIC SQC_WITH_DOLPHINDB)
-    target_link_libraries(collector_objects PUBLIC DolphinDBAPI)
-endif()
+target_sources(collector_objects PRIVATE storage/dolphindb_client.cpp)
+target_link_libraries(collector_objects PUBLIC DolphinDBAPI)
 
-if(SQC_WITH_RITHMIC)
-    target_sources(collector_objects PRIVATE
-        exchange/rithmic/rithmic_callbacks.cpp
-        exchange/rithmic/rithmic_engine.cpp
-    )
-    target_compile_definitions(collector_objects PUBLIC SQC_WITH_RITHMIC)
-endif()
+target_sources(collector_objects PRIVATE
+    exchange/rithmic/rithmic_receiver.cpp
+    exchange/rithmic/rithmic_process_manager.cpp
+)
+target_compile_definitions(collector_objects PUBLIC
+    RITHMIC_GATEWAY_EXE="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/rithmic_gateway"
+)
 
 # Main executable
 add_executable(smart_quant_collector main.cpp)
 target_link_libraries(smart_quant_collector PRIVATE collector_objects)
+add_dependencies(smart_quant_collector copy_runtime_config)
+
+
+add_subdirectory(rithmic_gateway)
