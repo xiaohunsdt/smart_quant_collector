@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "common/logger_init.h"
+#include "common/path_util.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -24,7 +25,7 @@ bool MmapStorageEngine::OpenOrCreate(const std::string& output_path, const std::
   if(!output_path_.empty() && output_path_.back() != '/') {
     output_path_ += '/';
   }
-  if(mkdir(output_path_.c_str(), 0755) != 0 && errno != EEXIST) {
+  if(!EnsureDirExists(output_path_)) {
     LOG_ERROR(GetLogger(), "Failed to create mmap output dir: {}", output_path_);
     return false;
   }

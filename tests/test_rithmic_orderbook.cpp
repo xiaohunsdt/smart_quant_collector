@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "src/exchange/rithmic/rithmic_types.h"
 #include "src/rithmic_gateway/rithmic_orderbook.h"
 
 namespace sqc {
@@ -438,6 +439,27 @@ TEST(RithmicOrderBookTest, SpinlockSerializesAccess) {
   book.ApplyLevel(100.0, 5.0, /*is_ask=*/false);
   book.Unlock();
   EXPECT_EQ(book.bid_count(), 1u);
+}
+
+// ============================================================================
+// ResolveRithmicExchangeTimestamp
+// ============================================================================
+
+TEST(RithmicOrderBookTest, ResolveTimestampNonZeroUnchanged) {
+  uint64_t out = 0;
+  EXPECT_TRUE(ResolveRithmicExchangeTimestamp(1234567890123456ULL, 0, 0, out));
+  EXPECT_EQ(out, 1234567890123456ULL);
+}
+
+TEST(RithmicOrderBookTest, ResolveTimestampZeroEmptyBookSkips) {
+  uint64_t out = 999;
+  EXPECT_FALSE(ResolveRithmicExchangeTimestamp(0, 0, 0, out));
+}
+
+TEST(RithmicOrderBookTest, ResolveTimestampZeroNonEmptyBookFallback) {
+  uint64_t out = 0;
+  EXPECT_TRUE(ResolveRithmicExchangeTimestamp(0, 1, 0, out));
+  EXPECT_GT(out, 0u);
 }
 
 }  // namespace

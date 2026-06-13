@@ -28,6 +28,15 @@ class MmapEngineTest : public ::testing::Test {
 
 TEST_F(MmapEngineTest, OpenAndClose) { EXPECT_TRUE(engine_.OpenOrCreate(test_path_, "tick")); }
 
+TEST_F(MmapEngineTest, OpenNestedDirectoryCreatesParents) {
+  MmapStorageEngine nested_engine{1024 * 1024};
+  const std::string nested_path = "/tmp/sqc_mmap_nested/a/b/";
+  std::system("rm -rf /tmp/sqc_mmap_nested");
+  EXPECT_TRUE(nested_engine.OpenOrCreate(nested_path, "tick"));
+  nested_engine.Close();
+  std::system("rm -rf /tmp/sqc_mmap_nested");
+}
+
 TEST_F(MmapEngineTest, AppendAndReadBack) {
   ASSERT_TRUE(engine_.OpenOrCreate(test_path_, "tick"));
 

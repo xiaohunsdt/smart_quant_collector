@@ -89,6 +89,11 @@ class DolphinDBClient {
   /// Soft-bound: within [start_year, end_year] derived from current year.
   static bool IsValidTradeDate(int trade_date);
 
+  /// True when usec_since_epoch maps to a valid DolphinDB trade_date partition key.
+  static bool IsValidExchangeTimestamp(uint64_t usec_since_epoch) {
+    return IsValidTradeDate(UsecToDateInt(usec_since_epoch));
+  }
+
  private:
   /// Create database, DFS tables, stream tables, and subscriptions
   /// if they do not already exist (idempotent). Uses DDL via conn_->run().

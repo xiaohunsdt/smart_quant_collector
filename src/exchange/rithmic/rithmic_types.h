@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -73,6 +74,15 @@ class SsboeConverter {
   [[nodiscard]] uint64_t ToEpochMicros(int ssboe, int usecs) noexcept;
 };
 
+// ============================================================================
+// ResolveRithmicExchangeTimestamp — MD_IMAGE_CB may carry zero timestamps.
+//
+// Returns false when the snapshot should not be published (empty book, no ts).
+// Returns true when out_ts is valid for storage (original or wall-clock fallback).
+// ============================================================================
+
+[[nodiscard]] bool ResolveRithmicExchangeTimestamp(uint64_t raw_ts, uint32_t bid_count, uint32_t ask_count, uint64_t& out_ts) noexcept;
+
 }  // namespace rithmic
 }  // namespace sqc
 
@@ -85,6 +95,19 @@ namespace rithmic {
 
 inline uint64_t SsboeConverter::ToEpochMicros(int ssboe, int usecs) noexcept {
   return static_cast<uint64_t>(ssboe) * 1000000ULL + static_cast<uint64_t>(usecs);
+}
+
+inline bool ResolveRithmicExchangeTimestamp(uint64_t raw_ts, uint32_t bid_count, uint32_t ask_count, uint64_t& out_ts) noexcept {
+  if(raw_ts != 0) {
+    out_ts = raw_ts;
+    return true;
+  }
+  if(bid_count == 0 && ask_count == 0) {
+    return false;
+  }
+  out_ts = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+  return true;
 }
 
 }  // namespace rithmic

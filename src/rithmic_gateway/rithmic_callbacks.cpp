@@ -70,8 +70,12 @@ sqc::rithmic::RithmicOrderBook* MyCallbacks::FindBook(std::string_view exchange,
 }
 
 void MyCallbacks::PushSnapshot(sqc::rithmic::RithmicOrderBook& book, uint64_t exchange_ts) {
+  uint64_t resolved_ts = 0;
+  if(!sqc::rithmic::ResolveRithmicExchangeTimestamp(exchange_ts, book.bid_count(), book.ask_count(), resolved_ts)) {
+    return;
+  }
   sqc::DepthUpdateEvent depth{};
-  book.SnapshotTo(depth, exchange_ts);
+  book.SnapshotTo(depth, resolved_ts);
   depth.local_diff = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
   (void)m_depthQueue.TryPush(depth);
 }

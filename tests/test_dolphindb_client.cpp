@@ -161,6 +161,14 @@ TEST(DolphinDBClientTest, RegisterChannelDefaultDepthLevel) {
   SUCCEED();
 }
 
+TEST(DolphinDBClientTest, IsValidExchangeTimestampZeroFails) {
+  EXPECT_FALSE(DolphinDBClient::IsValidExchangeTimestamp(0));
+}
+
+TEST(DolphinDBClientTest, IsValidExchangeTimestampValidPasses) {
+  EXPECT_TRUE(DolphinDBClient::IsValidExchangeTimestamp(1717000000000000ULL));
+}
+
 TEST(DolphinDBClientTest, ValidateSchemaWhenDisconnectedReturnsFalse) {
   DolphinDBClient client;
   EXPECT_FALSE(client.ValidateSchema());

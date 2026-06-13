@@ -33,7 +33,6 @@ class CsvWriter {
  private:
   static std::string TimestampToDate(uint64_t usec_since_epoch);
   bool RotateIfNeeded(uint64_t exchange_ts);
-  static bool EnsureDirExists(const std::string& path);
 
   std::string dir_;
   std::ofstream trade_file_;

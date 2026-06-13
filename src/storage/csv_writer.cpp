@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "common/logger_init.h"
+#include "common/path_util.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -23,27 +24,13 @@ bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange, s
   dir_ += symbol;
   dir_ += '/';
 
-  if(!EnsureDirExists(dir_)) {
+  if(!sqc::EnsureDirExists(dir_)) {
     LOG_ERROR(GetLogger(), "CsvWriter: failed to create directory {}", dir_);
     return false;
   }
 
   current_date_day_ = UINT64_MAX;
   LOG_INFO(GetLogger(), "CsvWriter ready: {}", dir_);
-  return true;
-}
-
-bool CsvWriter::EnsureDirExists(const std::string& path) {
-  std::string cur;
-  for(char ch : path) {
-    cur += ch;
-    if(ch == '/') {
-      if(mkdir(cur.c_str(), 0755) != 0 && errno != EEXIST) {
-        LOG_ERROR(GetLogger(), "CsvWriter: mkdir({}) failed: {}", cur, std::strerror(errno));
-        return false;
-      }
-    }
-  }
   return true;
 }
 

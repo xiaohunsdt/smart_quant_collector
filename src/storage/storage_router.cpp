@@ -156,6 +156,11 @@ void StorageRouter::RouteOrderbook(const DepthUpdateEvent& event, uint64_t local
       it->second.AppendOrderbook(event, local_ts, info.depth_level);
     }
   } else if(use_engine_ == "dolphindb") {
+    if(!DolphinDBClient::IsValidExchangeTimestamp(event.exchange_timestamp)) {
+      LOG_WARNING(GetLogger(), "StorageRouter: dropping orderbook with invalid exchange_timestamp={} symbol={}", event.exchange_timestamp,
+                  event.symbol);
+      return;
+    }
     // Phase 1: attempt insert under shared lock.
     {
       std::shared_lock lock(dolphindb_mtx_);
@@ -237,6 +242,11 @@ void StorageRouter::RouteBookTicker(const BookTickerEvent& event, const ChannelI
     std::lock_guard<std::mutex> lock(storage_mtx_);
     it->second->AppendRaw(&rec, sizeof(rec));
   } else if(use_engine_ == "dolphindb") {
+    if(!DolphinDBClient::IsValidExchangeTimestamp(event.exchange_timestamp)) {
+      LOG_WARNING(GetLogger(), "StorageRouter: dropping bookticker with invalid exchange_timestamp={} symbol={}", event.exchange_timestamp,
+                  event.symbol);
+      return;
+    }
     {
       std::shared_lock lock(dolphindb_mtx_);
       if(!degraded_.load(std::memory_order_relaxed)) {
@@ -398,11 +408,22 @@ void StorageRouter::FlushActiveBuffer() {
 void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
   if(batch.empty()) return;
 
+  std::vector<TickData> valid_batch;
+  valid_batch.reserve(batch.size());
+  for(const auto& tick : batch) {
+    if(DolphinDBClient::IsValidExchangeTimestamp(tick.exchange_timestamp)) {
+      valid_batch.push_back(tick);
+    } else {
+      LOG_WARNING(GetLogger(), "StorageRouter: dropping trade with invalid exchange_timestamp={} symbol={}", tick.exchange_timestamp, tick.symbol);
+    }
+  }
+  if(valid_batch.empty()) return;
+
   {
     std::shared_lock lock(dolphindb_mtx_);
     if(!degraded_.load(std::memory_order_relaxed)) {
       try {
-        if(dolphindb_.TableInsertTrades(batch)) return;
+        if(dolphindb_.TableInsertTrades(valid_batch)) return;
       } catch(const std::exception& e) {
         LOG_ERROR(GetLogger(), "StorageRouter: DolphinDB trade insert threw: {}", e.what());
       }
@@ -419,7 +440,7 @@ void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
     EnsureFallbackMmap();
     if(fallback_mmap_) {
       std::lock_guard<std::mutex> lock(storage_mtx_);
-      for(const auto& tick : batch) fallback_mmap_->AppendRecord(tick, 1);
+      for(const auto& tick : valid_batch) fallback_mmap_->AppendRecord(tick, 1);
     }
     return;
   }
@@ -428,7 +449,7 @@ void StorageRouter::FlushBuffer(std::vector<TickData>&& batch) {
     EnsureFallbackMmap();
     std::lock_guard<std::mutex> lock(storage_mtx_);
     if(fallback_mmap_) {
-      for(const auto& tick : batch) fallback_mmap_->AppendRecord(tick, 1);
+      for(const auto& tick : valid_batch) fallback_mmap_->AppendRecord(tick, 1);
     }
   }
 }
