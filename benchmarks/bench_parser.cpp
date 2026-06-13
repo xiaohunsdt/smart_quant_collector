@@ -4,8 +4,8 @@
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/binance/binance_spot.h"
-#include "src/exchange/gateio/gateio_spot.h"
+#include "src/exchange/crypto/binance/binance_spot.h"
+#include "src/exchange/crypto/gateio/gateio_spot.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -41,7 +41,7 @@ static void BM_BinanceParseTrade(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if(err) state.SkipWithError("iterate failed");
-    auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::TICK);
+    auto result = binance_spot::Parse(doc, 1, EventType::TICK);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }
@@ -59,7 +59,7 @@ static void BM_GateioParseTicker(benchmark::State& state) {
     simdjson::ondemand::document doc;
     auto err = parser.iterate(padded.data(), len, padded.size()).get(doc);
     if(err) state.SkipWithError("iterate failed");
-    auto result = gateio_spot::Parse(doc, 2, "BTC_USDT", EventType::BOOK_TICKER);
+    auto result = gateio_spot::Parse(doc, 2, EventType::BOOK_TICKER);
     benchmark::DoNotOptimize(result);
     benchmark::ClobberMemory();
   }

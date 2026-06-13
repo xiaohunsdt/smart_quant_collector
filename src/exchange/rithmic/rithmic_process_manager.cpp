@@ -2,7 +2,6 @@
 
 #include <cerrno>
 #include <csignal>
-#include <cstring>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <thread>
@@ -16,6 +15,7 @@
 
 #include "src/common/tick_data.h"
 #include "src/exchange/channel_mapping.h"
+#include "src/exchange/data_dispatcher.h"
 #include "src/exchange/rithmic/rithmic_queue.h"
 #include "src/exchange/rithmic/rithmic_receiver.h"
 #include "src/exchange/rithmic/rithmic_shm.h"
@@ -71,42 +71,11 @@ void RithmicProcessManager::RegisterChannels() {
         info.type = ChannelType::Futures;
         info.symbol = sym.name;
         info.depth_level = sym.depth_level;
-        uint32_t id = deps_.channel_registry.Register(info);
+        uint32_t id = ChannelRegistry::Instance().Register(info);
         channel_map_->Register(ex.name, sym.name, id, sym.enabled);
-        deps_.storage_router.RegisterChannel(id, info, sym.persist_to_disk);
-        if (id >= deps_.channel_topics.size()) deps_.channel_topics.resize(id + 1);
-        deps_.channel_topics[id] = std::string("rithmic:futures:") + sym.name;
+        StorageRouter::Instance().RegisterChannel(id, info, sym.persist_to_disk);
       }
     }
-  }
-}
-
-// ============================================================================
-// SerializeChannelMap
-// ============================================================================
-
-void RithmicProcessManager::SerializeChannelMap(std::vector<uint8_t>& out) const {
-  const auto& subs = channel_map_->Subscriptions();
-  uint32_t count = static_cast<uint32_t>(subs.size());
-
-  out.resize(sizeof(uint32_t));
-  std::memcpy(out.data(), &count, sizeof(count));
-
-  for (const auto& sub : subs) {
-    uint8_t exchange_len = static_cast<uint8_t>(sub.exchange.size() > 255 ? 255 : sub.exchange.size());
-    out.push_back(exchange_len);
-    out.insert(out.end(), sub.exchange.begin(), sub.exchange.begin() + exchange_len);
-
-    uint8_t ticker_len = static_cast<uint8_t>(sub.ticker.size() > 255 ? 255 : sub.ticker.size());
-    out.push_back(ticker_len);
-    out.insert(out.end(), sub.ticker.begin(), sub.ticker.begin() + ticker_len);
-
-    uint32_t id = sub.channel_id;
-    const auto* id_bytes = reinterpret_cast<const uint8_t*>(&id);
-    out.insert(out.end(), id_bytes, id_bytes + sizeof(id));
-
-    uint8_t enabled_byte = sub.enabled ? 1 : 0;
-    out.push_back(enabled_byte);
   }
 }
 
@@ -115,23 +84,6 @@ void RithmicProcessManager::SerializeChannelMap(std::vector<uint8_t>& out) const
 // ============================================================================
 
 bool RithmicProcessManager::SpawnChild() {
-  std::vector<uint8_t> chan_data;
-  SerializeChannelMap(chan_data);
-
-  int pipefd[2];
-  if (::pipe(pipefd) != 0) {
-    LOG_ERROR(GetLogger(), "Rithmic: pipe() failed: {}", std::strerror(errno));
-    return false;
-  }
-
-  ssize_t written = ::write(pipefd[1], chan_data.data(), chan_data.size());
-  if (written != static_cast<ssize_t>(chan_data.size())) {
-    LOG_ERROR(GetLogger(), "Rithmic: pipe write failed: {}", std::strerror(errno));
-    ::close(pipefd[0]);
-    ::close(pipefd[1]);
-    return false;
-  }
-
   std::string exe = RITHMIC_GATEWAY_EXE;
 
   std::vector<const char*> argv = {
@@ -140,8 +92,6 @@ bool RithmicProcessManager::SpawnChild() {
 
   posix_spawn_file_actions_t actions;
   posix_spawn_file_actions_init(&actions);
-  posix_spawn_file_actions_adddup2(&actions, pipefd[0], STDIN_FILENO);
-  posix_spawn_file_actions_addclose(&actions, pipefd[1]);
 
   posix_spawnattr_t attr;
   posix_spawnattr_init(&attr);
@@ -149,8 +99,6 @@ bool RithmicProcessManager::SpawnChild() {
   int ret = posix_spawn(&child_pid_, exe.c_str(), &actions, &attr,
                         const_cast<char* const*>(argv.data()), environ);
 
-  ::close(pipefd[1]);
-  ::close(pipefd[0]);
   posix_spawn_file_actions_destroy(&actions);
   posix_spawnattr_destroy(&attr);
 
@@ -171,11 +119,8 @@ bool RithmicProcessManager::SpawnChild() {
 bool RithmicProcessManager::Setup() {
   RegisterChannels();
   if (channel_map_->Subscriptions().empty()) {
-    channel_map_->Freeze();
     return false;
   }
-
-  channel_map_->Freeze();
 
   constexpr size_t kShmSize = shm_layout::kTotalShmSize;
   try {
@@ -200,46 +145,18 @@ bool RithmicProcessManager::Setup() {
     return false;
   }
 
-  // Create receiver with same handler lambdas as parser workers
+  // Create receiver — handlers share the same DataDispatcher as crypto parsers.
+  // Telemetry slot is null: Rithmic uses a dedicated forwarder thread without
+  // a per-shard seqlock slot; latency is monitored via SHM heartbeat instead.
+  DataDispatcher dispatcher{deps_.pub_worker, nullptr, nullptr, 0};
   receiver_ = std::make_unique<RithmicReceiver>(
       shm_->tick_queue(),
       shm_->depth_queue(),
       shm_->book_ticker_queue(),
       config_.forwarder_core,
-      // Tick handler
-      [this](TickData tick) {
-        const auto* info = deps_.channel_registry.Lookup(tick.channel_id);
-        if (!info) return;
-        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch())
-                              .count();
-        tick.local_diff = now_ns - tick.local_diff;
-        std::memset(tick.padding, 0, sizeof(tick.padding));
-        deps_.storage_router.RouteTick(tick, *info);
-        deps_.pub_worker.PublishTick(tick, 0);
-      },
-      // Depth handler
-      [this](uint32_t channel_id, const DepthUpdateEvent& event) {
-        const auto* info = deps_.channel_registry.Lookup(channel_id);
-        if (!info) return;
-        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch())
-                              .count();
-        uint64_t latency_ns = now_ns - event.local_diff;
-        deps_.storage_router.RouteOrderbook(event, latency_ns, *info);
-        deps_.pub_worker.PublishDepth(event, 0);
-      },
-      // BookTicker handler
-      [this](uint32_t channel_id, BookTickerEvent event) {
-        const auto* info = deps_.channel_registry.Lookup(channel_id);
-        if (!info) return;
-        uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch())
-                              .count();
-        event.local_diff = now_ns - event.local_diff;
-        deps_.storage_router.RouteBookTicker(event, *info);
-        deps_.pub_worker.PublishBookTicker(event, 0);
-      });
+      [dispatcher](TickData tick) { dispatcher.OnTick(std::move(tick)); },
+      [dispatcher](uint32_t cid, const DepthUpdateEvent& ev) { dispatcher.OnDepth(cid, ev); },
+      [dispatcher](uint32_t cid, BookTickerEvent ev) { dispatcher.OnBookTicker(cid, std::move(ev)); });
 
   StartThreads();
   return true;

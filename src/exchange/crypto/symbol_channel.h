@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "exchange/exchange_adapter.h"
-#include "shard_queue.h"
+#include "exchange/shard_queue.h"
 
 namespace sqc {
 

@@ -7,23 +7,23 @@
 #include "common/logger_init.h"
 #include "message_serializer.h"
 #include "quill/LogMacros.h"
+#include "src/exchange/channel_mapping.h"
 
 namespace sqc {
 
 // ── Construction ──────────────────────────────────────────────────
 
-PubWorker::PubWorker(zmq::context_t& ctx, std::vector<std::string> topic_prefixes, size_t num_shards, std::string tcp_endpoint,
-                     std::string ipc_endpoint)
+PubWorker::PubWorker(zmq::context_t& ctx, size_t num_shards,
+                     std::string tcp_endpoint, std::string ipc_endpoint)
     : pub_socket_(ctx, ZMQ_PUB),
       tcp_endpoint_(std::move(tcp_endpoint)),
       ipc_endpoint_(std::move(ipc_endpoint)),
-      topic_prefixes_(std::move(topic_prefixes)),
       num_shards_(num_shards) {
   pub_socket_.set(zmq::sockopt::sndhwm, 10000);
 
   shard_queues_ = std::make_unique<ShardQueues[]>(num_shards_);
 
-  LOG_INFO(GetLogger(), "PubWorker initialized: {} shards, {} channels", num_shards_, topic_prefixes_.size());
+  LOG_INFO(GetLogger(), "PubWorker initialized: {} shards", num_shards_);
 }
 
 // ── Publish API (parser threads) ──────────────────────────────────
@@ -59,10 +59,10 @@ void PubWorker::PublishBookTicker(const BookTickerEvent& bt, size_t shard) {
 
 template <typename Serializer>
 bool PubWorker::SendTyped(uint32_t channel_id, std::string_view event_suffix, const typename Serializer::value_type& data) {
-  // Resolve topic prefix.
-  if(channel_id >= topic_prefixes_.size()) return false;
-  const auto& prefix = topic_prefixes_[channel_id];
-  if(prefix.empty()) return false;
+  // Resolve topic prefix from ChannelRegistry singleton.
+  const auto* info = ChannelRegistry::Instance().Lookup(channel_id);
+  if (!info || info->topic_prefix.empty()) return false;
+  const auto& prefix = info->topic_prefix;
 
   // Build topic string: "prefix:event_suffix"
   // prefix = "exchange:type:symbol", suffix = "tick"/"depth"/"book_ticker"

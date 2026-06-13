@@ -1,4 +1,4 @@
-#include "callbacks.h"  // must come before engine.h for MyAdmCallbacks/MyCallbacks
+#include "rithmic_callbacks.h"  // must come before engine.h for MyAdmCallbacks/MyCallbacks
 #include "rithmic_engine.h"
 
 #include <cstring>
@@ -104,9 +104,8 @@ bool RithmicEngine::CreateEngineAndCallbacks() {
   LOG_INFO(quill::Frontend::get_logger("stdout"), "REngine created.");
 
   try {
-    //   pCallbacks_ = std::make_unique<MyCallbacks>(tick_queue_, depth_queue_, book_ticker_queue_,
-    //                                                     channel_map_, converter_, sqc::kMaxOrderbookLevels);
-    pCallbacks_ = std::make_unique<MyCallbacks>();
+    pCallbacks_ = std::make_unique<MyCallbacks>(tick_queue_, depth_queue_, book_ticker_queue_,
+                                                channel_map_, converter_, sqc::kMaxOrderbookLevels);
   } catch (OmneException& oEx) {
       LOG_ERROR(quill::Frontend::get_logger("stdout"), "MyCallbacks error: {}", oEx.getErrorCode());
       return false;

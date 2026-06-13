@@ -10,10 +10,7 @@
 
 namespace sqc {
 
-class ChannelInfo;
-class ChannelRegistry;
 class PubWorker;
-class StorageRouter;
 
 namespace rithmic {
 
@@ -44,10 +41,7 @@ class RithmicProcessManager {
   };
 
   struct Dependencies {
-    ChannelRegistry& channel_registry;
-    StorageRouter& storage_router;
     PubWorker& pub_worker;
-    std::vector<std::string>& channel_topics;
   };
 
   RithmicProcessManager(Config config, Dependencies deps);
@@ -70,7 +64,6 @@ class RithmicProcessManager {
   void RegisterChannels();
   bool IsChildAlive() const;
   bool SpawnChild();
-  void SerializeChannelMap(std::vector<uint8_t>& out) const;
   void StartThreads();
 
   Config config_;

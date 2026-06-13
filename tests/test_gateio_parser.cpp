@@ -4,7 +4,7 @@
 
 #include "simdjson.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/gateio/gateio_perpetual.h"
+#include "src/exchange/crypto/gateio/gateio_perpetual.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -42,11 +42,11 @@ TEST(GateioParserTest, ParseFuturesTrade) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   TickData tick{};
-  bool ok = gateio_perpetual::ParseTradeEvent(doc, tick, 2, "BTC_USDT");
+  bool ok = gateio_perpetual::ParseTradeEvent(doc, tick, 2);
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(tick.channel_id, 2u);
-  EXPECT_STREQ(tick.symbol, "BTC_USDT");
+  // symbol is stamped by ShardParserWorker, not the parse function
   EXPECT_DOUBLE_EQ(tick.price, 96.4);
   EXPECT_DOUBLE_EQ(tick.quantity, 108.0);
   EXPECT_TRUE(tick.is_buyer_maker);
@@ -89,11 +89,10 @@ TEST(GateioParserTest, ParseFuturesOrderBookAll) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   DepthUpdateEvent event{};
-  bool ok = gateio_perpetual::ParseDepthEvent(doc, event, 7, "BTC_USDT");
+  bool ok = gateio_perpetual::ParseDepthEvent(doc, event, 7);
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(event.channel_id, 7u);
-  EXPECT_STREQ(event.symbol, "BTC_USDT");
   EXPECT_EQ(event.last_update_id, 113557080620u);
   EXPECT_EQ(event.exchange_timestamp, 1779923753557000ULL);
 
@@ -142,11 +141,10 @@ TEST(GateioParserTest, ParseFuturesBookTicker) {
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
   BookTickerEvent event{};
-  bool ok = gateio_perpetual::ParseBookTickerEvent(doc, event, 7, "BTC_USDT");
+  bool ok = gateio_perpetual::ParseBookTickerEvent(doc, event, 7);
 
   EXPECT_TRUE(ok);
   EXPECT_EQ(event.channel_id, 7u);
-  EXPECT_STREQ(event.symbol, "BTC_USDT");
   EXPECT_DOUBLE_EQ(event.best_bid_price, 54696.6);
   EXPECT_DOUBLE_EQ(event.best_bid_qty, 37000.0);
   EXPECT_DOUBLE_EQ(event.best_ask_price, 54696.7);
@@ -166,7 +164,7 @@ TEST(GateioParserTest, ParseMessageDispatchesToBookTicker) {
   auto err = parser.iterate(padded.data(), size, size + simdjson::SIMDJSON_PADDING).get(doc);
   ASSERT_FALSE(err) << simdjson::error_message(err);
 
-  auto result = gateio_perpetual::Parse(doc, 7, "BTC_USDT", EventType::BOOK_TICKER);
+  auto result = gateio_perpetual::Parse(doc, 7, EventType::BOOK_TICKER);
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   EXPECT_DOUBLE_EQ(result.book_ticker.best_bid_price, 54696.6);
 }

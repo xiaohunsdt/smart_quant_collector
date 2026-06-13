@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <unordered_map>
 
 // Note: 'using namespace RApi' is kept here because all 50+ virtual method
 // signatures must exactly match the base class types.
@@ -140,7 +141,7 @@ class MyCallbacks : public RCallbacks {
   static constexpr uint8_t kInvalidBookIdx = 0xFF;
 
   sqc::rithmic::RithmicOrderBook m_books[kMaxBooks];
-  uint8_t m_channelToBook[256];   // channel_id → m_books index, 0xFF = invalid
+  std::unordered_map<uint32_t, uint8_t> m_channelToBook;  // channel_id → m_books index
   uint32_t m_bookCount = 0;
 
   sqc::rithmic::RithmicOrderBook* FindBook(std::string_view exchange,

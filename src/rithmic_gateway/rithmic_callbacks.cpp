@@ -1,7 +1,6 @@
 #include "rithmic_callbacks.h"
 
 #include <chrono>
-#include <cstring>
 
 #include "quill/LogMacros.h"
 
@@ -54,8 +53,8 @@ sqc::rithmic::RithmicOrderBook* MyCallbacks::FindBook(std::string_view exchange,
   uint32_t channel_id = m_channelMap.Lookup(exchange, ticker);
   if (channel_id == sqc::rithmic::RithmicChannelMap::kNotFound) return nullptr;
 
-  uint8_t idx = m_channelToBook[channel_id];
-  if (idx != kInvalidBookIdx) return &m_books[idx];
+  auto it = m_channelToBook.find(channel_id);
+  if (it != m_channelToBook.end()) return &m_books[it->second];
 
   // Slow path: allocate a new book slot (startup only)
   if (m_bookCount >= kMaxBooks) {
@@ -63,7 +62,7 @@ sqc::rithmic::RithmicOrderBook* MyCallbacks::FindBook(std::string_view exchange,
               kMaxBooks, channel_id, exchange, ticker);
     return nullptr;
   }
-  idx = static_cast<uint8_t>(m_bookCount);
+  uint8_t idx = static_cast<uint8_t>(m_bookCount);
   m_books[idx].Init(channel_id, ticker.data());
   m_channelToBook[channel_id] = idx;
   ++m_bookCount;
@@ -107,7 +106,7 @@ MyCallbacks::MyCallbacks(sqc::rithmic::shm_layout::TickQueue& tick_queue,
       m_channelMap(channel_map),
       m_converter(converter),
       m_maxDepthLevels(max_depth_levels) {
-  std::memset(m_channelToBook, kInvalidBookIdx, sizeof(m_channelToBook));
+  // m_channelToBook is an unordered_map; empty = no books mapped yet.
 }
 
 // ============================================================================

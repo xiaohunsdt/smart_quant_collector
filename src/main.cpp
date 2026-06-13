@@ -1,7 +1,5 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl.hpp>
-#include <chrono>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
@@ -10,14 +8,9 @@
 #include "common/cpu_affinity.h"
 #include "common/logger_init.h"
 #include "common/signal_handler.h"
-#include "common/telemetry_slot.h"
 #include "config/config_loader.h"
 #include "exchange/channel_mapping.h"
-#include "exchange/exchange_adapter.h"
-#include "exchange/shard_parser_worker.h"
-#include "exchange/shard_queue.h"
-#include "exchange/symbol_channel.h"
-#include "orderbook/orderbook_event.h"
+#include "exchange/crypto/crypto_factory.h"
 #include "exchange/rithmic/rithmic_process_manager.h"
 #include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"
@@ -39,13 +32,11 @@ int main(int argc, char* argv[]) {
   // 0. Shared ZMQ context
   zmq::context_t zmq_ctx(1);
 
-  // 1. Channel registry
-  ChannelRegistry channel_registry;
+  // 1. Singletons — touch them here to force construction during single-threaded init.
+  ChannelRegistry::Instance();
+  StorageRouter::Instance();
 
-  // 2. Storage
-  StorageRouter storage_router;
-
-  // 3. Telemetry
+  // 2. Telemetry
   PrometheusExposer prometheus;
   TelemetryAgent telemetry_agent(&prometheus);
 
@@ -55,65 +46,22 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  // Per-shard telemetry slots — each parser thread writes its own slot,
-  // eliminating writer-writer contention on the seqlock.
-  std::vector<TelemetrySlot> telemetry_slots(num_parsers);
-
-  // 4. Boost.Asio + SSL
+  // 3. Boost.Asio + SSL
   net::io_context io_ctx;
   net::ssl::context ssl_ctx(net::ssl::context::tlsv12_client);
   ssl_ctx.set_verify_mode(net::ssl::verify_peer);
   ssl_ctx.set_default_verify_paths();
 
-  // 5. Symbol channels
-  std::vector<std::shared_ptr<ShardQueue>> shard_queues;
-  for(size_t i = 0; i < num_parsers; ++i) shard_queues.push_back(std::make_shared<ShardQueue>(4096));
+  // 4. Symbol channels — register all crypto symbols into singletons
+  auto crypto = BuildCryptoChannels(num_parsers, io_ctx, ssl_ctx);
 
-  std::vector<std::shared_ptr<SymbolChannel>> channels;
-  std::vector<std::string> channel_topics;  // channel_id → topic prefix
-
-  for(const auto& ex : Config::Instance().exchanges) {
-    if(!ex.enabled) continue;
-    for(const auto& ch : ex.channels) {
-      const auto* adapter = GetAdapter(ex.name, ParseChannelType(ch.type));
-      if(!adapter) {
-        LOG_ERROR(GetLogger(), "Unknown exchange: {}, skipping", ex.name);
-        continue;
-      }
-
-      for(const auto& sym : ch.symbols) {
-        if(!sym.enabled) continue;
-
-        ChannelInfo info;
-        info.exchange = ex.name;
-        info.type = adapter->channel_type;
-        info.symbol = sym.name;
-        info.depth_level = sym.depth_level;
-        uint32_t id = channel_registry.Register(info);
-
-        // Build topic prefix: "exchange:type:symbol"
-        if(id >= channel_topics.size()) {
-          channel_topics.resize(id + 1);
-        }
-        channel_topics[id] = std::string(ex.name) + ":" + ChannelTypeName(adapter->channel_type) + ":" + sym.name;
-
-        // Register channel for storage — creates CSV writer / mmap engine
-        // keyed by uint32_t channel_id for zero-allocation hot-path lookup.
-        storage_router.RegisterChannel(id, info, sym.persist_to_disk);
-
-        auto chan = std::make_shared<SymbolChannel>(adapter, sym.name, sym.depth_level, id, io_ctx, ssl_ctx, shard_queues);
-        channels.push_back(chan);
-      }
-    }
-  }
-
-  // Pub/Sub
+  // 5. Pub/Sub — topic prefixes are now embedded in ChannelInfo::topic_prefix
   const auto& pub_cfg = Config::Instance().pub;
-  PubWorker pub_worker(zmq_ctx, channel_topics, num_parsers, pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
+  PubWorker pub_worker(zmq_ctx, num_parsers, pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
 
   // Log subscription summary
   LOG_INFO(GetLogger(), "=== Subscription Summary ===");
-  LOG_INFO(GetLogger(), "Channels: {}, Parser shards: {}", channels.size(), num_parsers);
+  LOG_INFO(GetLogger(), "Channels: {}, Parser shards: {}", crypto.channels.size(), num_parsers);
   for(const auto& ex : Config::Instance().exchanges) {
     if(!ex.enabled) continue;
     for(const auto& ch : ex.channels) {
@@ -128,53 +76,14 @@ int main(int argc, char* argv[]) {
   LOG_INFO(GetLogger(), "ZMQ PUB: tcp={} ipc={}", pub_cfg.tcp_endpoint, pub_cfg.ipc_endpoint);
 
   // Freeze channel registrations before parser threads start.
-  storage_router.FreezeChannels();
+  StorageRouter::Instance().FreezeChannels();
 
   // 5b. Rithmic — cross-process pipeline (shared memory MPSC queue)
   //      Managed by exchange_factory; returns nullptr if no futures exchanges configured.
-  auto rithmic_mgr = CreateRithmicManager(config_path, channel_registry, storage_router, pub_worker, channel_topics);
+  auto rithmic_mgr = CreateRithmicManager(config_path, pub_worker);
 
-  // 6. Parser workers
-  std::vector<std::unique_ptr<ShardParserWorker>> parser_workers;
-  for(size_t i = 0; i < num_parsers; ++i) {
-    auto worker = std::make_unique<ShardParserWorker>(
-        Config::Instance().threading_matrix.parser_cores[i], *shard_queues[i],
-        [&, i](TickData tick) -> void {
-          const auto* info = channel_registry.Lookup(tick.channel_id);
-          if(!info) return;
-          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          tick.local_diff = now_ns - tick.local_diff;
-          std::memset(tick.padding, 0, sizeof(tick.padding));
-          storage_router.RouteTick(tick, *info);
-          pub_worker.PublishTick(tick, i);
-          // pub_worker.dropped_count() reads atomics concurrently — approximate,
-          // single-value snapshot is acceptable for a telemetry gauge.
-          WriteTelemetrySlot(&telemetry_slots[i], tick.local_diff, shard_queues[i]->size(), 0, pub_worker.dropped_count());
-        },
-        [&, i](uint32_t channel_id, const DepthUpdateEvent& event) -> void {
-          const auto* info = channel_registry.Lookup(channel_id);
-          if(!info) return;
-          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          uint64_t latency_ns = now_ns - event.local_diff;
-          storage_router.RouteOrderbook(event, latency_ns, *info);
-          pub_worker.PublishDepth(event, i);
-          WriteTelemetrySlot(&telemetry_slots[i], latency_ns, shard_queues[i]->size(), 0, pub_worker.dropped_count());
-        },
-        [&, i](uint32_t channel_id, BookTickerEvent event) {
-          const auto* info = channel_registry.Lookup(channel_id);
-          if(!info) return;
-          uint64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-          event.local_diff = now_ns - event.local_diff;
-          storage_router.RouteBookTicker(event, *info);
-          pub_worker.PublishBookTicker(event, i);
-          WriteTelemetrySlot(&telemetry_slots[i], event.local_diff, shard_queues[i]->size(), 0, pub_worker.dropped_count());
-        });
-
-    parser_workers.push_back(std::move(worker));
-  }
-
-  // Register per-shard telemetry slots before starting threads.
-  for(auto& slot : telemetry_slots) telemetry_agent.RegisterSlot("parser", &slot);
+  // 6. Parser pool — one worker per shard, each bound to its own telemetry slot.
+  auto parser_pool = BuildParserPool(crypto, pub_worker, telemetry_agent);
 
   // 7. Threads
   std::thread telemetry_thread([&]() {
@@ -182,16 +91,11 @@ int main(int argc, char* argv[]) {
     telemetry_agent.Run();
   });
 
-  std::vector<std::thread> parser_threads;
-  for(size_t i = 0; i < num_parsers; ++i)
-    parser_threads.emplace_back([&, i]() {
-      if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.parser_cores[i]);
-      parser_workers[i]->Run();
-    });
+  parser_pool.Run();
 
   std::thread network_thread([&]() {
     if(Config::Instance().global.cpu_affinity) PinToCore(Config::Instance().threading_matrix.network_core);
-    for(auto& ch : channels) ch->Start();
+    crypto.Start();
     auto work_guard = net::make_work_guard(io_ctx);
     io_ctx.run();
   });
@@ -208,18 +112,17 @@ int main(int argc, char* argv[]) {
   SignalHandler::WaitForShutdown();
   LOG_INFO(GetLogger(), "Shutdown signal received");
 
-  for(auto& ch : channels) ch->Stop();
+  crypto.Stop();
   io_ctx.stop();
 
   // Rithmic shutdown
   if (rithmic_mgr) rithmic_mgr->Shutdown();
 
-  for(auto& q : shard_queues) q->PushPoisonPill();
-  for(auto& t : parser_threads)
-    if(t.joinable()) t.join();
+  crypto.DrainQueues();
+  parser_pool.Shutdown();
   if(network_thread.joinable()) network_thread.join();
 
-  storage_router.FlushAndClose();
+  StorageRouter::Instance().FlushAndClose();
 
   telemetry_agent.Stop();
   if(telemetry_thread.joinable()) telemetry_thread.join();

@@ -35,16 +35,21 @@ ChannelInfo MakeChannelInfo(uint32_t id, const std::string& ex, ChannelType type
   return info;
 }
 
-TEST(StorageRouterTest, RegisterChannelNoCrash) {
-  StorageRouter router;
+class StorageRouterTest : public ::testing::Test {
+ protected:
+  void TearDown() override { StorageRouter::ResetForTesting(); }
+};
+
+TEST_F(StorageRouterTest, RegisterChannelNoCrash) {
+  auto& router = StorageRouter::Instance();
   auto info = MakeChannelInfo(1, "test", ChannelType::Spot, "BTCUSDT");
   // persist_to_disk=false → no-op
   router.RegisterChannel(1, info, false);
   router.FlushAndClose();
 }
 
-TEST(StorageRouterTest, RouteTickDifferentChannels) {
-  StorageRouter router;
+TEST_F(StorageRouterTest, RouteTickDifferentChannels) {
+  auto& router = StorageRouter::Instance();
 
   auto info1 = MakeChannelInfo(100, "test", ChannelType::Spot, "SYM1");
   auto info2 = MakeChannelInfo(200, "test", ChannelType::Spot, "SYM2");
@@ -61,8 +66,8 @@ TEST(StorageRouterTest, RouteTickDifferentChannels) {
   router.FlushAndClose();
 }
 
-TEST(StorageRouterTest, ConcurrentRouteTick) {
-  StorageRouter router;
+TEST_F(StorageRouterTest, ConcurrentRouteTick) {
+  auto& router = StorageRouter::Instance();
   constexpr uint32_t kChannels = 4;
   constexpr size_t kPerThread = 1000;
 
@@ -84,8 +89,8 @@ TEST(StorageRouterTest, ConcurrentRouteTick) {
   router.FlushAndClose();
 }
 
-TEST(StorageRouterTest, RouteOrderbookUsesChannelId) {
-  StorageRouter router;
+TEST_F(StorageRouterTest, RouteOrderbookUsesChannelId) {
+  auto& router = StorageRouter::Instance();
   auto info = MakeChannelInfo(42, "test", ChannelType::Spot, "OBTEST");
   router.RegisterChannel(42, info, true);
 
@@ -103,8 +108,8 @@ TEST(StorageRouterTest, RouteOrderbookUsesChannelId) {
   router.FlushAndClose();
 }
 
-TEST(StorageRouterTest, RouteBookTickerUsesChannelId) {
-  StorageRouter router;
+TEST_F(StorageRouterTest, RouteBookTickerUsesChannelId) {
+  auto& router = StorageRouter::Instance();
   auto info = MakeChannelInfo(7, "test", ChannelType::Spot, "BTTEST");
   router.RegisterChannel(7, info, true);
 

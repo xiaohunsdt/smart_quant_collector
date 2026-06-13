@@ -17,7 +17,8 @@ namespace sqc {
 
 class StorageRouter {
  public:
-  explicit StorageRouter();
+  static StorageRouter& Instance();
+  static void ResetForTesting();  // destroys and recreates the singleton instance
 
   /// Register a channel for storage. Must be called during initialization
   /// (before parser threads start) for each channel that has persist_to_disk
@@ -32,6 +33,12 @@ class StorageRouter {
   void FlushAndClose();
 
  private:
+  StorageRouter();
+  StorageRouter(const StorageRouter&) = delete;
+  StorageRouter& operator=(const StorageRouter&) = delete;
+
+  static StorageRouter* instance_;
+
   // --- Tick double-buffer (batches multiple TickData per MTW insert call) ---
   void FlushActiveBuffer();
   void FlushBuffer(std::vector<TickData>&& batch);

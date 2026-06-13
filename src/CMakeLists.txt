@@ -8,15 +8,17 @@ add_library(collector_objects OBJECT
     exchange/channel_mapping.cpp
     network/ws_client.cpp
     exchange/shard_queue.cpp
-    exchange/symbol_channel.cpp
-    exchange/shard_parser_worker.cpp
     exchange/exchange_factory.cpp
-    exchange/binance/binance_common.cpp
-    exchange/binance/binance_spot.cpp
-    exchange/binance/binance_perpetual.cpp
-    exchange/gateio/gateio_spot.cpp
-    exchange/gateio/gateio_perpetual.cpp
-    common/http_utils.cpp
+    exchange/data_dispatcher.cpp
+    exchange/crypto/symbol_channel.cpp
+    exchange/crypto/shard_parser_worker.cpp
+    exchange/crypto/crypto_factory.cpp
+    exchange/crypto/binance/binance_common.cpp
+    exchange/crypto/binance/binance_spot.cpp
+    exchange/crypto/binance/binance_perpetual.cpp
+    exchange/crypto/gateio/gateio_common.cpp
+    exchange/crypto/gateio/gateio_spot.cpp
+    exchange/crypto/gateio/gateio_perpetual.cpp
     storage/mmap_engine.cpp
     storage/storage_router.cpp
     storage/csv_writer.cpp

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string_view>
 
 #include "simdjson.h"
 #include "src/exchange/exchange_adapter.h"
@@ -10,10 +9,13 @@
 namespace sqc {
 namespace binance_spot {
 
-ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type);
+ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type);
 
 // Internal parsers (exposed for tests)
-bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id, std::string_view symbol);
+bool ParsePartialDepth(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id);
 
 }  // namespace binance_spot
+
+extern const ExchangeAdapter kBinanceSpotAdapter;
+
 }  // namespace sqc

@@ -4,10 +4,11 @@
 #include <string>
 
 #include "simdjson.h"
+#include "src/common/string_utils.h"
 #include "src/common/tick_data.h"
-#include "src/exchange/binance/binance_common.h"
-#include "src/exchange/binance/binance_perpetual.h"
-#include "src/exchange/binance/binance_spot.h"
+#include "src/exchange/crypto/binance/binance_common.h"
+#include "src/exchange/crypto/binance/binance_perpetual.h"
+#include "src/exchange/crypto/binance/binance_spot.h"
 #include "src/exchange/exchange_adapter.h"
 
 namespace sqc {
@@ -30,13 +31,13 @@ TEST(BinanceParserTest, ParseTradeEvent) {
   ParseDoc(parser, json, doc);
 
   TickData tick{};
-  bool ok = binance::ParseTradeEvent(doc, tick, 1, "BTCUSDT");
+  bool ok = binance::ParseTradeEvent(doc, tick, 1);
 
   EXPECT_TRUE(ok);
   if(ok) {
     EXPECT_EQ(tick.exchange_timestamp, 1716844800000000ULL);
     EXPECT_DOUBLE_EQ(tick.price, 50000.00);
-    EXPECT_STREQ(tick.symbol, "BTCUSDT");
+    // symbol is stamped by ShardParserWorker, not the parse function
   }
 }
 
@@ -48,7 +49,7 @@ TEST(BinanceParserTest, ParseHandlesBookTicker) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_spot::Parse(doc, 1, "BNBUSDT", EventType::BOOK_TICKER);
+  auto result = binance_spot::Parse(doc, 1, EventType::BOOK_TICKER);
 
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   if(result.type == ParsedType::BOOK_TICKER) {
@@ -57,7 +58,6 @@ TEST(BinanceParserTest, ParseHandlesBookTicker) {
     EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_price, 25.20);
     EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_qty, 40.66);
     EXPECT_EQ(result.book_ticker.channel_id, 1);
-    EXPECT_STREQ(result.book_ticker.symbol, "BNBUSDT");
   }
 }
 
@@ -69,7 +69,7 @@ TEST(BinanceParserTest, ParseSpotBookTicker) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::BOOK_TICKER);
+  auto result = binance_spot::Parse(doc, 1, EventType::BOOK_TICKER);
 
   EXPECT_EQ(result.type, ParsedType::BOOK_TICKER);
   if(result.type == ParsedType::BOOK_TICKER) {
@@ -78,7 +78,6 @@ TEST(BinanceParserTest, ParseSpotBookTicker) {
     EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_price, 71621.70);
     EXPECT_DOUBLE_EQ(result.book_ticker.best_ask_qty, 2.554);
     EXPECT_EQ(result.book_ticker.channel_id, 1);
-    EXPECT_STREQ(result.book_ticker.symbol, "BTCUSDT");
     EXPECT_GT(result.book_ticker.exchange_timestamp, 0ULL);
   }
 }
@@ -90,12 +89,12 @@ TEST(BinanceParserTest, ParseHandlesTrade) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::TICK);
+  auto result = binance_spot::Parse(doc, 1, EventType::TICK);
 
   EXPECT_EQ(result.type, ParsedType::TICK);
   if(result.type == ParsedType::TICK) {
     EXPECT_DOUBLE_EQ(result.tick.price, 50000.00);
-    EXPECT_STREQ(result.tick.symbol, "BTCUSDT");
+    // symbol stamped by ShardParserWorker
   }
 }
 
@@ -108,12 +107,11 @@ TEST(BinanceParserTest, ParseSpotPartialDepth) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_spot::Parse(doc, 1, "BTCUSDT", EventType::DEPTH);
+  auto result = binance_spot::Parse(doc, 1, EventType::DEPTH);
 
   EXPECT_EQ(result.type, ParsedType::DEPTH);
   if(result.type == ParsedType::DEPTH) {
     EXPECT_EQ(result.depth.last_update_id, 160ULL);
-    EXPECT_STREQ(result.depth.symbol, "BTCUSDT");
     EXPECT_EQ(result.depth.bid_count, 2);
     EXPECT_EQ(result.depth.ask_count, 2);
     EXPECT_DOUBLE_EQ(result.depth.bids[0].price, 50000.00);
@@ -130,7 +128,7 @@ TEST(BinanceParserTest, ParseFuturesDepthEvent) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_perpetual::Parse(doc, 3, "BTCUSDT", EventType::DEPTH);
+  auto result = binance_perpetual::Parse(doc, 3, EventType::DEPTH);
 
   EXPECT_EQ(result.type, ParsedType::DEPTH);
   if(result.type == ParsedType::DEPTH) {
@@ -138,7 +136,6 @@ TEST(BinanceParserTest, ParseFuturesDepthEvent) {
     EXPECT_EQ(result.depth.last_update_id, 1005ULL);
     EXPECT_EQ(result.depth.bid_count, 1);
     EXPECT_EQ(result.depth.ask_count, 1);
-    EXPECT_STREQ(result.depth.symbol, "BTCUSDT");
   }
 }
 
@@ -150,14 +147,13 @@ TEST(BinanceParserTest, ParseFuturesTradeMsToUs) {
   simdjson::ondemand::document doc;
   ParseDoc(parser, json, doc);
 
-  auto result = binance_perpetual::Parse(doc, 4, "BTCUSDT", EventType::TICK);
+  auto result = binance_perpetual::Parse(doc, 4, EventType::TICK);
 
   EXPECT_EQ(result.type, ParsedType::TICK);
   if(result.type == ParsedType::TICK) {
     EXPECT_EQ(result.tick.exchange_timestamp, 1716844800000000ULL);  // ms → μs
     EXPECT_DOUBLE_EQ(result.tick.price, 50000.00);
     EXPECT_DOUBLE_EQ(result.tick.quantity, 1.5);
-    EXPECT_STREQ(result.tick.symbol, "BTCUSDT");
   }
 }
 

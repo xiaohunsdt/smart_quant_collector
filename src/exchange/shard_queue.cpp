@@ -15,12 +15,11 @@ size_t NextPowerOf2(size_t n) {
 ShardQueue::ShardQueue(size_t capacity) : capacity_(NextPowerOf2(capacity)), mask_(capacity_ - 1), slots_(capacity_) {}
 
 bool ShardQueue::TryPush(RawMessage msg) {
-  std::lock_guard<std::mutex> lock(push_mtx_);
-  // write_pos_ is only modified by producers under push_mtx_, so relaxed is sufficient.
-  // read_pos_ is written by the consumer (outside mutex) with release ordering;
-  // we need acquire here to synchronize-with that release and see the latest value.
-  size_t w = write_pos_.load(std::memory_order_relaxed);
-  size_t r = read_pos_.load(std::memory_order_acquire);
+  // Single-producer path: relaxed load of write_pos_ is safe because only
+  // one thread (the network thread) ever writes it.  Acquire on read_pos_ to
+  // synchronise-with the consumer's release store so we see the latest drain.
+  const size_t w = write_pos_.load(std::memory_order_relaxed);
+  const size_t r = read_pos_.load(std::memory_order_acquire);
   if(w - r >= capacity_) return false;
   slots_[w & mask_] = std::move(msg);
   write_pos_.store(w + 1, std::memory_order_release);

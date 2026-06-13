@@ -3,7 +3,6 @@
 
 #include <csignal>
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -15,10 +14,11 @@
 #include <unistd.h>
 #endif
 
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+#include <pthread.h>
+#include <sched.h>
 #include <sys/prctl.h>
 
+#include "src/common/channel_id_hash.h"
 #include "src/config/config_loader.h"
 #include "rithmic_engine.h"
 #include "src/exchange/rithmic/rithmic_shm.h"
@@ -33,54 +33,6 @@ static volatile sig_atomic_t g_bExit = 0;
 static void signal_handler(int) {
     g_bExit = 1;
 }
-
-// ============================================================================
-// Channel map deserialization (read from stdin pipe at startup)
-// ============================================================================
-
-namespace {
-
-using SubEntry = sqc::rithmic::RithmicEngine::SubEntry;
-
-std::vector<SubEntry> ReadChannelMapFromStdin() {
-    std::vector<SubEntry> result;
-    uint32_t count = 0;
-
-    if (::read(STDIN_FILENO, &count, sizeof(count)) != static_cast<ssize_t>(sizeof(count))) {
-        return result;
-    }
-
-    for (uint32_t i = 0; i < count; ++i) {
-        SubEntry entry;
-
-        uint8_t exchange_len = 0;
-        if (::read(STDIN_FILENO, &exchange_len, sizeof(exchange_len)) != sizeof(exchange_len)) break;
-
-        std::string exchange(exchange_len, '\0');
-        if (::read(STDIN_FILENO, exchange.data(), exchange_len) != static_cast<ssize_t>(exchange_len)) break;
-        entry.exchange = exchange;
-
-        uint8_t ticker_len = 0;
-        if (::read(STDIN_FILENO, &ticker_len, sizeof(ticker_len)) != sizeof(ticker_len)) break;
-
-        std::string ticker(ticker_len, '\0');
-        if (::read(STDIN_FILENO, ticker.data(), ticker_len) != static_cast<ssize_t>(ticker_len)) break;
-        entry.ticker = ticker;
-
-        if (::read(STDIN_FILENO, &entry.channel_id, sizeof(entry.channel_id)) != sizeof(entry.channel_id)) break;
-
-        uint8_t enabled_byte = 0;
-        if (::read(STDIN_FILENO, &enabled_byte, sizeof(enabled_byte)) != sizeof(enabled_byte)) break;
-        entry.enabled = (enabled_byte != 0);
-
-        result.push_back(std::move(entry));
-    }
-
-    ::close(STDIN_FILENO);
-    return result;
-}
-
-}  // namespace
 
 // ============================================================================
 // main (matching rithmic_md_saver structure)
@@ -116,28 +68,41 @@ int main(int argc, char** argv) {
     LOG_INFO(logger, "Shm: {}  EngineCore: {}  CpuAffinity: {}",
              shm_name, engine_core, cpu_affinity);
 
-    // ---- Map shared memory + read channel map from stdin ----
+    // ---- Build channel map directly from config ----
+    // channel_id is deterministic: ComputeChannelId(exchange, "futures", symbol)
+    using SubEntry = sqc::rithmic::RithmicEngine::SubEntry;
+
+    sqc::rithmic::RithmicChannelMap channel_map;
+    std::vector<SubEntry> sub_entries;
+
+    for (const auto& ex : cfg.exchanges) {
+        if (!ex.enabled) continue;
+        for (const auto& ch : ex.channels) {
+            if (ch.type != "futures") continue;
+            for (const auto& sym : ch.symbols) {
+                if (!sym.enabled) continue;
+                uint32_t id = sqc::ComputeChannelId(ex.name, "futures", sym.name);
+                channel_map.Register(ex.name, sym.name, id, sym.enabled);
+                sub_entries.push_back({sym.enabled, ex.name, sym.name, id});
+            }
+        }
+    }
+
+    if (sub_entries.empty()) {
+        LOG_ERROR(logger, "No enabled futures symbols found in config");
+        return 1;
+    }
+
+    LOG_INFO(logger, "Channel map: {} subscriptions", sub_entries.size());
+
+    // ---- Map shared memory ----
     sqc::rithmic::ShmSetup shm(shm_name);
     auto* hdr = shm.header();
     auto* tick_q = shm.tick_queue();
     auto* depth_q = shm.depth_queue();
     auto* book_ticker_q = shm.book_ticker_queue();
 
-    auto sub_entries = ReadChannelMapFromStdin();
-    if (sub_entries.empty()) {
-        LOG_ERROR(logger, "Failed to read channel map from stdin");
-        return 1;
-    }
-
-    sqc::rithmic::RithmicChannelMap channel_map;
-    for (const auto& sub : sub_entries) {
-        channel_map.Register(sub.exchange, sub.ticker, sub.channel_id);
-    }
-    channel_map.Freeze();
-
     sqc::rithmic::SsboeConverter converter;
-
-    LOG_INFO(logger, "Channel map: {} subscriptions", sub_entries.size());
 
     // ---- RithmicEngine: connection + subscription (matches rithmic_md_saver) ----
     sqc::rithmic::RithmicEngine engine(rcfg, *tick_q, *depth_q, *book_ticker_q,

@@ -5,7 +5,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 #include <zmq.hpp>
 
 #include "pub_message.h"
@@ -37,7 +36,8 @@ struct ShardQueues {
 
 class PubWorker {
  public:
-  PubWorker(zmq::context_t& ctx, std::vector<std::string> topic_prefixes, size_t num_shards, std::string tcp_endpoint, std::string ipc_endpoint);
+  PubWorker(zmq::context_t& ctx, size_t num_shards,
+            std::string tcp_endpoint, std::string ipc_endpoint);
 
   PubWorker(const PubWorker&) = delete;
   PubWorker& operator=(const PubWorker&) = delete;
@@ -82,7 +82,6 @@ class PubWorker {
   std::string ipc_endpoint_;
   ZmqBufferPool buffer_pool_;
   std::unique_ptr<ShardQueues[]> shard_queues_;
-  std::vector<std::string> topic_prefixes_;
   size_t num_shards_;
 
   char topic_buf_[kMaxTopicLen];  // pre-allocated, zero heap in hot path

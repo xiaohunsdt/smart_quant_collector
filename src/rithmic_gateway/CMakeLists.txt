@@ -17,8 +17,7 @@ find_package(quill CONFIG REQUIRED)
 # We link the Rithmic SDK directly with correct order.
 add_executable(rithmic_gateway
     main.cpp
-    callbacks.cpp
-    # rithmic_callbacks.cpp
+    rithmic_callbacks.cpp
     rithmic_engine.cpp
     "${CMAKE_SOURCE_DIR}/src/config/config_loader.cpp"
 )

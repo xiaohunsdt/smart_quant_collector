@@ -12,23 +12,38 @@
 
 #include "dolphindb_client.h"
 
-namespace sqc {
+
 namespace {
 
-// Binary record header for orderbook mmap persistence.
-// Both RouteOrderbook (direct mmap) and WriteOrderbookToMmap (degradation fallback) use this.
-struct alignas(8) OrderbookRecordHeader {
-  uint64_t exchange_timestamp;
-  uint64_t local_diff;
-  char symbol[32];
-  uint32_t bid_count;
-  uint32_t ask_count;
-};
-
-  DolphinDBClient dolphindb_;
-  std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
-
+  // Binary record header for orderbook mmap persistence.
+  // Both RouteOrderbook (direct mmap) and WriteOrderbookToMmap (degradation fallback) use this.
+  struct alignas(8) OrderbookRecordHeader {
+    uint64_t exchange_timestamp;
+    uint64_t local_diff;
+    char symbol[32];
+    uint32_t bid_count;
+    uint32_t ask_count;
+  };
+  
+    sqc::DolphinDBClient dolphindb_;
+    std::shared_mutex dolphindb_mtx_;       // protects dolphindb_ writer access across threads
+  
 }  // namespace
+
+
+namespace sqc {
+
+StorageRouter* StorageRouter::instance_ = nullptr;
+
+StorageRouter& StorageRouter::Instance() {
+  if (!instance_) instance_ = new StorageRouter();
+  return *instance_;
+}
+
+void StorageRouter::ResetForTesting() {
+  delete instance_;
+  instance_ = new StorageRouter();
+}
 
 StorageRouter::StorageRouter()
     : use_engine_(Config::Instance().storage.use_engine),

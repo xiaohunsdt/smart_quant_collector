@@ -3,7 +3,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include "src/common/simdjson_utils.h"
@@ -43,9 +42,16 @@ struct RawMessage {
   char symbol[32] = {};  // accommodates long symbols with suffix (e.g. BTCUSDT_PERP)
   EventType event_type = EventType::TICK;
 
-  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type) = nullptr;
+  ParseResult (*parse_fn)(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type) = nullptr;
 };
 
+// Single-producer / single-consumer lock-free ring buffer for RawMessage.
+//
+// CONSTRAINT: Push / TryPush MUST be called from a single thread.  All
+// callers originate from the network thread (Boost.Asio io_context::run()),
+// which serialises callbacks, so this invariant always holds.
+// If multi-producer support is ever needed, upgrade to the Vyukov MPSC queue
+// already in src/exchange/rithmic/rithmic_queue.h.
 class ShardQueue {
  public:
   static constexpr size_t kDefaultCapacity = 4096;
@@ -73,7 +79,6 @@ class ShardQueue {
   size_t capacity_;
   size_t mask_;
   std::vector<RawMessage> slots_;
-  std::mutex push_mtx_;                            // cold — only on producer contention
   alignas(64) std::atomic<size_t> read_pos_{0};    // hot — consumer (own cache line)
 };
 

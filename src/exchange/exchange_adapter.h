@@ -13,9 +13,7 @@
 
 namespace sqc {
 
-class ChannelRegistry;
 class PubWorker;
-class StorageRouter;
 namespace rithmic { class RithmicProcessManager; }
 
 enum class ParsedType { NONE, TICK, DEPTH, BOOK_TICKER };
@@ -70,20 +68,17 @@ struct ExchangeAdapter {
   // Lightweight JSON peek on network thread — reads one field to determine type.
   EventType (*peek_event_type)(simdjson::ondemand::document& doc);
 
-  // Parse: receives pre-determined symbol and event_type. No JSON probing needed.
-  ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id, std::string_view symbol, EventType event_type);
+  // Parse: channel_id and event_type are pre-determined; no JSON probing needed.
+  // symbol is NOT passed here — ShardParserWorker stamps it from RawMessage.symbol
+  // after the call, keeping parse functions stateless and allocation-free.
+  ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type);
 };
-
-const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type);
 
 /// Create and start the Rithmic cross-process pipeline.
 /// Returns nullptr if no futures exchanges are configured (Setup() returns false).
 /// The caller owns the returned manager and must call Shutdown() before destruction.
 std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
     std::string_view config_path,
-    ChannelRegistry& channel_registry,
-    StorageRouter& storage_router,
-    PubWorker& pub_worker,
-    std::vector<std::string>& channel_topics);
+    PubWorker& pub_worker);
 
 }  // namespace sqc
