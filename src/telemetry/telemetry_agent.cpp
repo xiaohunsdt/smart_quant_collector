@@ -1,7 +1,9 @@
 #include "telemetry_agent.h"
 
+#include <memory>
 #include <thread>
 
+#include "common/cpu_affinity.h"
 #include "common/logger_init.h"
 #include "config/config_loader.h"
 #include "prometheus_exposer.h"
@@ -9,23 +11,38 @@
 
 namespace sqc {
 
-TelemetryAgent::TelemetryAgent(PrometheusExposer* exposer)
-    : exposer_(exposer), report_interval_ms_(Config::Instance().telemetry.report_interval_ms) {}
+namespace {
+std::unique_ptr<TelemetryAgent> g_instance;
+}
 
-void TelemetryAgent::RegisterSlot(const std::string& name, TelemetrySlot* slot) { slots_.push_back({name, slot}); }
+TelemetryAgent& TelemetryAgent::Init() {
+  g_instance.reset(new TelemetryAgent());
+  return *g_instance;
+}
+
+TelemetryAgent& TelemetryAgent::Instance() { return *g_instance; }
+
+TelemetryAgent::TelemetryAgent()
+    : exposer_(std::make_unique<PrometheusExposer>()),
+      report_interval_ms_(Config::Instance().telemetry.report_interval_ms) {}
+
+void TelemetryAgent::RegisterSlot(TelemetrySlot* slot) { slots_.push_back(slot); }
 
 void TelemetryAgent::PollAll() {
   for(uint32_t i = 0; i < static_cast<uint32_t>(slots_.size()); ++i) {
-    const auto& entry = slots_[i];
     TelemetrySlot snapshot;
-    ReadTelemetrySlot(entry.ptr, snapshot);
-    total_zmq_dropped_ += snapshot.zmq_dropped_count;
-
-    if(exposer_) {
-      exposer_->SetLatencyUs(i, static_cast<double>(snapshot.market_data_delay_ns) / 1000.0);
-      exposer_->SetQueueDepth(i, static_cast<double>(snapshot.queue_depth));
-    }
+    ReadTelemetrySlot(slots_[i], snapshot);
+    exposer_->SetLatencyUs(i, static_cast<double>(snapshot.market_data_delay_ns) / 1000.0);
+    exposer_->SetQueueDepth(i, static_cast<double>(snapshot.queue_depth));
   }
+}
+
+void TelemetryAgent::Start() {
+  thread_ = std::thread([this]() {
+    if(Config::Instance().global.cpu_affinity)
+      PinToCore(Config::Instance().threading_matrix.telemetry_core);
+    Run();
+  });
 }
 
 void TelemetryAgent::Run() {
@@ -37,6 +54,9 @@ void TelemetryAgent::Run() {
   }
 }
 
-void TelemetryAgent::Stop() { running_ = false; }
+void TelemetryAgent::Stop() {
+  running_ = false;
+  if(thread_.joinable()) thread_.join();
+}
 
 }  // namespace sqc

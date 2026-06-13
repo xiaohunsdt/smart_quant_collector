@@ -8,7 +8,6 @@
 #include "src/common/tick_data.h"
 #include "src/exchange/shard_queue.h"
 #include "src/orderbook/orderbook_event.h"
-#include "src/pubsub/pub_worker.h"
 
 namespace sqc {
 
@@ -19,9 +18,8 @@ namespace sqc {
 // Construct one DataDispatcher per logical worker.  `telemetry_slot` and
 // `shard_queue` may be nullptr when telemetry is not relevant (e.g. Rithmic
 // forwarder thread).
-// ChannelRegistry and StorageRouter are accessed via their singletons.
+// ChannelRegistry, StorageRouter, and PubWorker are accessed via singletons.
 struct DataDispatcher {
-  PubWorker&        pub_worker;
   TelemetrySlot*    telemetry_slot = nullptr;  // null → skip telemetry write
   const ShardQueue* shard_queue    = nullptr;  // null → queue depth reported as 0
   size_t            shard_idx      = 0;
@@ -38,12 +36,7 @@ struct DataDispatcher {
             .count());
   }
 
-  void WriteTelemetry(uint64_t latency_ns) const noexcept {
-    if (!telemetry_slot) return;
-    const size_t q_depth = shard_queue ? shard_queue->size() : 0;
-    WriteTelemetrySlot(telemetry_slot, latency_ns, q_depth, 0,
-                       pub_worker.dropped_count());
-  }
+  void WriteTelemetry(uint64_t latency_ns) const noexcept;
 };
 
 }  // namespace sqc

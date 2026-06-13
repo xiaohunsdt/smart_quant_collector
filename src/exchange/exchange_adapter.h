@@ -13,7 +13,6 @@
 
 namespace sqc {
 
-class PubWorker;
 namespace rithmic { class RithmicProcessManager; }
 
 enum class ParsedType { NONE, TICK, DEPTH, BOOK_TICKER };
@@ -78,7 +77,6 @@ struct ExchangeAdapter {
 /// Returns nullptr if no futures exchanges are configured (Setup() returns false).
 /// The caller owns the returned manager and must call Shutdown() before destruction.
 std::unique_ptr<rithmic::RithmicProcessManager> CreateRithmicManager(
-    std::string_view config_path,
-    PubWorker& pub_worker);
+    std::string_view config_path);
 
 }  // namespace sqc

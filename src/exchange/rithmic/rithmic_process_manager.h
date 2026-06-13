@@ -9,9 +9,6 @@
 #include <vector>
 
 namespace sqc {
-
-class PubWorker;
-
 namespace rithmic {
 
 class RithmicChannelMap;
@@ -22,8 +19,9 @@ class ShmSetup;
 // RithmicProcessManager — owns the entire Rithmic pipeline lifecycle.
 //
 // Usage from main.cpp:
-//   RithmicProcessManager mgr(cfg, deps);
-//   mgr.Setup();   // register channels, create shm, spawn child, start threads
+//   auto mgr = CreateRithmicManager(config_path);
+//   // Setup() is called inside CreateRithmicManager
+//   // mgr->Setup();  register channels, create shm, spawn child, start threads
 //   ... (main loop) ...
 //   mgr.Shutdown(); // poison pill, stop threads, kill child
 // ============================================================================
@@ -40,11 +38,7 @@ class RithmicProcessManager {
     bool cpu_affinity = true;
   };
 
-  struct Dependencies {
-    PubWorker& pub_worker;
-  };
-
-  RithmicProcessManager(Config config, Dependencies deps);
+  explicit RithmicProcessManager(Config config);
   ~RithmicProcessManager();
 
   RithmicProcessManager(const RithmicProcessManager&) = delete;
@@ -67,7 +61,6 @@ class RithmicProcessManager {
   void StartThreads();
 
   Config config_;
-  Dependencies deps_;
 
   // Owned pipeline
   std::unique_ptr<RithmicChannelMap> channel_map_;

@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <zmq.hpp>
 
 #include "pub_message.h"
@@ -22,22 +23,22 @@ struct ShardQueues {
   SPSCQueue<BookTickerEvent, 4096> book_ticker;
 };
 
-// ── PubWorker (Facade) ─────────────────────────────────────────────
+// ── PubWorker (Singleton Facade) ──────────────────────────────────
 //
-// Facade pattern: exposes a simple PublishTick / PublishDepth /
+// Singleton facade: exposes a simple PublishTick / PublishDepth /
 // PublishBookTicker API to parser threads while internally managing
 // per-shard SPSC queues, a zero-allocation ZMQ buffer pool, and a
 // fair round-robin dispatch loop on the dedicated pub thread.
 //
-// Dependencies injected via constructor (DI):
-//   - zmq::context_t& — shared ZMQ context for PUB socket
-//   - topic_prefixes   — channel_id → topic prefix ("exchange:type:symbol")
-//   - num_shards       — number of parser threads
+// Lifecycle:
+//   PubWorker::Init()     — call once during single-threaded startup;
+//                           reads endpoints and shard count from Config.
+//   PubWorker::Instance() — access the singleton from any thread after Init().
 
 class PubWorker {
  public:
-  PubWorker(zmq::context_t& ctx, size_t num_shards,
-            std::string tcp_endpoint, std::string ipc_endpoint);
+  static PubWorker& Init();      // call once during startup
+  static PubWorker& Instance();  // access from any thread after Init()
 
   PubWorker(const PubWorker&) = delete;
   PubWorker& operator=(const PubWorker&) = delete;
@@ -50,9 +51,9 @@ class PubWorker {
   void PublishDepth(const DepthUpdateEvent& depth, size_t shard);
   void PublishBookTicker(const BookTickerEvent& bt, size_t shard);
 
-  // ── Lifecycle (pub thread) ─────────────────────────────────────
-  void Run();   // connect → dispatch loop → drain → return
-  void Stop();  // signal dispatch loop to exit
+  // ── Lifecycle ─────────────────────────────────────────────────
+  void Start();  // spawn dedicated thread (pins to pub_core) and begin dispatch
+  void Stop();   // signal dispatch loop to exit and join thread
 
   // ── Telemetry ──────────────────────────────────────────────────
   uint64_t dropped_count() const {
@@ -63,6 +64,8 @@ class PubWorker {
   uint64_t dropped_buffer_count() const { return dropped_buffer_count_.load(std::memory_order_relaxed); }
 
  private:
+  PubWorker();  // reads Config::Instance(); called only by Init()
+
   // Serialize + buffer-pool acquire + ZMQ multi-part send.
   template <typename Serializer>
   bool SendTyped(uint32_t channel_id, std::string_view event_suffix, const typename Serializer::value_type& data);
@@ -76,7 +79,11 @@ class PubWorker {
   // Drain all remaining items after Stop().
   void DrainAll();
 
+  // bind sockets → dispatch loop → drain → return; called internally by Start()
+  void Run();
+
   // ── Members ────────────────────────────────────────────────────
+  zmq::context_t zmq_ctx_;   // owned ZMQ context; declared before pub_socket_
   zmq::socket_t pub_socket_;
   std::string tcp_endpoint_;
   std::string ipc_endpoint_;
@@ -90,6 +97,7 @@ class PubWorker {
   std::atomic<uint64_t> dropped_buffer_count_{0};
   std::atomic<uint64_t> dropped_hwm_count_{0};
   std::atomic<bool> running_{false};
+  std::thread thread_;
 };
 
 }  // namespace sqc

@@ -21,7 +21,6 @@
 #include "src/exchange/rithmic/rithmic_shm.h"
 #include "src/exchange/rithmic/rithmic_types.h"
 #include "src/orderbook/orderbook_event.h"
-#include "src/pubsub/pub_worker.h"
 #include "src/storage/storage_router.h"
 
 #ifndef RITHMIC_GATEWAY_EXE
@@ -37,8 +36,8 @@ namespace rithmic {
 // Construction / Destruction
 // ============================================================================
 
-RithmicProcessManager::RithmicProcessManager(Config config, Dependencies deps)
-    : config_(std::move(config)), deps_(deps) {}
+RithmicProcessManager::RithmicProcessManager(Config config)
+    : config_(std::move(config)) {}
 
 RithmicProcessManager::~RithmicProcessManager() {
   if (child_pid_ > 0) {
@@ -148,7 +147,7 @@ bool RithmicProcessManager::Setup() {
   // Create receiver — handlers share the same DataDispatcher as crypto parsers.
   // Telemetry slot is null: Rithmic uses a dedicated forwarder thread without
   // a per-shard seqlock slot; latency is monitored via SHM heartbeat instead.
-  DataDispatcher dispatcher{deps_.pub_worker, nullptr, nullptr, 0};
+  DataDispatcher dispatcher{nullptr, nullptr, 0};
   receiver_ = std::make_unique<RithmicReceiver>(
       shm_->tick_queue(),
       shm_->depth_queue(),

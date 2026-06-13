@@ -3,6 +3,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl.hpp>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -15,8 +16,6 @@
 
 namespace sqc {
 
-class PubWorker;
-class TelemetryAgent;
 namespace net = boost::asio;
 
 /// Returns the statically-allocated adapter for (exchange_name, channel_type).
@@ -67,9 +66,46 @@ struct CryptoParserPool {
 
 /// Construct one ShardParserWorker per shard queue in `crypto`, wire each to
 /// a DataDispatcher bound to its own TelemetrySlot, and register all slots
-/// with `telemetry_agent`.  Must be called before parser threads start.
-CryptoParserPool BuildParserPool(const CryptoChannels& crypto,
-                                 PubWorker& pub_worker,
-                                 TelemetryAgent& telemetry_agent);
+/// with TelemetryAgent::Instance().  Must be called before parser threads start.
+CryptoParserPool BuildParserPool(const CryptoChannels& crypto);
+
+// ---------------------------------------------------------------------------
+// CryptoSubsystem — unified owner of io_ctx, ssl_ctx, channels, and parser pool.
+//
+// boost::asio::io_context is non-movable, so it is heap-allocated via unique_ptr.
+// All members are move-only; CryptoSubsystem itself is movable but not copyable.
+// ---------------------------------------------------------------------------
+
+struct CryptoSubsystem {
+  std::unique_ptr<net::io_context>   io_ctx;
+  std::unique_ptr<net::ssl::context> ssl_ctx;
+  CryptoChannels                     channels;
+  CryptoParserPool                   parser_pool;
+
+  // Spawn one parser thread per shard.  Call once during startup.
+  void RunParsers();
+
+  // Spawn the dedicated network thread (non-blocking).
+  // The thread pins itself to network_core, starts WebSocket channels, then
+  // drives io_ctx until StopNetwork() signals it to exit.
+  void RunNetwork();
+
+  // Signal the network side to stop (call from the shutdown path on main thread).
+  void StopNetwork();
+
+  // Push a poison pill into every shard queue so parser threads drain and exit.
+  void DrainQueues();
+
+  // Join the network thread and all parser threads.  Call after DrainQueues().
+  void Shutdown();
+
+ private:
+  std::thread network_thread_;
+};
+
+/// Validates parser_cores (logs CRITICAL + returns nullopt if empty), then
+/// constructs io_ctx, ssl_ctx, channels, and parser_pool in a single call.
+/// Must be called during single-threaded startup before any other threads start.
+std::optional<CryptoSubsystem> BuildCryptoSubsystem();
 
 }  // namespace sqc

@@ -9,7 +9,6 @@
 #include "exchange/crypto/gateio/gateio_perpetual.h"
 #include "exchange/crypto/gateio/gateio_spot.h"
 #include "exchange/data_dispatcher.h"
-#include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"
 #include "storage/storage_router.h"
 #include "telemetry/telemetry_agent.h"
@@ -62,9 +61,7 @@ CryptoChannels BuildCryptoChannels(size_t num_parsers,
   return result;
 }
 
-CryptoParserPool BuildParserPool(const CryptoChannels& crypto,
-                                 PubWorker& pub_worker,
-                                 TelemetryAgent& telemetry_agent) {
+CryptoParserPool BuildParserPool(const CryptoChannels& crypto) {
   const size_t n = crypto.shard_queues.size();
   CryptoParserPool pool;
   // std::atomic is not movable; allocate the telemetry slot array directly
@@ -73,7 +70,7 @@ CryptoParserPool BuildParserPool(const CryptoChannels& crypto,
   pool.num_slots = n;
 
   for (size_t i = 0; i < n; ++i) {
-    DataDispatcher dispatcher{pub_worker, &pool.telemetry_slots[i],
+    DataDispatcher dispatcher{&pool.telemetry_slots[i],
                               crypto.shard_queues[i].get(), i};
     pool.workers.push_back(std::make_unique<ShardParserWorker>(
         Config::Instance().threading_matrix.parser_cores[i],
@@ -82,7 +79,7 @@ CryptoParserPool BuildParserPool(const CryptoChannels& crypto,
         [dispatcher](uint32_t cid, const DepthUpdateEvent& ev) { dispatcher.OnDepth(cid, ev); },
         [dispatcher](uint32_t cid, BookTickerEvent ev) { dispatcher.OnBookTicker(cid, std::move(ev)); }));
 
-    telemetry_agent.RegisterSlot("parser", &pool.telemetry_slots[i]);
+    TelemetryAgent::Instance().RegisterSlot(&pool.telemetry_slots[i]);
   }
   return pool;
 }
@@ -104,6 +101,57 @@ void CryptoParserPool::Shutdown() {
   for (auto& t : threads)
     if (t.joinable()) t.join();
   threads.clear();
+}
+
+// ---------------------------------------------------------------------------
+// CryptoSubsystem
+// ---------------------------------------------------------------------------
+
+std::optional<CryptoSubsystem> BuildCryptoSubsystem() {
+  const size_t num_parsers =
+      Config::Instance().threading_matrix.parser_cores.size();
+  if (num_parsers == 0) {
+    LOG_CRITICAL(GetLogger(),
+                 "parser_cores must not be empty — modulo-by-zero on shard dispatch");
+    return std::nullopt;
+  }
+
+  CryptoSubsystem sys;
+  sys.io_ctx  = std::make_unique<net::io_context>();
+  sys.ssl_ctx = std::make_unique<net::ssl::context>(net::ssl::context::tlsv12_client);
+  sys.ssl_ctx->set_verify_mode(net::ssl::verify_peer);
+  sys.ssl_ctx->set_default_verify_paths();
+  sys.channels    = BuildCryptoChannels(num_parsers, *sys.io_ctx, *sys.ssl_ctx);
+  sys.parser_pool = BuildParserPool(sys.channels);
+  return sys;
+}
+
+void CryptoSubsystem::RunParsers() {
+  parser_pool.Run();
+}
+
+void CryptoSubsystem::RunNetwork() {
+  network_thread_ = std::thread([this]() {
+    if (Config::Instance().global.cpu_affinity)
+      PinToCore(Config::Instance().threading_matrix.network_core);
+    channels.Start();
+    auto work_guard = net::make_work_guard(*io_ctx);
+    io_ctx->run();
+  });
+}
+
+void CryptoSubsystem::StopNetwork() {
+  channels.Stop();
+  io_ctx->stop();
+}
+
+void CryptoSubsystem::DrainQueues() {
+  channels.DrainQueues();
+}
+
+void CryptoSubsystem::Shutdown() {
+  if (network_thread_.joinable()) network_thread_.join();
+  parser_pool.Shutdown();
 }
 
 }  // namespace sqc

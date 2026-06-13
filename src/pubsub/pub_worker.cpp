@@ -2,23 +2,41 @@
 
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
+#include "common/cpu_affinity.h"
 #include "common/logger_init.h"
 #include "message_serializer.h"
 #include "quill/LogMacros.h"
+#include "src/config/config_loader.h"
 #include "src/exchange/channel_mapping.h"
 
 namespace sqc {
 
+// ── Singleton ─────────────────────────────────────────────────────
+
+namespace {
+std::unique_ptr<PubWorker> g_instance;
+}
+
+PubWorker& PubWorker::Init() {
+  g_instance.reset(new PubWorker());
+  return *g_instance;
+}
+
+PubWorker& PubWorker::Instance() {
+  return *g_instance;
+}
+
 // ── Construction ──────────────────────────────────────────────────
 
-PubWorker::PubWorker(zmq::context_t& ctx, size_t num_shards,
-                     std::string tcp_endpoint, std::string ipc_endpoint)
-    : pub_socket_(ctx, ZMQ_PUB),
-      tcp_endpoint_(std::move(tcp_endpoint)),
-      ipc_endpoint_(std::move(ipc_endpoint)),
-      num_shards_(num_shards) {
+PubWorker::PubWorker()
+    : zmq_ctx_(1),
+      pub_socket_(zmq_ctx_, ZMQ_PUB),
+      tcp_endpoint_(Config::Instance().pub.tcp_endpoint),
+      ipc_endpoint_(Config::Instance().pub.ipc_endpoint),
+      num_shards_(Config::Instance().threading_matrix.parser_cores.size()) {
   pub_socket_.set(zmq::sockopt::sndhwm, 10000);
 
   shard_queues_ = std::make_unique<ShardQueues[]>(num_shards_);
@@ -158,6 +176,21 @@ void PubWorker::DrainAll() {
   }
 }
 
+// ── Start / Stop ──────────────────────────────────────────────────
+
+void PubWorker::Start() {
+  thread_ = std::thread([this]() {
+    if(Config::Instance().global.cpu_affinity)
+      PinToCore(Config::Instance().threading_matrix.pub_core);
+    Run();
+  });
+}
+
+void PubWorker::Stop() {
+  running_.store(false, std::memory_order_release);
+  if(thread_.joinable()) thread_.join();
+}
+
 // ── Run ───────────────────────────────────────────────────────────
 
 void PubWorker::Run() {
@@ -166,6 +199,20 @@ void PubWorker::Run() {
 
   running_.store(true, std::memory_order_relaxed);
   LOG_INFO(GetLogger(), "PubWorker bound to {} and {}", tcp_endpoint_, ipc_endpoint_);
+
+  // Log every topic this worker will publish so subscribers know what to expect.
+  size_t channel_count = 0;
+  for(const auto& ex : Config::Instance().exchanges) {
+    if(!ex.enabled) continue;
+    for(const auto& ch : ex.channels) {
+      for(const auto& sym : ch.symbols) {
+        if(!sym.enabled) continue;
+        ++channel_count;
+        LOG_INFO(GetLogger(), "  {}:{}:{}:tick/depth/book_ticker", ex.name, ch.type, sym.name);
+      }
+    }
+  }
+  LOG_INFO(GetLogger(), "=== PubWorker: {} channels, {} shards ===", channel_count, num_shards_);
 
   size_t cursor = 0;
   size_t idle_cycles = 0;
@@ -190,9 +237,5 @@ void PubWorker::Run() {
   DrainAll();
   LOG_INFO(GetLogger(), "PubWorker run loop exited");
 }
-
-// ── Stop ──────────────────────────────────────────────────────────
-
-void PubWorker::Stop() { running_.store(false, std::memory_order_release); }
 
 }  // namespace sqc
