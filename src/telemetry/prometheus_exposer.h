@@ -27,6 +27,7 @@ class PrometheusExposer {
   PrometheusExposer& operator=(const PrometheusExposer&) = delete;
 
   bool IsHealthy() const;
+  void Stop();  // explicitly stop the HTTP server; safe to call multiple times
 
   void SetLatencyUs(uint32_t channel_id, double value);
   void SetQueueDepth(uint32_t channel_id, double value);

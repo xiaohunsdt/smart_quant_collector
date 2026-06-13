@@ -153,6 +153,6 @@ int main(int argc, char** argv) {
     // ---- Unsubscribe + logout (matching rithmic_md_saver) ----
     hdr->child_ready.store(0, std::memory_order_release);
     engine.Stop();
-    LOG_INFO(logger, "Done.");
+    LOG_INFO(logger, "rithmic gateway shutdown complete");
     return 0;
 }

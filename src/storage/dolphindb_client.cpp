@@ -427,14 +427,13 @@ void DolphinDBClient::DestroyWriters(bool skip_drain) {
 
 void DolphinDBClient::Disconnect() {
   DestroyWriters(/*skip_drain=*/true);
-  if(conn_) {
-    try {
-      conn_->close();
-    } catch(const std::exception& e) {
-      LOG_WARNING(GetLogger(), "DolphinDB: close() exception: {}", e.what());
-    }
-    conn_.reset();
+  if(!conn_) return;  // already disconnected — skip logging (safe during static destruction)
+  try {
+    conn_->close();
+  } catch(const std::exception& e) {
+    LOG_WARNING(GetLogger(), "DolphinDB: close() exception: {}", e.what());
   }
+  conn_.reset();
   connected_.store(false, std::memory_order_relaxed);
   LOG_INFO(GetLogger(), "DolphinDB: disconnected");
 }

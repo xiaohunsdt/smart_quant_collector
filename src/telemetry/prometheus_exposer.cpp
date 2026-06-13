@@ -39,6 +39,10 @@ PrometheusExposer::PrometheusExposer() : registry_(std::make_shared<prometheus::
 
 PrometheusExposer::~PrometheusExposer() = default;
 
+void PrometheusExposer::Stop() {
+  exposer_.reset();  // calls mg_stop() and joins civetweb threads
+}
+
 bool PrometheusExposer::IsHealthy() const { return healthy_; }
 
 void PrometheusExposer::SetLatencyUs(uint32_t channel_id, double value) {

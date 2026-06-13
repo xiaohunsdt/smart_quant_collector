@@ -57,6 +57,7 @@ void TelemetryAgent::Run() {
 void TelemetryAgent::Stop() {
   running_ = false;
   if(thread_.joinable()) thread_.join();
+  if(exposer_) exposer_->Stop();  // stop civetweb HTTP server before main() returns
 }
 
 }  // namespace sqc
