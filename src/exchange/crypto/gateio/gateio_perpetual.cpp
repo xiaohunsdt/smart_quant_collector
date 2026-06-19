@@ -5,6 +5,7 @@
 #include "common/logger_init.h"
 #include "common/string_utils.h"
 #include "exchange/crypto/gateio/gateio_common.h"
+#include "exchange/crypto/json_parse_helpers.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -17,16 +18,13 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
   try {
     switch(event_type) {
       case EventType::TICK:
-        result.type = ParsedType::TICK;
-        if(!ParseTradeEvent(doc, result.tick, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::TICK, [&] { return ParseTradeEvent(doc, result.tick, channel_id); });
         break;
       case EventType::DEPTH:
-        result.type = ParsedType::DEPTH;
-        if(!ParseDepthEvent(doc, result.depth, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::DEPTH, [&] { return ParseDepthEvent(doc, result.depth, channel_id); });
         break;
       case EventType::BOOK_TICKER:
-        result.type = ParsedType::BOOK_TICKER;
-        if(!ParseBookTickerEvent(doc, result.book_ticker, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::BOOK_TICKER, [&] { return ParseBookTickerEvent(doc, result.book_ticker, channel_id); });
         break;
       default:
         result.type = ParsedType::NONE;
@@ -42,11 +40,7 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    (void)doc["time"].get_uint64();
-    try {
-      (void)doc["time_ms"].get_uint64();
-    } catch(...) {
-    }
+    SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev == "subscribe") return false;
     auto arr = doc["result"].get_array();
@@ -55,14 +49,9 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     auto item = *it;
     out.trade_id = item["id"].get_uint64();
     (void)item["create_time"].get_uint64();
-    out.exchange_timestamp = item["create_time_ms"].get_uint64() * 1000ULL;
+    out.exchange_timestamp = MsToUs(item["create_time_ms"].get_uint64());
     if(!SvToDouble(item["price"].get_string(), out.price)) return false;
-    double size_val = 0.0;
-    std::string_view size_sv;
-    if(item["size"].get_string().get(size_sv) == simdjson::SUCCESS)
-      SvToDouble(size_sv, size_val);
-    else
-      size_val = static_cast<double>(item["size"].get_int64());
+    double size_val = ParseQuantity(item["size"]);
     out.quantity = size_val < 0 ? -size_val : size_val;
     out.is_buyer_maker = (size_val < 0);
     out.channel_id = channel_id;
@@ -80,40 +69,26 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    (void)doc["time"].get_uint64();
-    try {
-      (void)doc["time_ms"].get_uint64();
-    } catch(...) {
-    }
+    SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev != "update" && ev != "all") return false;
     auto result = doc["result"];
-    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
+    out.exchange_timestamp = MsToUs(result["t"].get_uint64());
     out.last_update_id = result["id"].get_uint64();
     out.channel_id = channel_id;
     out.bid_count = 0;
     for(auto lv : result["bids"]) {
       if(out.bid_count >= kMaxOrderbookLevels) break;
-      double p = 0.0, q = 0.0;
+      double p = 0.0;
       if(!SvToDouble(lv["p"].get_string(), p)) continue;
-      auto s_str = lv["s"].get_string();
-      if(s_str.error() == simdjson::SUCCESS)
-        SvToDouble(s_str.value_unsafe(), q);
-      else
-        q = static_cast<double>(lv["s"].get_int64());
-      out.bids[out.bid_count++] = {p, q};
+      out.bids[out.bid_count++] = {p, ParseQuantity(lv["s"])};
     }
     out.ask_count = 0;
     for(auto lv : result["asks"]) {
       if(out.ask_count >= kMaxOrderbookLevels) break;
-      double p = 0.0, q = 0.0;
+      double p = 0.0;
       if(!SvToDouble(lv["p"].get_string(), p)) continue;
-      auto s_str = lv["s"].get_string();
-      if(s_str.error() == simdjson::SUCCESS)
-        SvToDouble(s_str.value_unsafe(), q);
-      else
-        q = static_cast<double>(lv["s"].get_int64());
-      out.asks[out.ask_count++] = {p, q};
+      out.asks[out.ask_count++] = {p, ParseQuantity(lv["s"])};
     }
     return true;
   } catch(const simdjson::simdjson_error& e) {
@@ -144,8 +119,8 @@ static std::vector<SubscriptionGroup> GateioPerpetualBuildSubscribes(std::string
                 EventType::TICK},
                {R"({"time":)" + ts + R"(,"channel":"futures.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl +
                     "\",\"0\"]}",
-                500, EventType::DEPTH},
-               {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700,
+                kDepthSubscribeDelayMs, EventType::DEPTH},
+               {R"({"time":)" + ts + R"(,"channel":"futures.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", kBookTickerSubscribeDelayMs,
                 EventType::BOOK_TICKER},
            }}};
 }
@@ -158,6 +133,7 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
     .build_subscribes = GateioPerpetualBuildSubscribes,
     .peek_event_type = gateio_perpetual::PeekEventType,
     .parse = gateio_perpetual::Parse,
+    .ws_headers = kGateioWsHeaders,
 };
 
 }  // namespace sqc

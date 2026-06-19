@@ -3,25 +3,20 @@
 #include <DolphinDB.h>
 #include <MultithreadedTableWriter.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "src/common/tick_data.h"
 #include "src/config/secure_string.h"
 #include "src/orderbook/orderbook_event.h"
+#include "storage/channel_registry.h"
+#include "storage/client/dolphindb_schema.h"
 
 namespace sqc {
-
-struct ChannelMeta {
-  std::string exchange;
-  std::string market_type;
-  std::string symbol;
-  uint32_t depth_level = 0;  // 0 = unset; populated from config.yaml per symbol
-};
 
 /// DolphinDB storage client using MultithreadedTableWriter (MTW).
 ///
@@ -61,9 +56,10 @@ class DolphinDBClient {
   /// exchange / market_type / symbol / depth_level at insert time.
   void RegisterChannel(uint32_t channel_id, std::string exchange, std::string market_type, std::string symbol, uint32_t depth_level = 0);
 
-  /// Mark channel registration as complete. After this, insert methods
-  /// assert that channels_ is frozen (Debug builds) to catch late registrations.
-  void FreezeChannels() { channels_frozen_.store(true, std::memory_order_release); }
+  /// Mark channel registration as complete. Delegates to the embedded
+  /// StorageChannelRegistry, which now rejects late registrations in ALL builds
+  /// (was Debug-only — a real race in Release).
+  void FreezeChannels() { registry_.Freeze(); }
 
   /// Batch insert trades into stream table 'trades_stream'.
   [[nodiscard]] bool TableInsertTrades(const std::vector<TickData>& batch);
@@ -80,54 +76,50 @@ class DolphinDBClient {
   /// Returns true if all tables are present and subscriptions are active.
   [[nodiscard]] bool ValidateSchema();
 
-  /// Convert microsecond timestamp to DolphinDB DATE int (days since 1970.01.01).
-  /// Returns -1 if timestamp is zero or overflow (sentinel for invalid data).
-  static int UsecToDateInt(uint64_t usec_since_epoch);
-
-  /// Validate trade_date is within acceptable bounds.
-  /// Hard-bound: >= 0 (before 1970 is illegal).
-  /// Soft-bound: within [start_year, end_year] derived from current year.
-  static bool IsValidTradeDate(int trade_date);
-
-  /// True when usec_since_epoch maps to a valid DolphinDB trade_date partition key.
-  static bool IsValidExchangeTimestamp(uint64_t usec_since_epoch) {
-    return IsValidTradeDate(UsecToDateInt(usec_since_epoch));
-  }
+  // Note: timestamp validation helpers (UsecToDateInt / IsValidTradeDate /
+  // IsValidExchangeTimestamp) live in storage/timestamp_util.h, not here —
+  // call timestamp_util::... directly. Keeping them off this DB-client header
+  // avoids coupling storage-independent validation to a database client class.
 
  private:
   /// Create database, DFS tables, stream tables, and subscriptions
-  /// if they do not already exist (idempotent). Uses DDL via conn_->run().
-  /// Partition granularity is driven by config.storage.dolphindb.partition_granularity.
+  /// if they do not already exist (idempotent). Delegates the DDL work to the
+  /// DolphinDBSchema component (extracted from the old 167-line inline impl).
   bool InitSchema();
-
-  /// If the database already exists, check whether the current date range
-  /// requires extension, and call addValuePartitions if needed.
-  bool TryExtendPartitionRange(int start_year, int end_year, const std::string& granularity);
-
-  /// Build the RANGE boundary specification string for DolphinDB DDL.
-  /// e.g. granularity="day" → date("2025.01.01")date("2025.01.02")...
-  static std::string BuildRangeSpec(int start_year, int end_year, const std::string& granularity);
 
   bool InitWriters();
   void DestroyWriters(bool skip_drain = false);
+
+  /// Resolve channel metadata for an insert. Returns the registered ChannelMeta
+  /// (exchange/market_type/symbol/depth_level are stable after FreezeChannels,
+  /// so callers may hold const references into it without copying). Returns
+  /// nullptr when the channel_id was never registered.
+  const ChannelMeta* ResolveChannel(uint32_t channel_id) const noexcept { return registry_.Find(channel_id); }
 
   std::string host_;
   uint16_t port_ = 0;
   std::string user_;
   SecureString password_;
   std::atomic<bool> connected_{false};
-  std::atomic<bool> channels_frozen_{false};  // set after all RegisterChannel calls
-  std::chrono::steady_clock::time_point last_health_check_;
+  // last_health_check_ as raw ticks: the old std::chrono::time_point was a
+  // non-trivially-sized value read/written from multiple threads under only a
+  // *shared* lock (hot-path TableInsert* update it) — a genuine data race.
+  // Atomic ticks close the race without changing IsHealthy()'s throttling.
+  std::atomic<std::chrono::steady_clock::rep> last_health_check_ns_{0};
 
   // conn_ is NOT guarded by an internal mutex. All callers (StorageRouter)
   // serialize access via dolphindb_mtx_ (shared_lock for hot-path
   // inserts, unique_lock for Reconnect/Disconnect), and the startup path
   // (Connect) runs single-threaded before parser threads start.
   std::unique_ptr<dolphindb::DBConnection> conn_;
-  // PRECONDITION: channels_ is populated via RegisterChannel() before
-  // channels_frozen_ is set to true. After that, insert methods read
-  // channels_ concurrently from parser threads without locking.
-  std::unordered_map<uint32_t, ChannelMeta> channels_;
+
+  // Schema DDL component (database/table/stream/subscription init + partition
+  // range extension). Stateless; extracted from the old inline InitSchema.
+  DolphinDBSchema schema_;
+
+  // Channel registry: populated via RegisterChannel() during startup, then
+  // frozen. Insert methods read it concurrently from parser threads.
+  StorageChannelRegistry registry_;
 
   std::unique_ptr<dolphindb::MultithreadedTableWriter> trades_writer_;
   std::unique_ptr<dolphindb::MultithreadedTableWriter> ob_writer_;

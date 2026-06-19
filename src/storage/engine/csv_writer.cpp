@@ -1,4 +1,4 @@
-#include "csv_writer.h"
+#include "storage/engine/csv_writer.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -15,8 +15,7 @@
 namespace sqc {
 
 bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange, std::string_view type, std::string_view symbol) {
-  dir_ = trade_root;
-  if(!dir_.empty() && dir_.back() != '/') dir_ += '/';
+  dir_ = EnsureTrailingSlash(trade_root);
   dir_ += exchange;
   dir_ += '/';
   dir_ += type;
@@ -35,7 +34,7 @@ bool CsvWriter::Open(const std::string& trade_root, std::string_view exchange, s
 }
 
 std::string CsvWriter::TimestampToDate(uint64_t usec_since_epoch) {
-  uint64_t days = usec_since_epoch / kUsecsPerDay;
+  uint64_t days = usec_since_epoch / timestamp_util::kUsecsPerDay;
   uint64_t z = days + 719468;
   uint64_t era = z / 146097;
   uint64_t doe = z - era * 146097;
@@ -59,7 +58,7 @@ std::string CsvWriter::TimestampToDate(uint64_t usec_since_epoch) {
 bool CsvWriter::RotateIfNeeded(uint64_t exchange_ts) {
   if(exchange_ts == 0) exchange_ts = 1;
 
-  uint64_t day = exchange_ts / kUsecsPerDay;
+  uint64_t day = exchange_ts / timestamp_util::kUsecsPerDay;
   if(day == current_date_day_ && trade_file_.is_open()) return true;
 
   Close();
@@ -160,6 +159,11 @@ void CsvWriter::Close() {
     bookticker_file_.flush();
     bookticker_file_.close();
   }
+  // Reset per-file state so the next RotateIfNeeded() re-detects a fresh file
+  // and writes the orderbook header. Without this, a header_written_ value left
+  // over from a previous rotation can skip the header on the next day's file.
+  header_written_ = false;
+  depth_level_ = 0;
 }
 
 }  // namespace sqc

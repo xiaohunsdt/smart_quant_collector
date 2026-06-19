@@ -1,4 +1,4 @@
-#include "mmap_engine.h"
+#include "storage/engine/mmap_engine.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <cstdio>
 
 #include "common/logger_init.h"
 #include "common/path_util.h"
@@ -18,20 +19,16 @@ MmapStorageEngine::MmapStorageEngine(uint64_t max_file_size) : max_file_size_(ma
 MmapStorageEngine::~MmapStorageEngine() { Close(); }
 
 bool MmapStorageEngine::OpenOrCreate(const std::string& output_path, const std::string& file_prefix) {
-  output_path_ = output_path;
+  output_path_ = EnsureTrailingSlash(output_path);
   file_prefix_ = file_prefix;
 
-  // Ensure trailing slash
-  if(!output_path_.empty() && output_path_.back() != '/') {
-    output_path_ += '/';
-  }
   if(!EnsureDirExists(output_path_)) {
     LOG_ERROR(GetLogger(), "Failed to create mmap output dir: {}", output_path_);
     return false;
   }
 
   std::string fname = MakeFileName(file_sequence_);
-  fd_ = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
+  fd_ = open(fname.c_str(), O_RDWR | O_CREAT, mmap_detail::kFileMode);
   if(fd_ < 0) {
     LOG_ERROR(GetLogger(), "Failed to open mmap file: {}", fname);
     return false;
@@ -59,9 +56,9 @@ bool MmapStorageEngine::OpenOrCreate(const std::string& output_path, const std::
 
   meta_header_ = reinterpret_cast<MmapMetaHeader*>(mmap_ptr_);
   meta_header_->file_size = max_file_size_;
-  meta_header_->write_offset.store(64, std::memory_order_relaxed);
+  meta_header_->write_offset.store(mmap_detail::kHeaderSize, std::memory_order_relaxed);
 
-  current_mapped_offset_ = 64;
+  current_mapped_offset_ = mmap_detail::kHeaderSize;
   LOG_INFO(GetLogger(), "MmapStorageEngine opened: {}", fname);
   return true;
 }
@@ -111,7 +108,7 @@ bool MmapStorageEngine::RollNewFile() {
 
   file_sequence_++;
   std::string fname = MakeFileName(file_sequence_);
-  fd_ = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
+  fd_ = open(fname.c_str(), O_RDWR | O_CREAT, mmap_detail::kFileMode);
   if(fd_ < 0) {
     LOG_ERROR(GetLogger(), "Failed to open new mmap file: {}", fname);
     return false;
@@ -138,8 +135,8 @@ bool MmapStorageEngine::RollNewFile() {
 
   meta_header_ = reinterpret_cast<MmapMetaHeader*>(mmap_ptr_);
   meta_header_->file_size = max_file_size_;
-  meta_header_->write_offset.store(64, std::memory_order_relaxed);
-  current_mapped_offset_ = 64;
+  meta_header_->write_offset.store(mmap_detail::kHeaderSize, std::memory_order_relaxed);
+  current_mapped_offset_ = mmap_detail::kHeaderSize;
 
   LOG_INFO(GetLogger(), "MmapStorageEngine rolled to new file: {}", fname);
   return true;
@@ -165,7 +162,13 @@ void MmapStorageEngine::Close() {
 
 std::string MmapStorageEngine::MakeFileName(int sequence) const {
   char buf[128];
-  snprintf(buf, sizeof(buf), "%s%s_%04d.bin", output_path_.c_str(), file_prefix_.c_str(), sequence);
+  const int n = std::snprintf(buf, sizeof(buf), "%s%s_%04d.bin", output_path_.c_str(), file_prefix_.c_str(), sequence);
+  if(n < 0 || static_cast<size_t>(n) >= sizeof(buf)) {
+    // Truncated — fall back to an unambiguous (if ugly) name rather than a
+    // silently-truncated path. The inputs are bounded by config, so this path
+    // is essentially unreachable; logged as defensive only.
+    LOG_WARNING(GetLogger(), "MmapStorageEngine: MakeFileName truncated (prefix={}, seq={})", file_prefix_, sequence);
+  }
   return buf;
 }
 

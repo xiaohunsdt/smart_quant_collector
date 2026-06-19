@@ -15,6 +15,13 @@
 
 namespace sqc {
 
+namespace {
+// Per-parser bounded queue capacity. Sized to absorb network bursts without
+// heap allocation on the hot path; bounded so a stalled parser back-pressures
+// the network thread rather than growing unbounded.
+constexpr size_t kShardQueueCapacity = 4096;
+}  // namespace
+
 const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType channel_type) {
   if(exchange_name == "binance") return channel_type == ChannelType::Spot ? &kBinanceSpotAdapter : &kBinancePerpetualAdapter;
   if(exchange_name == "gateio") return channel_type == ChannelType::Spot ? &kGateioSpotAdapter : &kGateioPerpetualAdapter;
@@ -24,7 +31,7 @@ const ExchangeAdapter* GetAdapter(std::string_view exchange_name, ChannelType ch
 
 CryptoChannels BuildCryptoChannels(size_t num_parsers, net::io_context& io_ctx, net::ssl::context& ssl_ctx) {
   CryptoChannels result;
-  for(size_t i = 0; i < num_parsers; ++i) result.shard_queues.push_back(std::make_shared<ShardQueue>(4096));
+  for(size_t i = 0; i < num_parsers; ++i) result.shard_queues.push_back(std::make_shared<ShardQueue>(kShardQueueCapacity));
 
   for(const auto& ex : Config::Instance().exchanges) {
     if(!ex.enabled) continue;
@@ -110,7 +117,16 @@ std::optional<CryptoSubsystem> BuildCryptoSubsystem() {
   sys.ssl_ctx = std::make_unique<net::ssl::context>(net::ssl::context::tlsv12_client);
   sys.ssl_ctx->set_verify_mode(net::ssl::verify_peer);
   sys.ssl_ctx->set_default_verify_paths();
-  sys.channels = BuildCryptoChannels(num_parsers, *sys.io_ctx, *sys.ssl_ctx);
+  // BuildCryptoChannels calls ChannelRegistry::Register, which throws on a
+  // genuine channel_id collision (two channels hashing to the same 32-bit id).
+  // Catch so the misconfiguration surfaces as a clean std::nullopt (handled by
+  // main's EXIT_FAILURE path) instead of an uncaught exception → std::terminate.
+  try {
+    sys.channels = BuildCryptoChannels(num_parsers, *sys.io_ctx, *sys.ssl_ctx);
+  } catch(const std::exception& e) {
+    LOG_CRITICAL(GetLogger(), "Crypto channel registration failed: {}", e.what());
+    return std::nullopt;
+  }
   sys.parser_pool = BuildParserPool(sys.channels);
   return sys;
 }

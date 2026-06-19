@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -56,7 +57,6 @@ class RithmicProcessManager {
 
  private:
   void RegisterChannels();
-  bool IsChildAlive() const;
   bool SpawnChild();
   void StartThreads();
 
@@ -67,7 +67,11 @@ class RithmicProcessManager {
   std::shared_ptr<ShmSetup> shm_;
   std::unique_ptr<RithmicReceiver> receiver_;
 
-  // Child process
+  // Child process. child_pid_ is touched by both the monitor thread
+  // (CheckHealth) and the main thread (Shutdown); child_mtx_ serializes all
+  // kill/waitpid/reap operations so the two can never race on the pid or reap
+  // the same (or a recycled) pid twice.
+  std::mutex child_mtx_;
   pid_t child_pid_ = -1;
   std::chrono::steady_clock::time_point last_restart_;
   uint32_t restart_count_ = 0;

@@ -6,6 +6,7 @@
 #include "binance_common.h"
 #include "common/logger_init.h"
 #include "common/string_utils.h"
+#include "exchange/crypto/json_parse_helpers.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -20,16 +21,15 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
         if(!binance::ParseTradeEvent(doc, result.tick, channel_id))
           result.type = ParsedType::NONE;
         else
-          result.tick.exchange_timestamp *= 1000ULL;  // perpetual: ms → μs
+          result.tick.exchange_timestamp = MsToUs(result.tick.exchange_timestamp);  // perpetual: ms → μs
         break;
       case EventType::DEPTH:
         // Futures partial depth uses same "depthUpdate" format
-        result.type = ParsedType::DEPTH;
-        if(!ParseDepthEvent(doc, result.depth, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::DEPTH, [&] { return ParseDepthEvent(doc, result.depth, channel_id); });
         break;
       case EventType::BOOK_TICKER:
-        result.type = ParsedType::BOOK_TICKER;
-        if(!binance::ParseBookTickerEvent(doc, result.book_ticker, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::BOOK_TICKER,
+                      [&] { return binance::ParseBookTickerEvent(doc, result.book_ticker, channel_id); });
         break;
       default:
         result.type = ParsedType::NONE;
@@ -43,30 +43,12 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64()) * 1000ULL;
+    out.exchange_timestamp = MsToUs(static_cast<uint64_t>(doc["E"].get_int64()));
     out.last_update_id = static_cast<uint64_t>(doc["u"].get_int64());
     out.channel_id = channel_id;
 
-    out.bid_count = 0;
-    for(auto bid_level : doc["b"]) {
-      if(out.bid_count >= kMaxOrderbookLevels) break;
-      double p = 0.0, q = 0.0;
-      auto it = bid_level.begin();
-      if(it != bid_level.end()) (void)SvToDouble((*it).get_string(), p);
-      ++it;
-      if(it != bid_level.end()) (void)SvToDouble((*it).get_string(), q);
-      out.bids[out.bid_count++] = {p, q};
-    }
-    out.ask_count = 0;
-    for(auto ask_level : doc["a"]) {
-      if(out.ask_count >= kMaxOrderbookLevels) break;
-      double p = 0.0, q = 0.0;
-      auto it = ask_level.begin();
-      if(it != ask_level.end()) (void)SvToDouble((*it).get_string(), p);
-      ++it;
-      if(it != ask_level.end()) (void)SvToDouble((*it).get_string(), q);
-      out.asks[out.ask_count++] = {p, q};
-    }
+    out.bid_count = ParsePositionalLevelArray(doc["b"].get_array(), out.bids, kMaxOrderbookLevels);
+    out.ask_count = ParsePositionalLevelArray(doc["a"].get_array(), out.asks, kMaxOrderbookLevels);
     return true;
   } catch(const simdjson::simdjson_error& e) {
     if(auto* log = GetLogger()) LOG_ERROR(log, "Binance perpetual depth parse: {}", e.what());
@@ -93,8 +75,8 @@ static std::vector<SubscriptionGroup> BinancePerpetualBuildSubscribes(std::strin
        }},
       {"wss://fstream.binance.com/public/ws",
        {
-           {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", 700, EventType::BOOK_TICKER},
-           {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth)" + dl + R"(@100ms"],"id":2})", 500, EventType::DEPTH},
+           {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@bookTicker"],"id":3})", kBookTickerSubscribeDelayMs, EventType::BOOK_TICKER},
+           {R"({"method":"SUBSCRIBE","params":[")" + name + R"(@depth)" + dl + R"(@100ms"],"id":2})", kDepthSubscribeDelayMs, EventType::DEPTH},
        }},
   };
 }

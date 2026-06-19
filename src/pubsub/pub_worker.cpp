@@ -89,18 +89,19 @@ bool PubWorker::SendTyped(uint32_t channel_id, std::string_view event_suffix, co
   }
 
   // Acquire zero-allocation buffer.
-  void* payload = buffer_pool_.Acquire();
-  if(!payload) {
+  auto* slot = buffer_pool_.Acquire();
+  if(!slot) {
     dropped_buffer_count_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
   // Compile-time serialization strategy.
-  Serializer::serialize(payload, data);
+  Serializer::serialize(slot->data, data);
 
-  // Build multi-part ZMQ message.
+  // Build multi-part ZMQ message. Pass the Slot* as the hint so Release()
+  // can clear in_use without relying on the data pointer aliasing the Slot.
   zmq::message_t topic_msg(topic_buf_, topic_len);
-  zmq::message_t payload_msg(payload, Serializer::wire_size, &ZmqBufferPool::Release, payload);
+  zmq::message_t payload_msg(slot->data, Serializer::wire_size, &ZmqBufferPool::Release, slot);
 
   // ZMQ guarantees atomic delivery of multi-part messages:
   // if any frame fails (HWM), the entire message is discarded.

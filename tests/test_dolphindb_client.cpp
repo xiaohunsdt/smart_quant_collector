@@ -4,7 +4,7 @@
 
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
-#include "src/storage/dolphindb_client.h"
+#include "storage/client/dolphindb_client.h"
 
 namespace sqc {
 namespace {
@@ -100,52 +100,10 @@ TEST(DolphinDBClientTest, ReconnectWithoutServerFailsGracefully) {
 // ============================================================
 // Unit tests (pure logic, no server required)
 // ============================================================
-
-TEST(DolphinDBClientTest, UsecToDateInt) {
-  // Zero timestamp is invalid — returns sentinel -1
-  EXPECT_EQ(DolphinDBClient::UsecToDateInt(0), -1);
-  EXPECT_EQ(DolphinDBClient::UsecToDateInt(86400000000ULL), 1);
-  uint64_t ts = 1780445977532000ULL;
-  int date = DolphinDBClient::UsecToDateInt(ts);
-  EXPECT_GT(date, 20000);
-}
-
-TEST(DolphinDBClientTest, UsecToDateIntZeroReturnsNegativeOne) {
-  // Zero timestamp is invalid — sentinel
-  EXPECT_EQ(DolphinDBClient::UsecToDateInt(0), -1);
-}
-
-TEST(DolphinDBClientTest, UsecToDateIntOverflowReturnsNegativeOne) {
-  // Beyond year 2100 — sentinel
-  constexpr uint64_t kOverflow = 4102444800000001ULL;
-  EXPECT_EQ(DolphinDBClient::UsecToDateInt(kOverflow), -1);
-}
-
-TEST(DolphinDBClientTest, IsValidTradeDateNegativeFails) {
-  EXPECT_FALSE(DolphinDBClient::IsValidTradeDate(-1));
-  EXPECT_FALSE(DolphinDBClient::IsValidTradeDate(-100));
-}
-
-TEST(DolphinDBClientTest, IsValidTradeDateBefore2000Fails) {
-  // Day 0 = 1970-01-01, before our valid window
-  EXPECT_FALSE(DolphinDBClient::IsValidTradeDate(0));
-  // Day 10000 = ~1997, still before 2000
-  EXPECT_FALSE(DolphinDBClient::IsValidTradeDate(10000));
-}
-
-TEST(DolphinDBClientTest, IsValidTradeDateCurrentDatePasses) {
-  // Compute today's date int and verify it's valid
-  auto now = std::time(nullptr);
-  int today = static_cast<int>(now / 86400);
-  EXPECT_TRUE(DolphinDBClient::IsValidTradeDate(today));
-}
-
-TEST(DolphinDBClientTest, IsValidTradeDateFarFutureFails) {
-  // Day corresponding to year 2150 — far beyond valid window
-  // ~65745 days from epoch = approx Jan 1, 2150
-  int day_2150 = 65745;
-  EXPECT_FALSE(DolphinDBClient::IsValidTradeDate(day_2150));
-}
+// Note: timestamp validation (UsecToDateInt / IsValidTradeDate /
+// IsValidExchangeTimestamp) is tested in test_timestamp_util.cpp — the DolphinDB
+// client no longer carries those wrappers (they were trivial delegations to
+// timestamp_util). Tests below cover genuine DolphinDBClient behavior.
 
 TEST(DolphinDBClientTest, RegisterChannelResolvesMeta) {
   DolphinDBClient client;
@@ -159,14 +117,6 @@ TEST(DolphinDBClientTest, RegisterChannelDefaultDepthLevel) {
   // depth_level defaults to 0 when not provided
   client.RegisterChannel(0, "binance", "spot", "BTCUSDT");
   SUCCEED();
-}
-
-TEST(DolphinDBClientTest, IsValidExchangeTimestampZeroFails) {
-  EXPECT_FALSE(DolphinDBClient::IsValidExchangeTimestamp(0));
-}
-
-TEST(DolphinDBClientTest, IsValidExchangeTimestampValidPasses) {
-  EXPECT_TRUE(DolphinDBClient::IsValidExchangeTimestamp(1717000000000000ULL));
 }
 
 TEST(DolphinDBClientTest, ValidateSchemaWhenDisconnectedReturnsFalse) {

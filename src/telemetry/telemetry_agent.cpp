@@ -7,6 +7,7 @@
 #include "common/logger_init.h"
 #include "config/config_loader.h"
 #include "prometheus_exposer.h"
+#include "pubsub/pub_worker.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -34,6 +35,9 @@ void TelemetryAgent::PollAll() {
     exposer_->SetLatencyUs(i, static_cast<double>(snapshot.market_data_delay_ns) / 1000.0);
     exposer_->SetQueueDepth(i, static_cast<double>(snapshot.queue_depth));
   }
+  // Expose the ZMQ drop total once per poll cycle so operators can detect pub
+  // backpressure (queue full / buffer pool exhaustion / HWM) via monitoring.
+  exposer_->SetZmqDroppedTotal(PubWorker::Instance().dropped_count());
 }
 
 void TelemetryAgent::Start() {

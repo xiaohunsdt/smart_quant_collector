@@ -19,10 +19,13 @@ add_library(collector_objects OBJECT
     exchange/crypto/gateio/gateio_common.cpp
     exchange/crypto/gateio/gateio_spot.cpp
     exchange/crypto/gateio/gateio_perpetual.cpp
-    storage/mmap_engine.cpp
+    storage/channel_registry.cpp
     storage/storage_router.cpp
-    storage/csv_writer.cpp
-    pubsub/pub_message.cpp
+    storage/storage_backend_factory.cpp
+    storage/backend/csv_backend.cpp
+    storage/backend/mmap_backend.cpp
+    storage/engine/mmap_engine.cpp
+    storage/engine/csv_writer.cpp
     pubsub/zmq_buffer_pool.cpp
     pubsub/pub_worker.cpp
     telemetry/prometheus_exposer.cpp
@@ -47,7 +50,12 @@ target_link_libraries(collector_objects PUBLIC
     prometheus-cpp::pull
 )
 
-target_sources(collector_objects PRIVATE storage/dolphindb_client.cpp)
+# DolphinDB-dependent sources (need the DolphinDBAPI link group).
+target_sources(collector_objects PRIVATE
+    storage/backend/dolphindb_backend.cpp
+    storage/client/dolphindb_client.cpp
+    storage/client/dolphindb_schema.cpp
+)
 target_link_libraries(collector_objects PUBLIC DolphinDBAPI)
 
 target_sources(collector_objects PRIVATE

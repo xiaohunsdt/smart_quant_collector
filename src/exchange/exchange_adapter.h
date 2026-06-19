@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -61,6 +62,15 @@ struct SubscriptionGroup {
   std::vector<SubscriptionMessage> messages;
 };
 
+// A custom HTTP header injected during the WebSocket upgrade handshake.
+// Exchanged only at connection setup time (not on the data hot path), so
+// string_view + span is fine — the backing storage lives in a static constexpr
+// array on each adapter (see e.g. kGateioSpotAdapter).
+struct HttpHeader {
+  std::string_view name;
+  std::string_view value;
+};
+
 // Single adapter per (exchange, channel_type) — no runtime branching.
 struct ExchangeAdapter {
   std::string_view name;
@@ -76,6 +86,11 @@ struct ExchangeAdapter {
   // symbol is NOT passed here — ShardParserWorker stamps it from RawMessage.symbol
   // after the call, keeping parse functions stateless and allocation-free.
   ParseResult (*parse)(simdjson::ondemand::document& doc, uint32_t channel_id, EventType event_type);
+
+  // Custom HTTP headers to add during the WebSocket upgrade handshake (vendor
+  // quirks, e.g. Gate.io's X-Gate-Aggregation). Consumed once per connection by
+  // SymbolChannel. Defaults to an empty span — most exchanges need none.
+  std::span<const HttpHeader> ws_headers;
 };
 
 /// Create and start the Rithmic cross-process pipeline.

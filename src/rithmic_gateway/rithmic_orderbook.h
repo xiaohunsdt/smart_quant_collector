@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include "src/common/spin_hint.h"
 #include "src/orderbook/orderbook_event.h"
 
 namespace sqc {
@@ -65,11 +66,7 @@ class RithmicOrderBook {
 
   void Lock() noexcept {
     while(lock_.test_and_set(std::memory_order_acquire)) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-      __builtin_ia32_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-      __asm__ volatile("yield");
-#endif
+      SpinHint();
     }
   }
 

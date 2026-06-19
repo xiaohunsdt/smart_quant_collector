@@ -40,6 +40,7 @@ class SymbolChannel : public std::enable_shared_from_this<SymbolChannel> {
   void OnMessage(const char* data, size_t size);
   void SendGroupSubscriptions(size_t g);
   void OnDisconnect();
+  void ScheduleReconnect();
 
   const ExchangeAdapter* adapter_;
   std::string symbol_;

@@ -4,7 +4,7 @@
 
 #include "src/exchange/channel_mapping.h"
 #include "src/pubsub/pub_worker.h"
-#include "src/storage/storage_router.h"
+#include "storage/storage_router.h"
 
 namespace sqc {
 

@@ -3,6 +3,8 @@
 #include <atomic>
 #include <cstdint>
 
+#include "common/spin_hint.h"
+
 namespace sqc {
 namespace rithmic {
 
@@ -16,8 +18,10 @@ namespace rithmic {
 //   - Single consumer: owns read_pos_, checks sequence == read_pos + 1
 //
 // Capacity must be a power of 2. Zero heap allocation after construction.
-// Non-blocking TryPush() drops events when the queue is full (increments
-// atomic dropped_count_).
+// TryPush() is non-blocking: it spins for a bounded number of iterations
+// waiting for the consumer to free the reserved slot, then drops the event
+// (publishes a sentinel so the queue stays free of sequence holes — the
+// consumer recognizes the sentinel via channel_id==0 and skips it).
 // ============================================================================
 
 template <typename T, size_t Capacity = 8192>
@@ -36,8 +40,10 @@ class MpscRithmicQueue {
   // ---- Producer API (multi-thread safe) ----
 
   /// Try to push an event. Returns true on success.
-  /// Returns false if the queue is full (event is DROPPED).
-  /// Non-blocking — safe to call from REngine callback threads.
+  /// Returns false if the queue stayed saturated for the bounded spin budget
+  /// (the event is DROPPED, dropped_count_ is incremented, and a sentinel is
+  /// published so the consumer advances past the reserved slot). Non-blocking
+  /// — safe to call from REngine callback threads.
   [[nodiscard]] bool TryPush(const T& event) noexcept;
 
   /// Push with spin-wait. Blocks the caller until space is available.
@@ -97,24 +103,37 @@ MpscRithmicQueue<T, Capacity>::MpscRithmicQueue() {
 
 template <typename T, size_t Capacity>
 bool MpscRithmicQueue<T, Capacity>::TryPush(const T& event) noexcept {
+  // Reserve a slot via fetch_add. write_pos_ is NEVER rolled back (fetch_sub)
+  // because under multi-producer contention that creates a sequence hole the
+  // consumer can never advance past, deadlocking the queue.
   size_t pos = write_pos_.fetch_add(1, std::memory_order_relaxed);
   Slot& slot = slots_[pos & kMask];
 
-  uint64_t seq = slot.sequence.load(std::memory_order_acquire);
-  if(seq != pos) {
-    int spin = 0;
-    while(slot.sequence.load(std::memory_order_acquire) != pos) {
-      if(++spin > 10000) {
-        write_pos_.fetch_sub(1, std::memory_order_relaxed);
-        dropped_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
-      }
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-      __builtin_ia32_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-      __asm__ volatile("yield");
-#endif
+  // Fast path: the consumer has already freed this slot (sequence advanced to pos).
+  if(slot.sequence.load(std::memory_order_acquire) == pos) {
+    slot.data = event;
+    slot.sequence.store(pos + 1, std::memory_order_release);
+    return true;
+  }
+
+  // Slow path: queue saturated (consumer hasn't freed the slot yet). Bounded
+  // spin — never an infinite loop, since REngine callback threads MUST stay
+  // responsive or they cascade into connection loss.
+  constexpr int kMaxSpin = 10000;
+  int spin = 0;
+  while(slot.sequence.load(std::memory_order_acquire) != pos) {
+    if(++spin > kMaxSpin) {
+      // Still saturated: DROP the event. We must still publish the slot
+      // (sequence = pos+1) so the consumer can advance — otherwise the
+      // reserved-but-unpublished slot is a permanent hole. A value-initialized
+      // sentinel with channel_id==0 is written; DataDispatcher::Lookup(0)
+      // returns nullptr and the event is discarded harmlessly.
+      slot.data = T{};
+      slot.sequence.store(pos + 1, std::memory_order_release);
+      dropped_count_.fetch_add(1, std::memory_order_relaxed);
+      return false;
     }
+    SpinHint();
   }
 
   slot.data = event;
@@ -128,11 +147,7 @@ void MpscRithmicQueue<T, Capacity>::Push(const T& event) noexcept {
   Slot& slot = slots_[pos & kMask];
 
   while(slot.sequence.load(std::memory_order_acquire) != pos) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    __asm__ volatile("yield");
-#endif
+    SpinHint();
   }
 
   slot.data = event;
@@ -161,11 +176,7 @@ T MpscRithmicQueue<T, Capacity>::PopBlocking() noexcept {
     if(TryPop(out)) {
       return out;
     }
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    __asm__ volatile("yield");
-#endif
+    SpinHint();
   }
 }
 

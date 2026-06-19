@@ -7,7 +7,7 @@
 
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
-#include "src/storage/storage_router.h"
+#include "storage/storage_router.h"
 
 namespace sqc {
 namespace {

@@ -2,6 +2,8 @@
 
 #include <thread>
 
+#include "common/spin_hint.h"
+
 namespace sqc {
 
 namespace {
@@ -42,13 +44,7 @@ bool ShardQueue::TryPop(RawMessage& out) {
 RawMessage ShardQueue::PopBlocking() {
   RawMessage msg;
   while(!TryPop(msg)) {
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    __asm__ volatile("yield");
-#else
-    std::this_thread::yield();
-#endif
+    SpinHint();
   }
   return msg;
 }

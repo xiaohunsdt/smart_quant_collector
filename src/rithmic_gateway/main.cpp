@@ -6,13 +6,7 @@
 #include "quill/LogMacros.h"
 #include "quill/SimpleSetup.h"
 
-#ifdef WinOS
-#include <windows.h>
-#define sleep(s) Sleep((s) * 1000)
-#define signal(s, h) signal(s, h)
-#else
 #include <unistd.h>
-#endif
 
 #include <pthread.h>
 #include <sched.h>

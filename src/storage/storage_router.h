@@ -2,19 +2,27 @@
 
 #include <atomic>
 #include <cstdint>
-#include <mutex>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <memory>
 
-#include "csv_writer.h"
-#include "mmap_engine.h"
 #include "src/common/tick_data.h"
 #include "src/exchange/channel_mapping.h"
 #include "src/orderbook/orderbook_event.h"
+#include "storage/i_storage_backend.h"
 
 namespace sqc {
 
+/// Public facade over the storage subsystem. Preserved verbatim for backward
+/// compatibility — the 6 public methods below are the entire contract with
+/// consumers (main.cpp, crypto_factory, rithmic_process_manager,
+/// data_dispatcher). Internally, all work is delegated to a single
+/// IStorageBackend selected once at construction by the factory, so there is
+/// no per-call string dispatch anymore.
+///
+/// Threading contract (unchanged):
+///   - Instance()/ResetForTesting() manage the singleton.
+///   - RegisterChannel/FreezeChannels run single-threaded during startup.
+///   - Route* run concurrently from parser threads after FreezeChannels.
+///   - FlushAndClose runs after all producers have stopped.
 class StorageRouter {
  public:
   static StorageRouter& Instance();
@@ -22,7 +30,7 @@ class StorageRouter {
 
   /// Register a channel for storage. Must be called during initialization
   /// (before parser threads start) for each channel that has persist_to_disk
-  /// enabled.  Uses uint32_t channel_id as the map key — zero heap allocation
+  /// enabled. Uses uint32_t channel_id as the map key — zero heap allocation
   /// on the hot path.
   void RegisterChannel(uint32_t channel_id, const ChannelInfo& info, bool persist_to_disk);
   void FreezeChannels();
@@ -37,46 +45,19 @@ class StorageRouter {
   StorageRouter(const StorageRouter&) = delete;
   StorageRouter& operator=(const StorageRouter&) = delete;
 
-  static StorageRouter* instance_;
+  // Atomic singleton pointer. The old code used a raw check-then-new on a
+  // bare pointer, which was a data race (benign only because main() touches
+  // Instance() single-threaded first — but racy by construction and it also
+  // leaked, never deleted on normal exit). Atomic + acquire/release makes the
+  // race impossible and lets ResetForTesting() swap it safely.
+  static std::atomic<StorageRouter*> instance_;
 
-  // --- Tick double-buffer (batches multiple TickData per MTW insert call) ---
-  void FlushActiveBuffer();
-  void FlushBuffer(std::vector<TickData>&& batch);
-  std::vector<TickData>& ActiveBuffer();
-  void SwapBuffer();
+  bool persist_to_disk_ = true;
 
-  // --- Degradation helpers (shared by all three data paths) ---
-  bool TryReconnect();
-  void EnsureFallbackMmap();
-  void WriteOrderbookToMmap(const DepthUpdateEvent& event, uint64_t local_ts);
-  void WriteBookTickerToMmap(const BookTickerEvent& event);
-
-  std::string use_engine_;
-
-  uint32_t buffer_size_;
-  std::atomic<bool> degraded_{false};
-  std::atomic<bool> reconnecting_{false};  // CAS gate — only one thread runs Reconnect()
-
-  std::string csv_output_path_;
-  std::string mmap_output_path_;
-
-  std::unordered_map<uint32_t, CsvWriter> csv_writers_;
-  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> tick_mmap_;
-  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> ob_mmap_;
-  std::unordered_map<uint32_t, std::unique_ptr<MmapStorageEngine>> bt_mmap_;
-
-  // Mutex protecting csv_writers_, tick_mmap_, ob_mmap_, bt_mmap_, and fallback_mmap_.
-  mutable std::mutex storage_mtx_;
-
-  // Lazy-created fallback mmap engine for DolphinDB degradation.
-  std::unique_ptr<MmapStorageEngine> fallback_mmap_;
-
-  // --- Tick double-buffer ---
-  std::vector<TickData> buffer_a_;
-  std::vector<TickData> buffer_b_;
-  std::atomic<size_t> active_index_{0};
-  std::atomic<uint64_t> last_flush_ns_{0};
-  std::mutex buffer_mtx_;
+  // The single active backend. Built once by the factory; all Route* calls
+  // delegate here. Replaces the previous 9-way string dispatch + embedded
+  // CsvWriter/DolphinDBClient/MmapStorageEngine members.
+  std::unique_ptr<IStorageBackend> backend_;
 };
 
 }  // namespace sqc

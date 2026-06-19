@@ -9,9 +9,20 @@
 
 namespace sqc {
 
+namespace mmap_detail {
+
+/// Fixed-size header at offset 0 of every mmap file. Was the bare literal 64
+/// scattered across six call sites; named here so the layout is explicit.
+constexpr uint64_t kHeaderSize = 64;
+
+/// File creation mode for mmap data files.
+constexpr int kFileMode = 0644;
+
+}  // namespace mmap_detail
+
 // Mmap file header placed at offset 0, per spec §4.2
 struct MmapMetaHeader {
-  std::atomic<uint64_t> write_offset{64};  // 64-byte header
+  std::atomic<uint64_t> write_offset{mmap_detail::kHeaderSize};
   uint64_t file_size;
 };
 
@@ -42,7 +53,7 @@ class MmapStorageEngine {
   int fd_ = -1;
   char* mmap_ptr_ = nullptr;
   MmapMetaHeader* meta_header_ = nullptr;
-  uint64_t current_mapped_offset_ = 64;  // after header
+  uint64_t current_mapped_offset_ = mmap_detail::kHeaderSize;  // after header
   std::string output_path_;
   std::string file_prefix_;
   int file_sequence_ = 0;

@@ -27,16 +27,4 @@ constexpr size_t kMaxPayloadSize = sizeof(DepthUpdateEvent) + 1;
 // 64 bytes provides generous headroom.
 constexpr size_t kMaxTopicLen = 64;
 
-// ── BuildTopic ─────────────────────────────────────────────────────
-// Pure function: formats a ZMQ subscription topic string into a
-// caller-provided buffer. Zero heap allocation.
-//
-// Topic format: "{exchange}:{channel_type}:{symbol}:{event_type}"
-// Example:      "binance:spot:BTCUSDT:tick"
-//
-// Returns the number of bytes written (excluding null terminator).
-// Returns -1 if the buffer is too small (truncation would occur).
-int64_t BuildTopic(char* buf, size_t buf_size, std::string_view exchange, std::string_view channel_type, std::string_view symbol,
-                   std::string_view event_type);
-
 }  // namespace sqc

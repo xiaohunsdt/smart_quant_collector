@@ -5,6 +5,7 @@
 
 #include "common/logger_init.h"
 #include "common/string_utils.h"
+#include "exchange/crypto/json_parse_helpers.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -22,7 +23,11 @@ EventType PeekEventType(simdjson::ondemand::document& doc) {
     return EventType::BOOK_TICKER;
   }
 
-  std::string_view ev = e_field.get_string().value_unsafe();
+  // get_string() may succeed at the field level but still fail if "e" exists
+  // with a non-string value (e.g. {"e":123}); guard before reading the value.
+  auto ev_res = e_field.get_string();
+  if(ev_res.error()) return EventType::UNKNOWN;
+  std::string_view ev = ev_res.value();
   if(ev == "trade" || ev == "aggTrade") return EventType::TICK;
   if(ev == "depthUpdate") return EventType::DEPTH;
   if(ev == "bookTicker") return EventType::BOOK_TICKER;
@@ -54,7 +59,7 @@ bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& ou
     if(!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
     if(!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
     if(!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
-    out.exchange_timestamp = static_cast<uint64_t>(doc["E"].get_int64()) * 1000ULL;
+    out.exchange_timestamp = MsToUs(static_cast<uint64_t>(doc["E"].get_int64()));
     out.channel_id = channel_id;
     return true;
   } catch(const simdjson::simdjson_error& e) {
@@ -72,6 +77,12 @@ bool ParseSpotBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent
     if(!SvToDouble(doc["B"].get_string(), out.best_bid_qty)) return false;
     if(!SvToDouble(doc["a"].get_string(), out.best_ask_price)) return false;
     if(!SvToDouble(doc["A"].get_string(), out.best_ask_qty)) return false;
+    // Binance SPOT @bookTicker carries no timestamp field in its payload (no
+    // "E"/"T"). We fall back to the collector's wall-clock (system_clock::now).
+    // KNOWN LIMITATION: exchange_timestamp here is the local collection moment,
+    // not the exchange's event time — so SPOT bookTicker rows are unsuitable for
+    // precise replay/backtesting. (Gate.io bookTicker does carry an exchange
+    // "t" field and is unaffected; perpetual bookTicker uses doc["E"].)
     out.exchange_timestamp =
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     out.channel_id = channel_id;

@@ -1,6 +1,5 @@
 #include "prometheus_exposer.h"
 
-#include <prometheus/counter.h>
 #include <prometheus/exposer.h>
 #include <prometheus/gauge.h>
 #include <prometheus/registry.h>
@@ -14,7 +13,7 @@ namespace sqc {
 struct PrometheusExposer::Metrics {
   prometheus::Family<prometheus::Gauge>* latency_family;
   prometheus::Family<prometheus::Gauge>* queue_depth_family;
-  prometheus::Family<prometheus::Counter>* zmq_dropped_family;
+  prometheus::Family<prometheus::Gauge>* zmq_dropped_family;
 };
 
 PrometheusExposer::PrometheusExposer() : registry_(std::make_shared<prometheus::Registry>()), metrics_(std::make_unique<Metrics>()) {
@@ -23,8 +22,10 @@ PrometheusExposer::PrometheusExposer() : registry_(std::make_shared<prometheus::
 
   metrics_->queue_depth_family = &prometheus::BuildGauge().Name("collector_queue_depth").Help("Shard queue depth").Register(*registry_);
 
+  // Total ZMQ messages dropped (queue full + buffer pool exhausted + HWM).
+  // Global counter (no per-channel labels) sourced from PubWorker::dropped_count().
   metrics_->zmq_dropped_family =
-      &prometheus::BuildCounter().Name("collector_zmq_dropped_total").Help("Total ZMQ messages dropped").Register(*registry_);
+      &prometheus::BuildGauge().Name("collector_zmq_dropped_total").Help("Total ZMQ messages dropped (queue/buffer/HWM)").Register(*registry_);
 
   try {
     exposer_ = std::make_unique<prometheus::Exposer>(std::string("0.0.0.0:") + std::to_string(port));
@@ -65,14 +66,13 @@ void PrometheusExposer::SetQueueDepth(uint32_t channel_id, double value) {
   it->second->Set(value);
 }
 
-void PrometheusExposer::IncrementZmqDropped(uint32_t channel_id) {
+void PrometheusExposer::SetZmqDroppedTotal(uint64_t total) {
   std::lock_guard<std::mutex> lock(metrics_mtx_);
-  auto it = zmq_dropped_counters_.find(channel_id);
-  if(it == zmq_dropped_counters_.end()) {
-    auto& c = metrics_->zmq_dropped_family->Add({{"channel", std::to_string(channel_id)}});
-    it = zmq_dropped_counters_.emplace(channel_id, &c).first;
+  // Single label-less gauge; lazily created once (key 0 is a sentinel).
+  if(!zmq_dropped_gauge_) {
+    zmq_dropped_gauge_ = &metrics_->zmq_dropped_family->Add({});
   }
-  it->second->Increment();
+  zmq_dropped_gauge_->Set(static_cast<double>(total));
 }
 
 }  // namespace sqc

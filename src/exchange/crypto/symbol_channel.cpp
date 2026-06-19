@@ -66,10 +66,9 @@ void SymbolChannel::Start() {
     auto* ws_raw = ws.get();
     ws_clients_[g] = std::move(ws);
 
-    if(adapter_->name == "gateio") {
-      ws_raw->AddHeader("X-Gate-Aggregation", "0");
-      ws_raw->AddHeader("X-Gate-Size-Decimal", "1");
-    }
+    // Apply vendor-specific handshake headers declared on the adapter (e.g.
+    // Gate.io's X-Gate-* headers) instead of branching on the exchange name.
+    for(const auto& h : adapter_->ws_headers) ws_raw->AddHeader(h.name, h.value);
 
     auto self = shared_from_this();
     ws_raw->Connect(parsed.host, parsed.port, parsed.path, [this, self, g](bool success) {
@@ -81,19 +80,7 @@ void SymbolChannel::Start() {
         LOG_INFO(GetLogger(), "Read loop started for {}:{} group {}", adapter_->name, symbol_, g);
       } else {
         LOG_WARNING(GetLogger(), "{}:{} group {} connect failed", adapter_->name, symbol_, g);
-        if(!is_reconnecting_) {
-          is_reconnecting_ = true;
-          uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
-          delay = std::min(delay, kMaxReconnectDelaySec);
-          reconnect_attempts_++;
-          auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
-          timer->async_wait([this, self, timer](boost::system::error_code) {
-            if(!SignalHandler::IsShutdownRequested()) {
-              is_reconnecting_ = false;
-              Start();
-            }
-          });
-        }
+        if(!is_reconnecting_) ScheduleReconnect();
       }
     });
   }
@@ -118,14 +105,21 @@ void SymbolChannel::OnDisconnect() {
   for(auto& t : pending_timers_) t->cancel();
   pending_timers_.clear();
 
-  is_reconnecting_ = true;
   for(auto& ws : ws_clients_) {
     if(ws) ws->Close();
   }
 
+  ScheduleReconnect();
+}
+
+void SymbolChannel::ScheduleReconnect() {
+  // Exponential backoff capped at kMaxReconnectDelaySec, retried via a timer
+  // that re-arms Start() unless shutdown was requested. The timer is held by
+  // its own async_wait callback (self + timer capture) so it outlives this call.
+  is_reconnecting_ = true;
   uint32_t delay = 1u << std::min(reconnect_attempts_, 6u);
   delay = std::min(delay, kMaxReconnectDelaySec);
-  reconnect_attempts_++;
+  ++reconnect_attempts_;
   auto self = shared_from_this();
   auto timer = std::make_shared<net::steady_timer>(ioc_, std::chrono::seconds(delay));
   timer->async_wait([this, self, timer](boost::system::error_code) {

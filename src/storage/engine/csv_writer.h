@@ -7,10 +7,15 @@
 
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
+#include "storage/timestamp_util.h"
 
 namespace sqc {
 
-// Daily-rotating CSV writer. One instance per (exchange, type, symbol) tuple.
+// Daily-rotating CSV writer for a single (exchange, type, symbol) channel.
+// Owns the 3 file streams (trades / orderbook / bookticker) and per-day
+// rotation. Thread-unsafe — callers serialize access (CsvBackend holds a map
+// of these under a mutex). Preserved verbatim for test compatibility
+// (tests/test_csv_writer.cpp).
 class CsvWriter {
  public:
   CsvWriter() = default;
@@ -31,6 +36,7 @@ class CsvWriter {
   void Close();
 
  private:
+  // Format a usec timestamp as "YYYY-MM-DD" (UTC, pure Gregorian).
   static std::string TimestampToDate(uint64_t usec_since_epoch);
   bool RotateIfNeeded(uint64_t exchange_ts);
 
@@ -42,8 +48,6 @@ class CsvWriter {
   uint64_t current_date_day_ = UINT64_MAX;
   uint32_t depth_level_ = 0;
   bool header_written_ = false;
-
-  static constexpr uint64_t kUsecsPerDay = 86400000000ULL;
 };
 
 }  // namespace sqc

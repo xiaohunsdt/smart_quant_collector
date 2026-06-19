@@ -5,6 +5,7 @@
 #include "common/logger_init.h"
 #include "common/string_utils.h"
 #include "exchange/crypto/gateio/gateio_common.h"
+#include "exchange/crypto/json_parse_helpers.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -17,16 +18,13 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
   try {
     switch(event_type) {
       case EventType::TICK:
-        result.type = ParsedType::TICK;
-        if(!ParseTradeEvent(doc, result.tick, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::TICK, [&] { return ParseTradeEvent(doc, result.tick, channel_id); });
         break;
       case EventType::DEPTH:
-        result.type = ParsedType::DEPTH;
-        if(!ParseDepthEvent(doc, result.depth, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::DEPTH, [&] { return ParseDepthEvent(doc, result.depth, channel_id); });
         break;
       case EventType::BOOK_TICKER:
-        result.type = ParsedType::BOOK_TICKER;
-        if(!ParseBookTickerEvent(doc, result.book_ticker, channel_id)) result.type = ParsedType::NONE;
+        DispatchParse(result, ParsedType::BOOK_TICKER, [&] { return ParseBookTickerEvent(doc, result.book_ticker, channel_id); });
         break;
       default:
         result.type = ParsedType::NONE;
@@ -42,11 +40,7 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    (void)doc["time"].get_uint64();
-    try {
-      (void)doc["time_ms"].get_uint64();
-    } catch(...) {
-    }
+    SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev == "subscribe") return false;
     auto result = doc["result"];
@@ -76,41 +70,15 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    (void)doc["time"].get_uint64();
-    try {
-      (void)doc["time_ms"].get_uint64();
-    } catch(...) {
-    }
+    SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev != "update" && ev != "all") return false;
     auto result = doc["result"];
-    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
+    out.exchange_timestamp = MsToUs(result["t"].get_uint64());
     out.last_update_id = result["lastUpdateId"].get_uint64();
     out.channel_id = channel_id;
-    out.bid_count = 0;
-    for(auto lv : result["bids"]) {
-      if(out.bid_count >= kMaxOrderbookLevels) break;
-      auto it = lv.begin();
-      if(it == lv.end()) continue;
-      double p = 0.0, q = 0.0;
-      if(!SvToDouble((*it).get_string(), p)) continue;
-      ++it;
-      if(it == lv.end()) continue;
-      if(!SvToDouble((*it).get_string(), q)) continue;
-      out.bids[out.bid_count++] = {p, q};
-    }
-    out.ask_count = 0;
-    for(auto lv : result["asks"]) {
-      if(out.ask_count >= kMaxOrderbookLevels) break;
-      auto it = lv.begin();
-      if(it == lv.end()) continue;
-      double p = 0.0, q = 0.0;
-      if(!SvToDouble((*it).get_string(), p)) continue;
-      ++it;
-      if(it == lv.end()) continue;
-      if(!SvToDouble((*it).get_string(), q)) continue;
-      out.asks[out.ask_count++] = {p, q};
-    }
+    out.bid_count = ParsePositionalLevelArray(result["bids"].get_array(), out.bids, kMaxOrderbookLevels);
+    out.ask_count = ParsePositionalLevelArray(result["asks"].get_array(), out.asks, kMaxOrderbookLevels);
     return true;
   } catch(const simdjson::simdjson_error& e) {
     if(auto* l = GetLogger()) LOG_ERROR(l, "Gate.io spot depth parse: {}", e.what());
@@ -140,8 +108,8 @@ static std::vector<SubscriptionGroup> GateioSpotBuildSubscribes(std::string_view
            {R"({"time":)" + ts + R"(,"channel":"spot.trades","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 0, EventType::TICK},
            {R"({"time":)" + ts + R"(,"channel":"spot.order_book","event":"subscribe","payload":[")" + std::string(symbol) + "\",\"" + dl +
                 "\",\"100ms\"]}",
-            500, EventType::DEPTH},
-           {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", 700,
+            kDepthSubscribeDelayMs, EventType::DEPTH},
+           {R"({"time":)" + ts + R"(,"channel":"spot.book_ticker","event":"subscribe","payload":[")" + std::string(symbol) + R"("]})", kBookTickerSubscribeDelayMs,
             EventType::BOOK_TICKER},
        }}};
 }
@@ -154,6 +122,7 @@ const ExchangeAdapter kGateioSpotAdapter = {
     .build_subscribes = GateioSpotBuildSubscribes,
     .peek_event_type = gateio_spot::PeekEventType,
     .parse = gateio_spot::Parse,
+    .ws_headers = kGateioWsHeaders,
 };
 
 }  // namespace sqc

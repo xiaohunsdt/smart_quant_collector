@@ -2,6 +2,7 @@
 
 #include "common/logger_init.h"
 #include "common/string_utils.h"
+#include "exchange/crypto/json_parse_helpers.h"
 #include "quill/LogMacros.h"
 
 namespace sqc {
@@ -25,27 +26,15 @@ EventType PeekEventType(simdjson::ondemand::document& doc, std::string_view pref
 
 bool ParseBookTickerEvent(simdjson::ondemand::document& doc, BookTickerEvent& out, uint32_t channel_id) {
   try {
-    (void)doc["time"].get_uint64();
-    try {
-      (void)doc["time_ms"].get_uint64();
-    } catch(...) {
-    }
+    SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev != "update") return false;
     auto result = doc["result"];
-    out.exchange_timestamp = result["t"].get_uint64() * 1000ULL;
+    out.exchange_timestamp = MsToUs(result["t"].get_uint64());
     if(!SvToDouble(result["b"].get_string(), out.best_bid_price)) return false;
-    auto bid_sz = result["B"].get_string();
-    if(bid_sz.error() == simdjson::SUCCESS)
-      SvToDouble(bid_sz.value_unsafe(), out.best_bid_qty);
-    else
-      out.best_bid_qty = static_cast<double>(result["B"].get_int64());
+    out.best_bid_qty = ParseQuantity(result["B"]);
     if(!SvToDouble(result["a"].get_string(), out.best_ask_price)) return false;
-    auto ask_sz = result["A"].get_string();
-    if(ask_sz.error() == simdjson::SUCCESS)
-      SvToDouble(ask_sz.value_unsafe(), out.best_ask_qty);
-    else
-      out.best_ask_qty = static_cast<double>(result["A"].get_int64());
+    out.best_ask_qty = ParseQuantity(result["A"]);
     out.channel_id = channel_id;
     return true;
   } catch(const simdjson::simdjson_error& e) {

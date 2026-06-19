@@ -4,7 +4,7 @@
 
 #include "src/common/storage_envelope.h"
 #include "src/common/tick_data.h"
-#include "src/storage/mmap_engine.h"
+#include "storage/engine/mmap_engine.h"
 
 namespace sqc {
 namespace {

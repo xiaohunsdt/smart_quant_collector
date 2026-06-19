@@ -7,7 +7,7 @@
 
 #include "src/common/tick_data.h"
 #include "src/orderbook/orderbook_event.h"
-#include "src/storage/csv_writer.h"
+#include "storage/engine/csv_writer.h"
 
 namespace sqc {
 namespace {
