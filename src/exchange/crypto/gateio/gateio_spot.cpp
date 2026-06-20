@@ -40,7 +40,7 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    SkipTimeEnvelope(doc);
+    gateio::SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev == "subscribe") return false;
     auto result = doc["result"];
@@ -70,7 +70,7 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    SkipTimeEnvelope(doc);
+    gateio::SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev != "update" && ev != "all") return false;
     auto result = doc["result"];
@@ -122,7 +122,7 @@ const ExchangeAdapter kGateioSpotAdapter = {
     .build_subscribes = GateioSpotBuildSubscribes,
     .peek_event_type = gateio_spot::PeekEventType,
     .parse = gateio_spot::Parse,
-    .ws_headers = kGateioWsHeaders,
+    .ws_headers = gateio::kGateioWsHeaders,
 };
 
 }  // namespace sqc

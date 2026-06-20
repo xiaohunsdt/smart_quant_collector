@@ -40,7 +40,7 @@ ParseResult Parse(simdjson::ondemand::document& doc, uint32_t channel_id, EventT
 
 bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t channel_id) {
   try {
-    SkipTimeEnvelope(doc);
+    gateio::SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev == "subscribe") return false;
     auto arr = doc["result"].get_array();
@@ -51,7 +51,7 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
     (void)item["create_time"].get_uint64();
     out.exchange_timestamp = MsToUs(item["create_time_ms"].get_uint64());
     if(!SvToDouble(item["price"].get_string(), out.price)) return false;
-    double size_val = ParseQuantity(item["size"]);
+    double size_val = gateio::ParseQuantity(item["size"]);
     out.quantity = size_val < 0 ? -size_val : size_val;
     out.is_buyer_maker = (size_val < 0);
     out.channel_id = channel_id;
@@ -69,7 +69,7 @@ bool ParseTradeEvent(simdjson::ondemand::document& doc, TickData& out, uint32_t 
 
 bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, uint32_t channel_id) {
   try {
-    SkipTimeEnvelope(doc);
+    gateio::SkipTimeEnvelope(doc);
     std::string_view ev = doc["event"].get_string();
     if(ev != "update" && ev != "all") return false;
     auto result = doc["result"];
@@ -81,14 +81,14 @@ bool ParseDepthEvent(simdjson::ondemand::document& doc, DepthUpdateEvent& out, u
       if(out.bid_count >= kMaxOrderbookLevels) break;
       double p = 0.0;
       if(!SvToDouble(lv["p"].get_string(), p)) continue;
-      out.bids[out.bid_count++] = {p, ParseQuantity(lv["s"])};
+      out.bids[out.bid_count++] = {p, gateio::ParseQuantity(lv["s"])};
     }
     out.ask_count = 0;
     for(auto lv : result["asks"]) {
       if(out.ask_count >= kMaxOrderbookLevels) break;
       double p = 0.0;
       if(!SvToDouble(lv["p"].get_string(), p)) continue;
-      out.asks[out.ask_count++] = {p, ParseQuantity(lv["s"])};
+      out.asks[out.ask_count++] = {p, gateio::ParseQuantity(lv["s"])};
     }
     return true;
   } catch(const simdjson::simdjson_error& e) {
@@ -133,7 +133,7 @@ const ExchangeAdapter kGateioPerpetualAdapter = {
     .build_subscribes = GateioPerpetualBuildSubscribes,
     .peek_event_type = gateio_perpetual::PeekEventType,
     .parse = gateio_perpetual::Parse,
-    .ws_headers = kGateioWsHeaders,
+    .ws_headers = gateio::kGateioWsHeaders,
 };
 
 }  // namespace sqc

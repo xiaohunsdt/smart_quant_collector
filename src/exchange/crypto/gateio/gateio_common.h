@@ -45,7 +45,7 @@ inline double ParseQuantity(simdjson::ondemand::value field) {
   double qty = 0.0;
   std::string_view sv;
   if(field.get_string().get(sv) == simdjson::SUCCESS)
-    SvToDouble(sv, qty);
+    (void)SvToDouble(sv, qty);
   else
     qty = static_cast<double>(field.get_int64());
   return qty;

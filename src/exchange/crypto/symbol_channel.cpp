@@ -68,7 +68,7 @@ void SymbolChannel::Start() {
 
     // Apply vendor-specific handshake headers declared on the adapter (e.g.
     // Gate.io's X-Gate-* headers) instead of branching on the exchange name.
-    for(const auto& h : adapter_->ws_headers) ws_raw->AddHeader(h.name, h.value);
+    for(const auto& h : adapter_->ws_headers) ws_raw->AddHeader(std::string(h.name), std::string(h.value));
 
     auto self = shared_from_this();
     ws_raw->Connect(parsed.host, parsed.port, parsed.path, [this, self, g](bool success) {

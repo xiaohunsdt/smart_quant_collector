@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "src/config/config_struct.h"
+#include "src/storage/i_storage_backend.h"
 #include "storage/storage_backend_factory.h"
 
 namespace sqc {
